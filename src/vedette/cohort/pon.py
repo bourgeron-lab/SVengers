@@ -18,6 +18,14 @@ samples the panel absorbs real inherited CNVs and normalizes them away
 (verified empirically: a trio-only panel erased the trio's own het DELs).
 20+ founders is the practical floor; the target sample's relatives must be
 excluded.
+
+SEMANTICS: PoN mode reports deviation from the population norm (gCNV-style).
+Common CNVs (carrier fraction high enough to move the median, or polymorphic
+enough to trip the MAD mask) leave the DEPTH channel — they stay detectable
+through PE/SR junctions when a CRAM is scanned. Use --pon for rare-variant
+analyses (de novo, case-control); build frequency catalogues without it.
+Validated on GHFC chr20: 20-founder panel cut depth segments 264 -> 14, with
+12/14 survivors rare (<=1/20 founders) and known common DELs absorbed.
 """
 
 from __future__ import annotations

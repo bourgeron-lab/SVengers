@@ -40,11 +40,16 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 - Reste pour v1.1 : récupération des extrémités riches en mismatches (NM/MD)
   sans clip, et ajout de HOMLEN comme feature du filtre ML (schéma v2).
 
-### 4. Panel of normals (`cohort/pon.py`)
-- Profil médian+MAD par bin, stratifié par sexe, depuis les stores fondateurs.
-- Option SVD (k≈20) façon SavvyCNV sur sous-échantillon de bins.
-- Catalogue d'artefacts : loci non-ref chez >3 % des fondateurs non apparentés
-  avec échec HWE → BED livré + regénérable (`vedette pon artifacts`).
+### 4. Panel of normals — FAIT (2026-09-08)
+- `cohort/pon.py` : médiane+MAD par bin en streaming (mémoire plate à 10k
+  échantillons), stratifié par sexe, `vedette call --pon`, catalogue
+  d'artefacts (`pon artifacts` + `filter --artifact-bed`).
+- Sémantique validée sur chr20 GHFC (panel 20 fondateurs EAGER) : segments
+  depth 264 → 14, 12/14 survivants rares. Les CNV COMMUNS sortent du canal
+  depth (médiane/MAD) et ne restent détectables que par jonctions → --pon
+  réservé aux analyses de variants rares, pas aux catalogues d'AF.
+- Reste v1.1 : SVD optionnelle (k≈20) façon SavvyCNV ; PoN génome entier
+  depuis les ~2000 fondateurs GHFC (array SLURM sur les stores).
 
 ### 5. Industrialisation
 - Wrapper Nextflow calqué sur tools/ghfc-ngs (DSL2, profils slurm+apptainer).
