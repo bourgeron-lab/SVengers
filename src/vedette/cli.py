@@ -58,6 +58,9 @@ def call(
         None, help="Precomputed per-site VAF bedgraph (fast path BAF)"
     ),
     snv_vcf: Optional[Path] = typer.Option(None, help="Single-sample SNV VCF for BAF"),
+    pon: Optional[Path] = typer.Option(
+        None, help="Panel-of-normals (.zarr) for residual depth normalization"
+    ),
     exclude_bed: Optional[Path] = typer.Option(None, help="Exclusion regions BED"),
     contig: Optional[list[str]] = typer.Option(
         None, "--contig", help="Restrict to contig(s), repeatable (smoke tests)"
@@ -83,6 +86,7 @@ def call(
         depth_bedgraph=str(depth_bedgraph) if depth_bedgraph else None,
         vaf_bedgraph=str(vaf_bedgraph) if vaf_bedgraph else None,
         snv_vcf=str(snv_vcf) if snv_vcf else None,
+        pon_path=str(pon) if pon else None,
         only_contigs=contig if contig else None,
         command=shlex.join(sys.argv),
     )
@@ -162,6 +166,9 @@ def filter(
     features_out: Optional[Path] = typer.Option(
         None, help="Also export the per-call feature matrix (TSV)"
     ),
+    artifact_bed: Optional[Path] = typer.Option(
+        None, help="Recurrent-artifact BED (from `vedette pon artifacts`)"
+    ),
     config_file: Optional[Path] = typer.Option(None, "--config", help="TOML configuration"),
 ) -> None:
     """Tiered false-positive filtering (hard filters + calibrated SQ score)."""
@@ -179,7 +186,7 @@ def filter(
     config = load_config(config_file, **overrides)
     counts = run_filter(
         vcf, store, out, config,
-        model_dir=model_dir, features_out=features_out,
+        model_dir=model_dir, features_out=features_out, artifact_bed=artifact_bed,
     )
     typer.echo(
         f"{counts['total']} calls: {counts['pass']} PASS, "
@@ -282,10 +289,46 @@ def ped_annotate(
         )
 
 
-@app.command()
-def pon() -> None:
-    """Panel-of-normals depth profile and artifact catalogue."""
-    _not_yet("pon")
+pon_app = typer.Typer(help="Panel of normals: depth profile and artifact catalogue")
+app.add_typer(pon_app, name="pon")
+
+
+@pon_app.command("build")
+def pon_build(
+    stores: list[Path] = typer.Argument(
+        ..., help="Evidence stores (.zarr), or one @filelist of paths"
+    ),
+    out: Path = typer.Option(..., help="Output PoN (.zarr)"),
+    min_samples: int = typer.Option(8, help="Minimum samples per profile"),
+) -> None:
+    """Build the per-bin median+MAD depth profile from evidence stores (sex-stratified X/Y)."""
+    from .cohort.pon import build_pon
+
+    paths: list[Path] = []
+    for s in stores:
+        if str(s).startswith("@"):
+            paths.extend(Path(p) for p in Path(str(s)[1:]).read_text().split())
+        else:
+            paths.append(s)
+    build_pon(paths, out, min_samples=min_samples)
+    typer.echo(f"PoN ({len(paths)} samples) -> {out}")
+
+
+@pon_app.command("artifacts")
+def pon_artifacts(
+    cohort_vcf: Path = typer.Argument(..., help="Cohort VCF from `vedette cohort-filter`"),
+    out: Path = typer.Option(..., help="Output artifact BED"),
+    min_af: float = typer.Option(0.03, help="Founder AF above which HWE failures are artifacts"),
+    max_hwe_p: float = typer.Option(1e-6),
+    min_gtr_disc: float = typer.Option(0.5),
+) -> None:
+    """Derive the recurrent-artifact BED from a cohort VCF."""
+    from .cohort.pon import artifacts_bed
+
+    n = artifacts_bed(
+        cohort_vcf, out, min_af=min_af, max_hwe_p=max_hwe_p, min_gtr_disc=min_gtr_disc
+    )
+    typer.echo(f"{n} artifact loci -> {out}")
 
 
 bench_app = typer.Typer(help="Benchmark harness (truth-set evaluation, caller comparison, trios)")

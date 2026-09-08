@@ -86,6 +86,7 @@ def run_call(
     depth_bedgraph: str | None = None,
     vaf_bedgraph: str | None = None,
     snv_vcf: str | None = None,
+    pon_path: str | None = None,
     only_contigs: list[str] | None = None,
     threads: int = 8,
     command: str = "",
@@ -149,6 +150,25 @@ def run_call(
         raise ValueError(f"{sample}: zero usable depth")
     ratio = {n: corr[n] / mean_depth for n in call_names}
     ploidy = estimate_sex_ploidy(ratio, mask, by_name)
+
+    # ---- panel-of-normals normalization (divides out residual systematic bias
+    #      and masks population-variable bins)
+    if pon_path:
+        from .cohort.pon import PanelOfNormals
+
+        pon = PanelOfNormals(pon_path)
+        if pon.bin_size != bin_size:
+            raise ValueError(
+                f"PoN bin size {pon.bin_size} != run bin size {bin_size}"
+            )
+        sex = "male" if ploidy.get("chrX", 2) == 1 else "female"
+        n_new_masked = 0
+        for name in call_names:
+            before = int(mask[name].sum())
+            ratio[name], mask[name] = pon.normalize(name, ratio[name], mask[name], sex=sex)
+            corr[name] = (ratio[name] * mean_depth).astype(np.float32)
+            n_new_masked += int(mask[name].sum()) - before
+        logger.info("PoN: applied (%s), %d additional bins masked", sex, n_new_masked)
 
     # ---- BAF
     baf: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}

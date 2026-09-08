@@ -37,7 +37,11 @@ def run_filter(
     config: Config,
     model_dir: str | Path | None = None,
     features_out: str | Path | None = None,
+    artifact_bed: str | Path | None = None,
 ) -> dict[str, int]:
+    from .annotate import IntervalSet
+
+    artifacts = IntervalSet.from_bed(artifact_bed) if artifact_bed else None
     store = EvidenceStore(store_path)
     annotator = ContextAnnotator.from_paths(
         segdup_bed=config.reference.segdup_bed,
@@ -95,6 +99,11 @@ def run_filter(
                 new_rec.info["POPCOV_SD"] = round(feats["popcov_stdev"], 3)
 
                 tags = hard_filter_tags(feats, rec.stop - rec.start, config.filter)
+                if (
+                    artifacts is not None
+                    and artifacts.overlap_fraction(rec.contig, rec.start, rec.stop) > 0.5
+                ):
+                    tags.append("CohortArtifact")
                 existing = [f for f in rec.filter.keys() if f != "PASS"]
                 all_tags = sorted(set(existing) | set(tags))
 

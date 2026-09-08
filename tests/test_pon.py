@@ -1,0 +1,112 @@
+import numpy as np
+import pysam
+import pytest
+
+from vedette.cohort.pon import PanelOfNormals, artifacts_bed, build_pon
+from vedette.extract.store import EvidenceStoreWriter
+
+N_BINS = 1000
+MEAN_DEPTH = 30.0
+
+
+def _make_store(tmp_path, sample, depth_ratio, sex="female", contig="chr1"):
+    """depth_ratio: per-bin copy ratio; store holds corr = ratio * mean_depth."""
+    path = tmp_path / f"{sample}.zarr"
+    w = EvidenceStoreWriter(path, sample=sample, reference_id="testref", bin_size=1000)
+    ploidy = {"chr1": 2, "chrX": 1 if sex == "male" else 2}
+    w.set_meta(mean_depth=MEAN_DEPTH, coverage=MEAN_DEPTH, ploidy=ploidy)
+    corr = (np.asarray(depth_ratio, dtype=np.float32) * MEAN_DEPTH)
+    w.write_depth(contig, corr, corr, np.zeros(len(corr), dtype=bool))
+    return path
+
+
+@pytest.fixture()
+def cohort_stores(tmp_path):
+    rng = np.random.default_rng(0)
+    paths = []
+    for i in range(6):
+        ratio = rng.normal(1.0, 0.05, N_BINS)
+        ratio[100] = rng.normal(0.5, 0.02)      # systematic reference bias
+        ratio[200] = 0.2 if i % 2 else 2.5      # population-bimodal bin
+        if i == 0:  # sample 0 carries a real het DEL at bins 300-320
+            ratio[300:320] = rng.normal(0.5, 0.05, 20)
+        paths.append(_make_store(tmp_path, f"S{i}", ratio))
+    return paths
+
+
+def test_build_and_normalize(tmp_path, cohort_stores):
+    pon_path = build_pon(cohort_stores, tmp_path / "pon.zarr", min_samples=5)
+    pon = PanelOfNormals(pon_path)
+    median, mad = pon.profile("chr1")
+    assert median[100] == pytest.approx(0.5, abs=0.1)     # bias captured
+    assert median[500] == pytest.approx(1.0, abs=0.05)
+    assert mad[200] > 0.3                                  # variability captured
+    # the real DEL in 1/6 samples must NOT shift the median
+    assert np.median(median[300:320]) == pytest.approx(1.0, abs=0.08)
+
+    # normalize the carrier sample
+    from vedette.extract.store import EvidenceStore
+
+    s0 = EvidenceStore(cohort_stores[0])
+    _raw, corr, mask = s0.depth("chr1")
+    ratio = corr / MEAN_DEPTH
+    norm, new_mask = pon.normalize("chr1", ratio, mask)
+    assert norm[100] == pytest.approx(1.0, abs=0.2)        # bias divided out
+    assert new_mask[200] and not new_mask[500]             # variable bin masked
+    assert np.median(norm[300:320]) == pytest.approx(0.5, abs=0.1)  # DEL preserved
+
+
+def test_sex_stratified_chrx(tmp_path):
+    rng = np.random.default_rng(1)
+    paths = []
+    for i in range(4):
+        r = rng.normal(0.5, 0.03, N_BINS)  # male X ratio
+        paths.append(_make_store(tmp_path, f"M{i}", r, sex="male", contig="chrX"))
+    for i in range(4):
+        r = rng.normal(1.0, 0.03, N_BINS)
+        paths.append(_make_store(tmp_path, f"F{i}", r, sex="female", contig="chrX"))
+    pon = PanelOfNormals(build_pon(paths, tmp_path / "pon.zarr", min_samples=8))
+    med_m, _ = pon.profile("chrX", "male")
+    med_f, _ = pon.profile("chrX", "female")
+    assert np.median(med_m) == pytest.approx(0.5, abs=0.05)
+    assert np.median(med_f) == pytest.approx(1.0, abs=0.05)
+
+
+def test_bin_size_guard(tmp_path, cohort_stores):
+    pon = PanelOfNormals(build_pon(cohort_stores, tmp_path / "pon.zarr", min_samples=5))
+    assert pon.bin_size == 1000
+
+
+def test_artifacts_bed(tmp_path):
+    h = pysam.VariantHeader()
+    h.contigs.add("chr1", length=1_000_000)
+    for line in (
+        ("SVTYPE", "1", "String", "t"), ("END", "1", "Integer", "e"),
+        ("AF", "A", "Float", "af"), ("HWE_P", "1", "Float", "p"),
+        ("GTR_DISC", "1", "Float", "d"), ("NSAMPLES", "1", "Integer", "n"),
+    ):
+        h.info.add(*line)
+    vcf_path = tmp_path / "cohort.vcf.gz"
+    with pysam.VariantFile(str(vcf_path), "wz", header=h) as out:
+        specs = [
+            (1000, 2000, 0.10, 1e-9, 0.0, 10),   # artifact: common + HWE failure
+            (5000, 6000, 0.10, 0.5, 0.0, 10),    # common but HWE fine -> keep
+            (8000, 9000, 0.01, 0.5, 0.8, 5),     # discordant nominators -> artifact
+            (12000, 13000, 0.01, 0.5, 0.0, 2),   # rare and clean -> keep
+        ]
+        for start, end, af, hwe, disc, ns in specs:
+            rec = out.new_record(
+                contig="chr1", start=start, stop=end, alleles=("N", "<DEL>")
+            )
+            rec.info.update(
+                SVTYPE="DEL", AF=(af,), HWE_P=hwe, GTR_DISC=disc, NSAMPLES=ns
+            )
+            out.write(rec)
+    pysam.tabix_index(str(vcf_path), preset="vcf", force=True)
+
+    out_bed = tmp_path / "artifacts.bed"
+    n = artifacts_bed(vcf_path, out_bed)
+    lines = out_bed.read_text().strip().splitlines()
+    assert n == 2 and len(lines) == 2
+    starts = {int(line.split("\t")[1]) for line in lines}
+    assert starts == {1000, 8000}
