@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vedette"
+version = "0.1.0.dev0"
+description = "Vedette: a multi-evidence germline CNV caller (DEL/DUP) for short-read WGS with calibrated post-calling filtering"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Alexandre Mathieu", email = "alexandre.mathieu@pasteur.fr" },
+]
+keywords = ["CNV", "structural-variant", "WGS", "genomics", "bioinformatics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "pysam>=0.22",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "numba>=0.59",
+    "zarr>=2.17",
+    "scikit-learn>=1.4",
+    "typer>=0.12",
+    "intervaltree>=3.1",
+]
+
+[project.optional-dependencies]
+bigwig = ["pyBigWig>=0.3.22"]
+dev = ["pytest>=8", "ruff>=0.4"]
+
+[project.scripts]
+vedette = "vedette.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vedette"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "NPY", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

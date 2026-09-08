@@ -1,0 +1,259 @@
+"""CN-state HMM segmentation of the corrected depth track.
+
+States are integer copy numbers 0..max_cn on a contig of baseline ploidy 1 or 2.
+Emissions combine two channels:
+
+- depth: copy ratio r_i = corrected_depth_i / diploid_mean, Gaussian with
+  mean c/2 and variance scaling with the mean (Poisson-like), sigma0 fit from
+  the data (v1; a negative-binomial count model on 100 bp raw counts is the
+  planned upgrade once the self-contained scan is the default path);
+- BAF: per-bin log-likelihood of clear-het VAFs under each CN (optional).
+
+Masked bins are uninformative (equal emission under every state), so the chain
+persists through gaps instead of breaking segments.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+try:
+    from numba import njit
+except ImportError:  # pragma: no cover - numba is a hard dep, fallback for docs builds
+    def njit(*args, **kwargs):
+        def wrap(f):
+            return f
+        return wrap if not (args and callable(args[0])) else args[0]
+
+_MIN_RATIO_VAR = 0.05  # variance floor multiplier (as a fraction of expected ratio)
+
+
+@dataclass(frozen=True)
+class Segment:
+    start_bin: int
+    end_bin: int          # exclusive
+    cn: int
+    posterior: float      # mean per-bin posterior of the called state
+    mean_ratio: float     # mean copy ratio over unmasked bins
+    n_bins: int
+    masked_frac: float
+
+
+# ------------------------------------------------------------------ core HMM (numba)
+
+
+@njit(cache=True)
+def _viterbi(log_emit, log_stay, log_switch, log_pi):  # pragma: no cover - numba
+    n, k = log_emit.shape
+    delta = np.empty((n, k))
+    psi = np.zeros((n, k), dtype=np.int32)
+    delta[0] = log_pi + log_emit[0]
+    for i in range(1, n):
+        for s in range(k):
+            best, arg = -1e300, 0
+            for p in range(k):
+                v = delta[i - 1, p] + (log_stay if p == s else log_switch)
+                if v > best:
+                    best, arg = v, p
+            delta[i, s] = best + log_emit[i, s]
+            psi[i, s] = arg
+    path = np.empty(n, dtype=np.int32)
+    path[-1] = np.argmax(delta[-1])
+    for i in range(n - 2, -1, -1):
+        path[i] = psi[i + 1, path[i + 1]]
+    return path
+
+
+@njit(cache=True)
+def _forward_backward(log_emit, log_stay, log_switch, log_pi):  # pragma: no cover
+    n, k = log_emit.shape
+    log_alpha = np.empty((n, k))
+    log_beta = np.zeros((n, k))
+    log_alpha[0] = log_pi + log_emit[0]
+    for i in range(1, n):
+        for s in range(k):
+            m = -1e300
+            for p in range(k):
+                v = log_alpha[i - 1, p] + (log_stay if p == s else log_switch)
+                if v > m:
+                    m = v
+            acc = 0.0
+            for p in range(k):
+                acc += np.exp(log_alpha[i - 1, p] + (log_stay if p == s else log_switch) - m)
+            log_alpha[i, s] = m + np.log(acc) + log_emit[i, s]
+    for i in range(n - 2, -1, -1):
+        for s in range(k):
+            m = -1e300
+            for p in range(k):
+                v = (log_stay if p == s else log_switch) + log_emit[i + 1, p] + log_beta[i + 1, p]
+                if v > m:
+                    m = v
+            acc = 0.0
+            for p in range(k):
+                acc += np.exp(
+                    (log_stay if p == s else log_switch)
+                    + log_emit[i + 1, p]
+                    + log_beta[i + 1, p]
+                    - m
+                )
+            log_beta[i, s] = m + np.log(acc)
+    gamma = log_alpha + log_beta
+    for i in range(n):
+        m = gamma[i].max()
+        gamma[i] = np.exp(gamma[i] - m)
+        gamma[i] /= gamma[i].sum()
+    return gamma
+
+
+# -------------------------------------------------------------------------- emissions
+
+
+def depth_log_emissions(
+    ratio: np.ndarray,
+    mask: np.ndarray,
+    ploidy: int,
+    max_cn: int,
+    sigma0: float,
+) -> np.ndarray:
+    """(n_bins, n_states) Gaussian log-likelihood of the copy ratio.
+
+    Expected ratio for state c is c/2 regardless of contig ploidy (the ratio is
+    normalized to the DIPLOID autosomal mean; a hemizygous X has baseline
+    CN1 -> ratio 0.5). ``sigma0`` is the ratio sd at CN2.
+    """
+    states = np.arange(max_cn + 1)
+    expected = states / 2.0
+    # variance grows with the mean (Poisson-like), floored for CN0
+    var = sigma0**2 * np.maximum(expected, _MIN_RATIO_VAR)
+    log_norm = -0.5 * np.log(2 * np.pi * var)
+    emit = log_norm[None, :] - 0.5 * (ratio[:, None] - expected[None, :]) ** 2 / var[None, :]
+    emit[mask] = 0.0  # uninformative bins
+    return emit
+
+
+def fit_sigma0(ratio: np.ndarray, mask: np.ndarray) -> float:
+    """Robust sd of the copy ratio around the diploid baseline."""
+    vals = ratio[~mask]
+    vals = vals[(vals > 0.7) & (vals < 1.3)]
+    if len(vals) < 100:
+        return 0.15
+    return float(np.median(np.abs(vals - np.median(vals))) * 1.4826) or 0.15
+
+
+def baf_log_emissions(
+    baf_pos: np.ndarray,
+    baf_vaf: np.ndarray,
+    n_bins: int,
+    bin_size: int,
+    max_cn: int,
+    concentration: float = 30.0,
+    het_lo: float = 0.15,
+    het_hi: float = 0.85,
+    mismap: float = 0.01,
+    max_sites_weight: float = 3.0,
+) -> np.ndarray:
+    """(n_bins, n_states) log-likelihood of observed clear-het VAFs under each CN.
+
+    Expected het VAF bands: CN2 {1/2}, CN3 {1/3, 2/3}, CN4 {1/4..3/4}, CN>=5 broad;
+    CN0/CN1 should show no hets (mismap floor). Per-bin contribution capped at
+    ``max_sites_weight`` sites so SNP-dense bins don't overwhelm the depth channel.
+    """
+    from scipy.stats import beta as beta_dist
+
+    emit = np.zeros((n_bins, max_cn + 1))
+    het = (baf_vaf > het_lo) & (baf_vaf < het_hi)
+    if not het.any():
+        return emit
+    pos, vaf = baf_pos[het], baf_vaf[het]
+    bins = np.minimum(pos // bin_size, n_bins - 1)
+
+    def band_loglik(v: np.ndarray, means: list[float]) -> np.ndarray:
+        parts = [
+            beta_dist.logpdf(
+                np.clip(v, 1e-3, 1 - 1e-3), m * concentration, (1 - m) * concentration
+            )
+            for m in means
+        ]
+        stacked = np.stack(parts)
+        m = stacked.max(axis=0)
+        return m + np.log(np.exp(stacked - m).mean(axis=0))
+
+    log_mismap = np.log(mismap)
+    per_site = np.empty((len(vaf), max_cn + 1))
+    for cn in range(max_cn + 1):
+        if cn <= 1:
+            per_site[:, cn] = log_mismap  # a clear het contradicts CN<=1
+        elif cn == 2:
+            per_site[:, cn] = band_loglik(vaf, [0.5])
+        else:
+            means = [i / cn for i in range(1, cn)]
+            per_site[:, cn] = band_loglik(vaf, means)
+
+    counts = np.zeros(n_bins)
+    np.add.at(counts, bins, 1.0)
+    weight = np.ones(len(vaf))
+    dense = counts[bins] > max_sites_weight
+    weight[dense] = max_sites_weight / counts[bins][dense]
+    for cn in range(max_cn + 1):
+        np.add.at(emit[:, cn], bins, per_site[:, cn] * weight)
+    return emit
+
+
+# ------------------------------------------------------------------------ segmentation
+
+
+def segment_contig(
+    ratio: np.ndarray,
+    mask: np.ndarray,
+    ploidy: int,
+    max_cn: int,
+    transition: float,
+    baf_emit: np.ndarray | None = None,
+    baf_weight: float = 1.0,
+) -> tuple[list[Segment], np.ndarray]:
+    """Run the HMM on one contig; return non-baseline segments and the CN path."""
+    n = len(ratio)
+    if n == 0:
+        return [], np.array([], dtype=np.int32)
+    sigma0 = fit_sigma0(ratio, mask)
+    emit = depth_log_emissions(ratio, mask, ploidy, max_cn, sigma0)
+    if baf_emit is not None and baf_weight > 0:
+        emit = emit + baf_weight * baf_emit
+
+    k = max_cn + 1
+    baseline = min(ploidy, max_cn)
+    log_pi = np.full(k, np.log(1e-6))
+    log_pi[baseline] = np.log(1 - 1e-6 * (k - 1))
+    log_stay = float(np.log1p(-transition * (k - 1)))
+    log_switch = float(np.log(transition))
+
+    path = _viterbi(emit, log_stay, log_switch, log_pi)
+    gamma = _forward_backward(emit, log_stay, log_switch, log_pi)
+
+    segments: list[Segment] = []
+    boundaries = np.flatnonzero(np.diff(path)) + 1
+    starts = np.concatenate(([0], boundaries))
+    ends = np.concatenate((boundaries, [n]))
+    for s, e in zip(starts, ends, strict=True):
+        cn = int(path[s])
+        if cn == baseline:
+            continue
+        unmasked = ~mask[s:e]
+        segments.append(
+            Segment(
+                start_bin=int(s),
+                end_bin=int(e),
+                cn=cn,
+                posterior=float(gamma[s:e, cn].mean()),
+                mean_ratio=float(ratio[s:e][unmasked].mean()) if unmasked.any() else float("nan"),
+                n_bins=int(e - s),
+                masked_frac=float(mask[s:e].mean()),
+            )
+        )
+    logger.debug("HMM: %d bins, sigma0=%.3f, %d non-baseline segments", n, sigma0, len(segments))
+    return segments, path
