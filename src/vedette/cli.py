@@ -300,6 +300,9 @@ def pon_build(
     ),
     out: Path = typer.Option(..., help="Output PoN (.zarr)"),
     min_samples: int = typer.Option(8, help="Minimum samples per profile"),
+    denoise_k: int = typer.Option(
+        0, help="Also fit k SVD components for residual denoising (0 = off; 5-20 typical)"
+    ),
 ) -> None:
     """Build the per-bin median+MAD depth profile from evidence stores (sex-stratified X/Y)."""
     from .cohort.pon import build_pon
@@ -310,7 +313,7 @@ def pon_build(
             paths.extend(Path(p) for p in Path(str(s)[1:]).read_text().split())
         else:
             paths.append(s)
-    build_pon(paths, out, min_samples=min_samples)
+    build_pon(paths, out, min_samples=min_samples, denoise_k=denoise_k)
     typer.echo(f"PoN ({len(paths)} samples) -> {out}")
 
 

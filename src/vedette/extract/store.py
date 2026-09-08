@@ -40,8 +40,8 @@ _EVENT_CHUNK = 1_048_576
 
 
 def _create_array(group: zarr.Group, name: str, data: np.ndarray, chunk: int) -> None:
-    """Zarr v2/v3 compatible array creation."""
-    chunks = (min(chunk, max(len(data), 1)),)
+    """Zarr v2/v3 compatible array creation (chunked along the last axis)."""
+    chunks = data.shape[:-1] + (min(chunk, max(data.shape[-1], 1)),) if data.ndim else (1,)
     if hasattr(group, "create_array"):  # zarr >= 3
         arr = group.create_array(name, shape=data.shape, dtype=data.dtype, chunks=chunks)
         if len(data):

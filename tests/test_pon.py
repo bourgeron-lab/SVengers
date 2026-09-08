@@ -77,6 +77,44 @@ def test_bin_size_guard(tmp_path, cohort_stores):
     assert pon.bin_size == 1000
 
 
+def test_svd_denoising_removes_batch_wave_keeps_cnv(tmp_path):
+    """A shared low-rank batch effect must be removed; a sample-private DEL kept."""
+    rng = np.random.default_rng(3)
+    bins = np.arange(N_BINS)
+    wave = 0.25 * np.sin(2 * np.pi * bins / 200)  # systematic pattern (log2 units)
+    paths = []
+    amplitudes = rng.normal(0.0, 1.0, 30)
+    for i in range(30):
+        ratio = rng.normal(1.0, 0.03, N_BINS) * np.exp2(amplitudes[i] * wave)
+        paths.append(_make_store(tmp_path, f"S{i}", ratio))
+
+    # target: extreme batch amplitude + a real het DEL at bins 400-450
+    target_ratio = rng.normal(1.0, 0.03, N_BINS) * np.exp2(2.5 * wave)
+    target_ratio[400:450] *= 0.5
+    target_path = _make_store(tmp_path, "TARGET", target_ratio)
+
+    pon = PanelOfNormals(
+        build_pon(paths, tmp_path / "pon.zarr", min_samples=8, denoise_k=3)
+    )
+    from vedette.extract.store import EvidenceStore
+
+    s = EvidenceStore(target_path)
+    _raw, corr, mask = s.depth("chr1")
+    ratio = corr / MEAN_DEPTH
+
+    raw_out, _ = pon.normalize("chr1", ratio, mask, denoise=False)
+    svd_out, _ = pon.normalize("chr1", ratio, mask, denoise=True)
+
+    clean = np.ones(N_BINS, dtype=bool)
+    clean[400:450] = False
+    # residual wave clearly visible without SVD, mostly gone with it
+    resid_raw = np.std(np.log2(raw_out[clean]))
+    resid_svd = np.std(np.log2(svd_out[clean]))
+    assert resid_svd < 0.5 * resid_raw
+    # the DEL survives denoising
+    assert np.median(svd_out[400:450]) == pytest.approx(0.5, abs=0.08)
+
+
 def test_artifacts_bed(tmp_path):
     h = pysam.VariantHeader()
     h.contigs.add("chr1", length=1_000_000)
