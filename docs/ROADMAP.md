@@ -32,12 +32,13 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 - `bench trios` : MVR et transmission en fonction du seuil SQ sur les cohortes
   GHFC (figure de spécificité indépendante de GIAB).
 
-### 3. Hidden split reads (`breakpoints/resolve.py`) — le différenciateur DUP
-- Stocker les séquences de clips (schéma store v0.2 : blob packé + offsets).
-- Réalignement local (Smith-Waterman bandé, parasail/pywfa) des clips et des
-  extrémités riches en mismatches (NM/MD) contre la référence ±2 kb ;
-  clip qui se réaligne en aval même orientation ⇒ jonction DUP tandem.
-- Micro-homologie au point de jonction (HOMLEN/HOMSEQ) → feature filtre.
+### 3. Hidden split reads — FAIT (2026-09-08)
+- `breakpoints/resolve.py` : réalignement fit (numba, sans dépendance) des clips
+  stockés (schéma store 0.2), géométrie clip→jonction, micro-homologie HOMLEN,
+  dilution sous-bin dans le génotypeur. Validé chr20 : breakpoints ClinSV exacts
+  + petites DUP 50-105 pb inédites.
+- Reste pour v1.1 : récupération des extrémités riches en mismatches (NM/MD)
+  sans clip, et ajout de HOMLEN comme feature du filtre ML (schéma v2).
 
 ### 4. Panel of normals (`cohort/pon.py`)
 - Profil médian+MAD par bin, stratifié par sexe, depuis les stores fondateurs.

@@ -48,6 +48,7 @@ class FeatureExtractor:
         precise: bool,
         baf_n: int,
         baf_dev: float,
+        homlen: int = -1,
         ploidy: int = 2,
     ) -> dict[str, float]:
         bs = self.store.bin_size
@@ -101,6 +102,7 @@ class FeatureExtractor:
             "pe": float(pe),
             "sr": float(sr),
             "evidence_ratio": (pe + sr) / max(self.coverage, 1.0),
+            "homlen": float(homlen),
             "baf_n": float(baf_n),
             "baf_dev": baf_dev if baf_n > 0 and not math.isnan(baf_dev) else -1.0,
             "gq": float(gq),

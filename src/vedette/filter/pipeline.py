@@ -82,6 +82,7 @@ def run_filter(
                     sr=int(fmt.get("SR") or 0),
                     source=rec.info.get("SOURCE", "DEPTH"),
                     precise="IMPRECISE" not in rec.info,
+                    homlen=int(rec.info.get("HOMLEN", -1)),
                     baf_n=int(fmt.get("BAFN") or 0),
                     baf_dev=float(fmt.get("BAFDEV") or float("nan")),
                 )

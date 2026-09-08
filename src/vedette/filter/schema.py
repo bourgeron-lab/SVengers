@@ -29,6 +29,7 @@ FEATURES: list[str] = [
     "pe",
     "sr",
     "evidence_ratio",    # (pe + sr) / sequence coverage
+    "homlen",            # junction micro-homology (-1 = not measured)
     # BAF
     "baf_n",
     "baf_dev",           # mean |VAF - 0.5| of in-call clear hets (-1 if none)
