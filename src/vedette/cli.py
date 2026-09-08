@@ -288,6 +288,111 @@ def pon() -> None:
     _not_yet("pon")
 
 
+bench_app = typer.Typer(help="Benchmark harness (truth-set evaluation, caller comparison, trios)")
+app.add_typer(bench_app, name="bench")
+
+
+def _stratifier(segdup_bed, lcr_bed, tr_bed):
+    from .bench.truth import Stratifier
+
+    return Stratifier(
+        segdup_bed=str(segdup_bed) if segdup_bed else "",
+        lcr_bed=str(lcr_bed) if lcr_bed else "",
+        tr_bed=str(tr_bed) if tr_bed else "",
+    )
+
+
+@bench_app.command("truth")
+def bench_truth(
+    calls: Path = typer.Argument(..., help="Calls VCF to evaluate"),
+    truth: Path = typer.Option(..., help="Truth SV VCF (e.g. GIAB v5.0q stvar)"),
+    bed: Path = typer.Option(..., help="Confident-regions BED"),
+    out_dir: Path = typer.Option(..., help="Output directory"),
+    fasta: Optional[Path] = typer.Option(None, help="Reference FASTA (optional)"),
+    segdup_bed: Optional[Path] = typer.Option(None),
+    lcr_bed: Optional[Path] = typer.Option(None),
+    tr_bed: Optional[Path] = typer.Option(None),
+    plot: bool = typer.Option(False, help="Also write F1-by-size figure (PNG)"),
+) -> None:
+    """Stratified Truvari evaluation of one callset against a truth set."""
+    from .bench.truth import evaluate
+
+    rows = evaluate(
+        calls, truth, bed, out_dir, reference=fasta,
+        stratifier=_stratifier(segdup_bed, lcr_bed, tr_bed),
+    )
+    for r in rows:
+        if r["stratum_kind"] == "all":
+            typer.echo(
+                f"{r['svtype']}: precision {r['precision']} recall {r['recall']} f1 {r['f1']}"
+            )
+    if plot:
+        from .bench.plots import plot_size_stratified
+
+        plot_size_stratified(rows, Path(out_dir) / "f1_by_size.png")
+    typer.echo(f"table -> {out_dir}/eval_stratified.tsv")
+
+
+@bench_app.command("compare")
+def bench_compare(
+    entry: list[str] = typer.Option(
+        ..., "--entry", help="Caller entry name=kind=path (kind: vcf | wisecondorx), repeatable"
+    ),
+    truth: Path = typer.Option(...),
+    bed: Path = typer.Option(...),
+    fasta: Path = typer.Option(..., help="Reference FASTA (contig header + truvari)"),
+    out_dir: Path = typer.Option(...),
+    segdup_bed: Optional[Path] = typer.Option(None),
+    lcr_bed: Optional[Path] = typer.Option(None),
+    tr_bed: Optional[Path] = typer.Option(None),
+    plot: bool = typer.Option(False, help="Also write comparison figure (PNG)"),
+) -> None:
+    """Run the same truth evaluation over several callers; combined table."""
+    from .bench.compare import run_compare
+    from .reference import read_fai
+
+    entries = []
+    for e in entry:
+        parts = e.split("=", 2)
+        if len(parts) != 3 or parts[1] not in ("vcf", "wisecondorx"):
+            raise typer.BadParameter(f"--entry must be name=vcf|wisecondorx=path, got {e!r}")
+        entries.append(tuple(parts))
+    rows = run_compare(
+        entries, truth, bed, read_fai(fasta), out_dir,
+        reference=fasta, stratifier=_stratifier(segdup_bed, lcr_bed, tr_bed),
+    )
+    for r in rows:
+        if r["stratum_kind"] == "all":
+            typer.echo(
+                f"{r['caller']:>14} {r['svtype']}: precision {r['precision']} "
+                f"recall {r['recall']} f1 {r['f1']}"
+            )
+    if plot and rows:
+        from .bench.plots import plot_size_stratified
+
+        plot_size_stratified(rows, Path(out_dir) / "comparison_f1_by_size.png")
+
+
+@bench_app.command("trios")
+def bench_trios(
+    cohort_vcf: Path = typer.Argument(..., help="Multi-sample cohort VCF"),
+    pedigree: Path = typer.Option(...),
+    out: Path = typer.Option(..., help="Output sweep TSV"),
+    field: str = typer.Option("GQ", help="FORMAT field to threshold (GQ or SQ)"),
+    plot: bool = typer.Option(False, help="Also write MVR/transmission figure (PNG)"),
+) -> None:
+    """MVR and transmission rate as a function of the quality threshold."""
+    from .bench.trios import sweep
+    from .ped import parse_ped
+
+    rows = sweep(cohort_vcf, parse_ped(pedigree), field=field, out_tsv=out)
+    if plot:
+        from .bench.plots import plot_trio_sweep
+
+        plot_trio_sweep(rows, Path(out).with_suffix(".png"))
+    typer.echo(f"sweep -> {out}")
+
+
 @app.command()
 def label(
     features: Path = typer.Argument(..., help="Feature TSV from `vedette filter --features-out`"),

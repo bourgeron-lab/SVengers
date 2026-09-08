@@ -48,6 +48,7 @@ def run_truvari_bench(
     out_dir = Path(out_dir)
     if out_dir.exists():
         shutil.rmtree(out_dir)  # truvari refuses an existing directory
+    out_dir.parent.mkdir(parents=True, exist_ok=True)  # truvari only mkdirs the leaf
     cmd = [
         _truvari_bin(), "bench",
         "-b", str(truth_vcf),
