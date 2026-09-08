@@ -62,7 +62,11 @@ def run_truvari_bench(
     logger.info("truvari: %s", " ".join(cmd))
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"truvari bench failed:\n{result.stderr[-3000:]}")
+        raise RuntimeError(
+            "truvari bench failed:\n"
+            f"--- stderr ---\n{result.stderr[-2000:]}\n"
+            f"--- stdout ---\n{result.stdout[-2000:]}"
+        )
     return out_dir
 
 
