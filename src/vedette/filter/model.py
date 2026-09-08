@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 MAX_SQ = 99.0
 
 
+class CalibratedModel:
+    """A fitted classifier + isotonic calibrator, exposing predict_proba.
+
+    Defined here (not in train/) so joblib artifacts stay loadable in
+    runtime-only installs.
+    """
+
+    def __init__(self, base, calibrator):
+        self.base = base
+        self.calibrator = calibrator
+
+    def predict_proba(self, X) -> np.ndarray:
+        raw = self.base.predict_proba(X)[:, 1]
+        cal = np.clip(self.calibrator.predict(raw), 0.0, 1.0)
+        return np.stack([1.0 - cal, cal], axis=1)
+
+
 class FilterModel:
     def __init__(self, model_del, model_dup, manifest: dict):
         self.model_del = model_del

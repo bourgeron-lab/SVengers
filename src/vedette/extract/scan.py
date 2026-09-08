@@ -58,7 +58,8 @@ def fit_insert_model(
     sizes: list[int] = []
     read_lengths: list[int] = []
     target = config.insert_fit_pairs
-    with pysam.AlignmentFile(cram, "rc", reference_filename=fasta) as af:
+    # mode "r" auto-detects BAM vs CRAM; reference_filename is ignored for BAM
+    with pysam.AlignmentFile(cram, "r", reference_filename=fasta) as af:
         for contig in contigs:
             for rec in af.fetch(contig):
                 flag = rec.flag
@@ -124,7 +125,7 @@ def scan_contig(
     sr_cliplen: list[int] = []
 
     n_reads = 0
-    with pysam.AlignmentFile(cram, "rc", reference_filename=fasta) as af:
+    with pysam.AlignmentFile(cram, "r", reference_filename=fasta) as af:
         tid = af.get_tid(contig)
         for rec in af.fetch(contig):
             flag = rec.flag

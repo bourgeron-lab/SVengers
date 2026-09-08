@@ -288,5 +288,43 @@ def pon() -> None:
     _not_yet("pon")
 
 
+@app.command()
+def label(
+    features: Path = typer.Argument(..., help="Feature TSV from `vedette filter --features-out`"),
+    calls_vcf: Path = typer.Option(..., help="The (unfiltered) calls VCF the features came from"),
+    truth_vcf: Path = typer.Option(..., help="Truth SV VCF (e.g. GIAB v5.0q stvar)"),
+    truth_bed: Path = typer.Option(..., help="Confident-regions BED"),
+    fasta: Path = typer.Option(..., help="Reference FASTA"),
+    out: Path = typer.Option(..., help="Output labeled feature TSV"),
+    truvari_dir: Path = typer.Option(
+        Path("truvari_bench"), help="Truvari output directory (recreated)"
+    ),
+) -> None:
+    """Label calls TP/FP against a truth set (Truvari bench) for filter training."""
+    from .train.label import label_features, run_truvari_bench
+
+    run_truvari_bench(calls_vcf, truth_vcf, truth_bed, fasta, truvari_dir)
+    counts = label_features(features, truvari_dir, out)
+    typer.echo(
+        f"{counts['tp']} TP, {counts['fp']} FP, {counts['unlabeled']} unlabeled -> {out}"
+    )
+
+
+@app.command()
+def train(
+    labeled: list[Path] = typer.Argument(..., help="Labeled feature TSV(s) from `vedette label`"),
+    out: Path = typer.Option(..., help="Output model directory"),
+    model_version: str = typer.Option("v1", help="Version tag written to the manifest"),
+    training_data: str = typer.Option("", help="Free-text provenance for the manifest"),
+) -> None:
+    """Train the calibrated DEL/DUP filter models (HistGB + isotonic, chrom-CV)."""
+    from .train.train import train_models
+
+    manifest = train_models(labeled, out, model_version, training_data)
+    for svtype, metrics in manifest["metrics"].items():
+        typer.echo(f"{svtype}: PR-AUC(OOF) {metrics['pr_auc_oof']}, n={metrics['n']}")
+    typer.echo(f"models -> {out}")
+
+
 if __name__ == "__main__":
     app()

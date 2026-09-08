@@ -14,3 +14,6 @@ scratch/
 .nextflow*
 *.log
 .DS_Store
+resources/
+logs/
+models/*.joblib.tmp

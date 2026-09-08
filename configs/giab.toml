@@ -1,0 +1,13 @@
+# Vedette configuration for GIAB HG002 training runs.
+# Same reference/masks as the GHFC cohort; the CRAM scan bins depth at 1 kb
+# so evidence-store statistics match the cohort's fast-path stores.
+
+[reference]
+fasta = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/chr/GRCh38_GIABv3_no_alt_analysis_set_maskedGRC_decoys_MAP2K3_KMT2C_KCNJ18.fasta"
+exclude_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/exclude.cnvnator_100bp.GRCh38.20170403.bed"
+segdup_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/GRCh38GenomicSuperDup.bed.gz"
+lcr_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/selfchain-LCR.hg38.bed"
+pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/popCovStdev.bw"
+
+[extract]
+bin_size = 1000
