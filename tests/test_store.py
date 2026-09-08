@@ -34,6 +34,7 @@ def store(tmp_path):
         side=np.array([1, 1, 0], np.uint8),
         mapq=np.array([60, 55, 60], np.uint8),
         cliplen=np.array([30, 25, 40], np.uint16),
+        seqs=[b"ACGT" * 8, b"TTTTT" * 5, b"GGGGCCCC" * 5],
     )
     return EvidenceStore(path)
 
@@ -66,6 +67,13 @@ def test_sr_and_baf_queries(store):
     baf = store.baf("chr1", 0, 2000)
     assert len(baf["pos"]) == 2
     assert baf["vaf"][0] == pytest.approx(0.5)
+
+
+def test_sr_seq_roundtrip(store):
+    sr = store.sr("chr1", 1190, 1210, with_seq=True)
+    assert sr["seq"] == [b"ACGT" * 8, b"TTTTT" * 5]  # sorted with their positions
+    sr2 = store.sr("chr1", 3900, 4100, with_seq=True)
+    assert sr2["seq"] == [b"GGGGCCCC" * 5]
 
 
 def test_missing_groups_return_empty(store):

@@ -29,7 +29,8 @@ from typing import Any
 import numpy as np
 import zarr
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+SUPPORTED_SCHEMAS = {"0.1", "0.2"}  # 0.2 adds optional sr clip sequences
 
 PE_DEL, PE_DUP, PE_INV, PE_INTER = 0, 1, 2, 3
 SR_LEFT_CLIP, SR_RIGHT_CLIP = 0, 1
@@ -114,7 +115,13 @@ class EvidenceStoreWriter:
         _create_array(g, "mapq", mapq[order].astype(np.uint8), _EVENT_CHUNK)
 
     def write_sr(
-        self, contig: str, pos: np.ndarray, side: np.ndarray, mapq: np.ndarray, cliplen: np.ndarray
+        self,
+        contig: str,
+        pos: np.ndarray,
+        side: np.ndarray,
+        mapq: np.ndarray,
+        cliplen: np.ndarray,
+        seqs: list[bytes] | None = None,
     ) -> None:
         order = np.argsort(pos, kind="stable")
         g = self._contig(contig).create_group("sr")
@@ -122,6 +129,13 @@ class EvidenceStoreWriter:
         _create_array(g, "side", side[order].astype(np.uint8), _EVENT_CHUNK)
         _create_array(g, "mapq", mapq[order].astype(np.uint8), _EVENT_CHUNK)
         _create_array(g, "cliplen", cliplen[order].astype(np.uint16), _EVENT_CHUNK)
+        if seqs is not None and len(seqs) == len(pos):
+            ordered = [seqs[i] for i in order]
+            offsets = np.zeros(len(ordered) + 1, dtype=np.uint64)
+            np.cumsum([len(s) for s in ordered], out=offsets[1:])
+            blob = np.frombuffer(b"".join(ordered), dtype=np.uint8)
+            _create_array(g, "seq_offset", offsets, _EVENT_CHUNK)
+            _create_array(g, "seq_blob", blob.copy(), _EVENT_CHUNK * 8)
 
 
 class EvidenceStore:
@@ -131,10 +145,10 @@ class EvidenceStore:
         self.path = Path(path)
         self.root = zarr.open_group(str(self.path), mode="r")
         self.meta: dict[str, Any] = dict(self.root.attrs)
-        if self.meta.get("schema_version") != SCHEMA_VERSION:
+        if self.meta.get("schema_version") not in SUPPORTED_SCHEMAS:
             raise ValueError(
                 f"{path}: evidence store schema "
-                f"{self.meta.get('schema_version')!r} != expected {SCHEMA_VERSION!r}"
+                f"{self.meta.get('schema_version')!r} not in supported {sorted(SUPPORTED_SCHEMAS)}"
             )
         self.bin_size: int = int(self.meta["bin_size"])
 
@@ -205,11 +219,28 @@ class EvidenceStore:
         sl = self._ranged(pe, "pos1", start, end)
         return {name: pe[name][sl] for name in ("pos1", "pos2", "mate_tid", "orient", "mapq")}
 
-    def sr(self, contig: str, start: int, end: int) -> dict[str, np.ndarray]:
+    def sr(
+        self, contig: str, start: int, end: int, with_seq: bool = False
+    ) -> dict[str, np.ndarray | list[bytes]]:
         g = self.root[contig]
         try:
             sr = g["sr"]
         except KeyError:
-            return {k: np.array([]) for k in ("pos", "side", "mapq", "cliplen")}
+            out = {k: np.array([]) for k in ("pos", "side", "mapq", "cliplen")}
+            if with_seq:
+                out["seq"] = []
+            return out
         sl = self._ranged(sr, "pos", start, end)
-        return {name: sr[name][sl] for name in ("pos", "side", "mapq", "cliplen")}
+        out: dict = {name: sr[name][sl] for name in ("pos", "side", "mapq", "cliplen")}
+        if with_seq:
+            try:
+                offsets = sr["seq_offset"][sl.start : sl.stop + 1]
+                blob = sr["seq_blob"][int(offsets[0]) : int(offsets[-1])].tobytes()
+                base = int(offsets[0])
+                out["seq"] = [
+                    blob[int(offsets[i]) - base : int(offsets[i + 1]) - base]
+                    for i in range(len(offsets) - 1)
+                ]
+            except KeyError:  # schema 0.1 store: no sequences recorded
+                out["seq"] = [b""] * (sl.stop - sl.start)
+        return out

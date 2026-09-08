@@ -32,6 +32,7 @@ INFO_DEFS = [
     ("NBINS", "1", "Integer", "Number of depth bins spanned"),
     ("MASKFRAC", "1", "Float", "Fraction of spanned bins that are masked"),
     ("IMPRECISE", "0", "Flag", "Breakpoints not base-pair resolved"),
+    ("HOMLEN", "1", "Integer", "Reference micro-homology length at the junction"),
 ]
 
 FORMAT_DEFS = [

@@ -182,7 +182,7 @@ def run_call(
         if scan_results is not None:
             ev = scan_results[name]
             writer.write_pe(name, **ev.pe)
-            writer.write_sr(name, **ev.sr)
+            writer.write_sr(name, **ev.sr, seqs=ev.sr_seq)
 
     # ---- segmentation, junctions, reconciliation, genotyping
     # sequence coverage estimate (for the junction-support Poisson rate)
@@ -212,6 +212,22 @@ def run_call(
         if scan_results is not None and insert.n_pairs:
             ev = scan_results[name]
             junctions = make_junctions(ev.pe, ev.sr, insert, config.breakpoint)
+            if config.breakpoint.hidden_splits and ev.sr_seq:
+                import pysam as _pysam
+
+                from .breakpoints.resolve import merge_junction_sets, recover_junctions
+
+                with _pysam.FastaFile(fasta) as fa:
+                    ref_arr = np.frombuffer(
+                        fa.fetch(name).upper().encode(), dtype=np.uint8
+                    )
+                recovered = recover_junctions(ev.sr, ev.sr_seq, ref_arr, config.breakpoint)
+                junctions = merge_junction_sets(junctions, recovered)
+                logger.info(
+                    "%s %s: %d hidden-split junctions recovered (%d DUP)",
+                    sample, name, len(recovered),
+                    sum(1 for j in recovered if j.svtype == "DUP"),
+                )
 
         contig_calls = reconcile(
             name, segments, junctions, bin_size, ploidy[name], config

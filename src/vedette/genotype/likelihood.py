@@ -127,11 +127,17 @@ class Genotyper:
 
         genotypes = self._genotypes(data.ploidy)
         logp = self._priors(data.ploidy).copy()
+        # sub-bin dilution: a 100 bp event only shifts its 1 kb bin's depth by
+        # ~10%, so the expected ratio must be pulled toward 1 accordingly —
+        # otherwise the depth term vetoes every junction-supported small event
+        span = (b1 - b0) * data.bin_size
+        dilution = min(1.0, call.size / span) if span else 1.0
         for i, (_gt, dosage) in enumerate(genotypes):
             if len(ratio):
-                logp[i] += _ratio_loglik(
-                    ratio, expected_ratio(dosage, call.svtype, data.ploidy), data.sigma0
-                )
+                expected = expected_ratio(dosage, call.svtype, data.ploidy)
+                baseline = data.ploidy / 2.0
+                diluted = baseline + (expected - baseline) * dilution
+                logp[i] += _ratio_loglik(ratio, diluted, data.sigma0)
             rate = (
                 self.config.mismap_rate * data.mean_depth
                 if dosage == 0

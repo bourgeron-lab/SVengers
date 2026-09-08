@@ -50,6 +50,7 @@ class Junction:
     sr_start: int
     sr_end: int
     precise: bool
+    homlen: int = -1   # reference micro-homology at the junction (-1 = not measured)
 
     @property
     def sr(self) -> int:

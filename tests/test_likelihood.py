@@ -85,6 +85,16 @@ def test_baf_contradiction_lowers_het_del():
     )
 
 
+def test_small_dup_below_bin_size_genotyped_from_junction():
+    """A 100 bp DUP in 1 kb bins barely moves the depth; SR evidence must win."""
+    rng = np.random.default_rng(6)
+    ratio = rng.normal(1.0, 0.05, 100)  # flat depth (the DUP dilutes to ~5%)
+    call = _call(50_000, 50_100, "DUP", pe=0, sr=8)
+    gtr = Genotyper(GenotypeConfig())
+    gtr.genotype(call, _data(ratio))
+    assert call.gt != (0, 0)
+
+
 def test_haploid_del():
     rng = np.random.default_rng(5)
     ratio = rng.normal(0.5, 0.04, 100)

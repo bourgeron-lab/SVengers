@@ -48,6 +48,7 @@ class ContigEvidence:
     depth: np.ndarray                     # float32 read-start counts per bin
     pe: dict[str, np.ndarray] = field(default_factory=dict)
     sr: dict[str, np.ndarray] = field(default_factory=dict)
+    sr_seq: list[bytes] = field(default_factory=list)  # clip sequences, aligned with sr rows
     n_reads: int = 0
 
 
@@ -123,6 +124,7 @@ def scan_contig(
     sr_side: list[int] = []
     sr_mapq: list[int] = []
     sr_cliplen: list[int] = []
+    sr_seq: list[bytes] = []
 
     n_reads = 0
     with pysam.AlignmentFile(cram, "r", reference_filename=fasta) as af:
@@ -154,6 +156,8 @@ def scan_contig(
                             sr_side.append(SR_LEFT_CLIP)
                             sr_mapq.append(mapq)
                             sr_cliplen.append(min(len0, 65535))
+                            seq = rec.query_sequence
+                            sr_seq.append(seq[:len0].encode() if seq else b"")
                     opn, lenn = cigar[-1]
                     if opn == 4 and lenn >= min_clip:  # trailing soft clip
                         qlen = rec.query_length
@@ -165,6 +169,8 @@ def scan_contig(
                             sr_side.append(SR_RIGHT_CLIP)
                             sr_mapq.append(mapq)
                             sr_cliplen.append(min(lenn, 65535))
+                            seq = rec.query_sequence
+                            sr_seq.append(seq[qlen - lenn :].encode() if seq else b"")
 
             # ---- discordant pairs (record once, from the leftmost read)
             if is_supp or not (flag & _PAIRED) or flag & _MATE_UNMAPPED:
@@ -216,6 +222,7 @@ def scan_contig(
             "mapq": np.asarray(sr_mapq, np.uint8),
             "cliplen": np.asarray(sr_cliplen, np.uint16),
         },
+        sr_seq=sr_seq,
         n_reads=n_reads,
     )
 

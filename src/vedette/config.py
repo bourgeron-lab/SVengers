@@ -52,6 +52,13 @@ class BreakpointConfig:
     max_junction_size: int = 20_000_000   # ignore candidate junctions larger than this
     min_size: int = 50               # minimum SV size reported
     junction_only_max_size: int = 10_000  # junction without depth support kept below this size
+    # hidden-split-read recovery (clip realignment)
+    hidden_splits: bool = True
+    resolve_window: int = 2_000      # realignment window around each clip pileup (bp)
+    resolve_min_clip: int = 20       # clips shorter than this are unmappable
+    resolve_min_identity: float = 0.85
+    resolve_max_clips: int = 3       # longest clips realigned per pileup
+    resolve_min_support: int = 2     # concordant realigned clips to call a junction
 
 
 @dataclass(frozen=True)

@@ -90,6 +90,8 @@ def reconcile(
             call.sr_support = junc.sr
             call.precise = junc.precise
             call.source = SOURCE_BOTH
+            if junc.homlen >= 0:
+                call.info_extra["HOMLEN"] = junc.homlen
             # junction-confirmed calls are exempt from depth-only caveats
             call.filters = [
                 f for f in call.filters if f not in ("LowPosterior", "NoEvidence")
@@ -112,6 +114,8 @@ def reconcile(
             sr_support=junc.sr,
             precise=junc.precise,
         )
+        if junc.homlen >= 0:
+            call.info_extra["HOMLEN"] = junc.homlen
         if junc.size < config.breakpoint.min_size:
             call.filters.append("MinSize")
         calls.append(call)
