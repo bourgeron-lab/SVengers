@@ -10,6 +10,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -132,8 +133,8 @@ def build_tracks(
             gc, nfrac = _seq_tracks(seq, bin_size)
             arrays[f"gc/{contig.name}"] = gc
             arrays[f"nfrac/{contig.name}"] = nfrac
-    tmp = out.with_suffix(".npz.tmp.npz")
-    np.savez_compressed(tmp, **arrays)
+    tmp = out.with_suffix(f".tmp{os.getpid()}.npz")  # unique per process: concurrent
+    np.savez_compressed(tmp, **arrays)               # builders race safely via rename
     tmp.rename(out)
     logger.info("Cached reference tracks: %s", out)
     return out
