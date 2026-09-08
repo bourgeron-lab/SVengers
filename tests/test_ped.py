@@ -1,0 +1,54 @@
+import pytest
+
+from vedette.ped import parse_ped
+
+HEADERLESS = """\
+FAM1\tCHILD1\tDAD1\tMOM1\t1\t2
+FAM1\tDAD1\t0\tMOM0\t1\t1
+FAM1\tMOM1\t0\t0\t2\t1
+"""
+
+HEADERED = """\
+FID\tsample_id\tFatherBarcode\tMotherBarcode\tSex\tPheno_ASD_curated
+220151\tB00ID5W\tC0005J0\tC0005IO\t2\t1
+220151\tC0005IO\t0\t0\t2\t-9
+220151\tC0005J0\t0\t0\t1\t-9
+"""
+
+
+def _write(tmp_path, content, name="ped.tsv"):
+    p = tmp_path / name
+    p.write_text(content)
+    return p
+
+
+def test_headerless(tmp_path):
+    ped = parse_ped(_write(tmp_path, HEADERLESS))
+    assert len(ped.individuals) == 3
+    assert ped.individuals["CHILD1"].father_id == "DAD1"
+    assert ped.individuals["CHILD1"].sex == 1
+    # MOM0 referenced but absent -> DAD1 is still a founder
+    founders = {i.sample_id for i in ped.founders()}
+    assert founders == {"DAD1", "MOM1"}
+    trios = ped.trios()
+    assert len(trios) == 1
+    assert trios[0][0].sample_id == "CHILD1"
+
+
+def test_headered(tmp_path):
+    ped = parse_ped(_write(tmp_path, HEADERED))
+    assert len(ped.individuals) == 3
+    assert len(ped.trios()) == 1
+    assert ped.sex_of("B00ID5W") == 2
+    assert ped.individuals["C0005IO"].phenotype == "-9"
+
+
+def test_duplicate_id(tmp_path):
+    content = HEADERLESS + "FAM1\tCHILD1\t0\t0\t1\t1\n"
+    with pytest.raises(ValueError, match="duplicate"):
+        parse_ped(_write(tmp_path, content))
+
+
+def test_too_few_columns(tmp_path):
+    with pytest.raises(ValueError, match="6"):
+        parse_ped(_write(tmp_path, "A\tB\tC\n"))

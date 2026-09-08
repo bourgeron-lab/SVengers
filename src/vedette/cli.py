@@ -188,21 +188,98 @@ def filter(
 
 
 @app.command()
-def merge() -> None:
+def merge(
+    vcfs: list[Path] = typer.Argument(..., help="Filtered single-sample VCFs (or one @filelist)"),
+    out: Path = typer.Option(..., help="Output sites-only VCF (.vcf.gz)"),
+    fasta: Path = typer.Option(..., help="Reference FASTA (for the contig header)"),
+    min_gq: int = typer.Option(0, help="Minimum GQ for a call to nominate a site"),
+    include_filtered: bool = typer.Option(
+        False, help="Also cluster non-PASS calls (default: PASS/LowPosterior only)"
+    ),
+) -> None:
     """Cross-sample clustering of filtered calls into cohort sites."""
-    _not_yet("merge")
+    from .cohort.merge import run_merge
+    from .reference import read_fai
+
+    paths: list[Path] = []
+    for v in vcfs:
+        if str(v).startswith("@"):
+            paths.extend(Path(p) for p in Path(str(v)[1:]).read_text().split())
+        else:
+            paths.append(v)
+    n = run_merge(
+        paths, read_fai(fasta), out, min_gq=min_gq, pass_only=not include_filtered
+    )
+    typer.echo(f"{len(paths)} VCFs -> {n} sites -> {out}")
 
 
 @app.command()
-def genotype() -> None:
-    """Force-genotype cohort sites in every sample from evidence stores."""
-    _not_yet("genotype")
+def genotype(
+    sites: Path = typer.Argument(..., help="Sites VCF from `vedette merge`"),
+    store: Path = typer.Option(..., help="This sample's evidence store (.zarr)"),
+    out: Path = typer.Option(..., help="Output per-sample genotype table (TSV)"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="TOML configuration"),
+) -> None:
+    """Force-genotype cohort sites in ONE sample from its evidence store (no CRAM)."""
+    from .cohort.genotyper import run_genotype
+
+    n = run_genotype(sites, store, out, load_config(config_file))
+    typer.echo(f"{n} site genotypes -> {out}")
 
 
 @app.command("cohort-filter")
-def cohort_filter() -> None:
-    """Cohort-level AF/HWE/artifact/batch annotation."""
-    _not_yet("cohort-filter")
+def cohort_filter(
+    sites: Path = typer.Argument(..., help="Sites VCF from `vedette merge`"),
+    genotypes: list[Path] = typer.Option(
+        ..., "--genotypes", help="Per-sample genotype TSVs (repeatable, or one @filelist)"
+    ),
+    out: Path = typer.Option(..., help="Output multi-sample cohort VCF (.vcf.gz)"),
+    pedigree: Optional[Path] = typer.Option(
+        None, help="Pedigree TSV (founder-based HWE)"
+    ),
+    artifact_af: float = typer.Option(0.02, help="AF above which HWE failures are flagged"),
+) -> None:
+    """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics."""
+    from .cohort.metrics import run_cohort_filter
+    from .ped import parse_ped
+
+    paths: list[Path] = []
+    for g in genotypes:
+        if str(g).startswith("@"):
+            paths.extend(Path(p) for p in Path(str(g)[1:]).read_text().split())
+        else:
+            paths.append(g)
+    counts = run_cohort_filter(
+        sites, paths, out,
+        pedigree=parse_ped(pedigree) if pedigree else None,
+        artifact_af=artifact_af,
+    )
+    typer.echo(
+        f"{counts['sites']} sites, {counts['artifact']} CohortArtifact -> {out}"
+    )
+
+
+@app.command("ped-annotate")
+def ped_annotate(
+    cohort_vcf: Path = typer.Argument(..., help="Multi-sample cohort VCF"),
+    pedigree: Path = typer.Option(..., help="Pedigree TSV"),
+    out_report: Path = typer.Option(..., help="Per-trio-site report TSV"),
+    out_summary: Optional[Path] = typer.Option(None, help="Per-trio summary TSV"),
+) -> None:
+    """Mendelian consistency, inheritance and de novo annotation on a cohort VCF."""
+    from .cohort.mendel import run_ped_annotate
+    from .ped import parse_ped
+
+    stats = run_ped_annotate(
+        cohort_vcf, parse_ped(pedigree), out_report, out_summary
+    )
+    for st in stats:
+        tr = f"{st.transmission_rate:.3f}" if st.n_transmit_opportunity else "NA"
+        typer.echo(
+            f"{st.family_id}/{st.child}: {st.n_genotyped} genotyped, "
+            f"{st.n_child_carrier} carrier, {st.n_denovo} de novo, "
+            f"MVR {st.violation_rate:.3f}, transmission {tr}"
+        )
 
 
 @app.command()

@@ -178,6 +178,14 @@ class EvidenceStore:
             int(np.searchsorted(pos, end, side="right")),
         )
 
+    def has_junction_evidence(self, contig: str) -> bool:
+        """True if this store recorded PE/SR arrays for the contig (CRAM scan ran)."""
+        try:
+            self.root[contig]["pe"]
+            return True
+        except KeyError:
+            return False
+
     def baf(self, contig: str, start: int, end: int) -> dict[str, np.ndarray]:
         g = self.root[contig]
         try:
