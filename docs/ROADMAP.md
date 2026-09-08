@@ -6,7 +6,25 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
-### 1. Entraînement du filtre ML (le différenciateur publication)
+### 1. Entraînement du filtre ML — v1 FAIT (2026-09-09)
+Modèles `models/v1` entraînés sur HG002 40x NovaSeq PCR-free aligné façon GHFC,
+vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
+- DEL : PR-AUC(OOF) 0,952. Éval génome vs vérité à SQ≥7 : **précision 99,1 %
+  (FDR 0,9 %, cible gnomAD 2,8 % battue ×3), recall 25,9 % global** ; par taille :
+  300 pb-1 kb 53 %/99,6 %, 1-10 kb 66 %/99,2 %, 10-100 kb 48 %/100 %.
+  Faiblesses : 50-300 pb (13,7 %) et segdup (6,2 % recall à 98,3 % précision).
+  Recall brut candidats (pré-filtre) : 40,8 % ≈ Manta.
+- DUP : PR-AUC(OOF) 0,643, SQ≥7 → FDR 7,8 % ≈ cible 7,3 %. Vs vérité INS :
+  précision 97,2 %, recall 1,4 % (la vérité INS contient surtout des insertions
+  non-DUP — l'éval DUP propre exige d'isoler le sous-ensemble tandem-dup de la
+  vérité, cf. backlog bench).
+- Backlog v1.1 : (a) recall petites DEL 50-300 pb (jonctions SR-only élaguées
+  trop fort, matching truvari des DEL en représentation séquence) ; (b) FP DUP
+  en amont (nomination everted plus stricte, deux côtés requis) ; (c) HG003/4
+  semi-supervisé ; (d) isoler les tandem-dups de la vérité pour l'éval DUP ;
+  (e) rerun avec PoN fondateurs génome entier.
+
+### 1bis. Détail du plan d'entraînement initial (référence)
 - Télécharger (proxy configuré) dans `resources/giab/` :
   - CRAM HG002/HG003/HG004 ~35x GRCh38 (GIAB FTP, PCR-free ILMN)
   - Vérité HG002-Q100 v1.1 (`.../T2T-Q100_SVs_v1.1/GRCh38/`) + CMRG v1.00 SV
