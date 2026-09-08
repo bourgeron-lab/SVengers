@@ -1,9 +1,13 @@
 """Single-sample calling pipeline: evidence -> evidence store + VCF.
 
-v0 implements the *fast path*: depth from a precomputed dense bedgraph and BAF
-from a per-site VAF bedgraph (or SNV VCF), CN-HMM segmentation, depth-only
-calls. The self-contained CRAM scan (PE/SR + 100 bp depth) plugs into the same
-flow via extract.scan and upgrades calls with junction evidence.
+Two depth sources share one flow:
+- fast path: precomputed dense depth bedgraph (e.g. 1 kb) + per-site VAF track;
+- self-contained path: single-pass CRAM scan (100 bp read-start counts).
+
+PE/SR junction evidence always comes from the CRAM scan when a CRAM is given;
+without one (fast path only) calling is depth+BAF-only. Candidates are the
+reconciliation of CN-HMM segments and PE/SR junctions, genotyped by the
+unified RD+PE/SR+BAF likelihood.
 """
 
 from __future__ import annotations
@@ -13,10 +17,13 @@ from pathlib import Path
 
 import numpy as np
 
+from .breakpoints.cluster import make_junctions
 from .config import Config
 from .extract import baf as baf_mod
 from .extract import depth as depth_mod
-from .extract.store import EvidenceStoreWriter
+from .extract.store import EvidenceStoreWriter, InsertModel
+from .genotype.likelihood import ContigData, Genotyper
+from .merge_candidates import reconcile
 from .reference import (
     Contig,
     GenomeBins,
@@ -28,7 +35,7 @@ from .reference import (
     reference_id,
 )
 from .segment import hmm
-from .variants import SOURCE_DEPTH, CNVCall
+from .variants import CNVCall
 from .vcfout import write_vcf
 
 logger = logging.getLogger(__name__)
@@ -70,56 +77,6 @@ def estimate_sex_ploidy(
     return ploidy
 
 
-def segments_to_calls(
-    contig: str,
-    segments: list[hmm.Segment],
-    bin_size: int,
-    ploidy: int,
-    config: Config,
-) -> list[CNVCall]:
-    calls = []
-    for seg in segments:
-        if seg.cn == ploidy:
-            continue
-        svtype = "DEL" if seg.cn < ploidy else "DUP"
-        call = CNVCall(
-            contig=contig,
-            start=seg.start_bin * bin_size,
-            end=seg.end_bin * bin_size,
-            svtype=svtype,
-            source=SOURCE_DEPTH,
-            cn=seg.cn,
-            cn_posterior=seg.posterior,
-            mean_ratio=seg.mean_ratio,
-            n_bins=seg.n_bins,
-            masked_frac=seg.masked_frac,
-            cipos=(-bin_size, bin_size),
-            ciend=(-bin_size, bin_size),
-            precise=False,
-        )
-        # provisional depth-only genotype (refined by genotype.likelihood once
-        # junction/BAF likelihoods are wired in)
-        if ploidy == 2:
-            if seg.cn == 1 or seg.cn == 3:
-                call.gt = (0, 1)
-            elif seg.cn == 0 or seg.cn >= 4:
-                call.gt = (1, 1)
-        else:  # haploid contig
-            call.gt = (1, 1)
-        call.gq = int(min(99, -10 * np.log10(max(1 - seg.posterior, 1e-10))))
-
-        if seg.n_bins < config.segment.min_bins:
-            call.filters.append("NoEvidence")
-        if seg.masked_frac > config.segment.max_masked_frac:
-            call.filters.append("MaxN")
-        if seg.posterior < config.segment.min_cn_posterior:
-            call.filters.append("LowPosterior")
-        if call.size < config.breakpoint.min_size:
-            call.filters.append("MinSize")
-        calls.append(call)
-    return calls
-
-
 def run_call(
     sample: str,
     out_dir: str | Path,
@@ -130,6 +87,7 @@ def run_call(
     vaf_bedgraph: str | None = None,
     snv_vcf: str | None = None,
     only_contigs: list[str] | None = None,
+    threads: int = 8,
     command: str = "",
 ) -> tuple[Path, Path]:
     """Run single-sample calling; returns (vcf_path, store_path)."""
@@ -138,6 +96,8 @@ def run_call(
     fasta = config.reference.fasta
     if not fasta:
         raise ValueError("reference.fasta is not configured")
+    if not depth_bedgraph and not cram:
+        raise ValueError("Provide a CRAM (self-contained) and/or a depth bedgraph (fast path)")
 
     all_contigs = read_fai(fasta)
     by_name = {c.name: c for c in all_contigs}
@@ -148,14 +108,18 @@ def run_call(
     if not call_names:
         raise ValueError("No callable contigs selected")
 
-    if depth_bedgraph:
-        bin_size = config.extract.fast_bin_size
-    else:
-        raise NotImplementedError(
-            "Self-contained CRAM depth extraction lands with extract.scan; "
-            "provide --depth-bedgraph for now"
+    # ---- CRAM scan (PE/SR evidence, and depth on the self-contained path)
+    insert = InsertModel(mu=0.0, sigma=0.0, n_pairs=0)
+    scan_results = None
+    if cram:
+        from .extract.scan import scan_cram
+
+        insert, scan_results = scan_cram(
+            cram, fasta, {n: by_name[n].length for n in call_names},
+            config.extract, threads=threads,
         )
 
+    bin_size = config.extract.fast_bin_size if depth_bedgraph else config.extract.bin_size
     bins = GenomeBins([by_name[n] for n in call_names], bin_size)
     tracks = ReferenceTracks(
         build_tracks(fasta, [by_name[n] for n in call_names], bin_size, resources_dir)
@@ -166,19 +130,19 @@ def run_call(
     raw, mask = {}, {}
     for name in call_names:
         n_bins = bins.n_bins[name]
-        raw[name] = depth_mod.read_depth_bedgraph(depth_bedgraph, name, n_bins, bin_size)
-        mask[name] = build_bin_mask(
-            n_bins, bin_size, name, tracks.nfrac(name), exclude
-        )
+        if depth_bedgraph:
+            raw[name] = depth_mod.read_depth_bedgraph(depth_bedgraph, name, n_bins, bin_size)
+        else:
+            raw[name] = scan_results[name].depth
+        mask[name] = build_bin_mask(n_bins, bin_size, name, tracks.nfrac(name), exclude)
+
     autosomes = [n for n in call_names if by_name[n].kind == "autosome"]
     if not autosomes:  # single-contig smoke runs on chrX etc.
         autosomes = call_names
     gc_model = depth_mod.fit_gc_model(
         raw, {n: tracks.gc(n) for n in call_names}, mask, autosomes
     )
-    corr = {
-        n: depth_mod.correct_depth(raw[n], tracks.gc(n), gc_model) for n in call_names
-    }
+    corr = {n: depth_mod.correct_depth(raw[n], tracks.gc(n), gc_model) for n in call_names}
     stats = depth_mod.sample_depth_stats(corr, mask, autosomes)
     mean_depth = stats["mean_depth"]
     if mean_depth <= 0:
@@ -206,16 +170,29 @@ def run_call(
         depth_mad=stats["depth_mad"],
         ploidy={k: int(v) for k, v in ploidy.items()},
         depth_source="bedgraph" if depth_bedgraph else "cram",
-        insert_mu=0.0,
-        insert_sigma=0.0,
+        insert_mu=insert.mu,
+        insert_sigma=insert.sigma,
+        insert_n_pairs=insert.n_pairs,
     )
     for name in call_names:
         writer.write_depth(name, raw[name], corr[name], mask[name])
         pos, vaf, dp = baf[name]
         if len(pos):
             writer.write_baf(name, pos, vaf, dp)
+        if scan_results is not None:
+            ev = scan_results[name]
+            writer.write_pe(name, **ev.pe)
+            writer.write_sr(name, **ev.sr)
 
-    # ---- segmentation and calls
+    # ---- segmentation, junctions, reconciliation, genotyping
+    # sequence coverage estimate (for the junction-support Poisson rate)
+    if depth_bedgraph:
+        coverage = mean_depth  # bedgraph values are per-base coverage
+    else:
+        # read-start counts per bin -> coverage = counts * readlen / bin_size
+        coverage = mean_depth * (insert.read_length or 150.0) / bin_size
+    writer.set_meta(coverage=coverage)
+    genotyper = Genotyper(config.genotype, config.segment.max_cn)
     calls: list[CNVCall] = []
     for name in call_names:
         if ploidy[name] == 0:
@@ -227,25 +204,32 @@ def run_call(
                 pos, vaf, bins.n_bins[name], bin_size, config.segment.max_cn
             )
         segments, _path = hmm.segment_contig(
-            ratio[name],
-            mask[name],
-            ploidy[name],
-            config.segment.max_cn,
-            config.segment.transition,
-            baf_emit=baf_emit,
-            baf_weight=config.segment.baf_weight,
+            ratio[name], mask[name], ploidy[name],
+            config.segment.max_cn, config.segment.transition,
+            baf_emit=baf_emit, baf_weight=config.segment.baf_weight,
         )
-        contig_calls = segments_to_calls(name, segments, bin_size, ploidy[name], config)
-        # annotate BAF summary per call
+        junctions = []
+        if scan_results is not None and insert.n_pairs:
+            ev = scan_results[name]
+            junctions = make_junctions(ev.pe, ev.sr, insert, config.breakpoint)
+
+        contig_calls = reconcile(
+            name, segments, junctions, bin_size, ploidy[name], config
+        )
+        data = ContigData(
+            ratio=ratio[name], mask=mask[name],
+            baf_pos=pos, baf_vaf=vaf,
+            bin_size=bin_size, ploidy=ploidy[name],
+            mean_depth=coverage,
+            sigma0=hmm.fit_sigma0(ratio[name], mask[name]),
+        )
         for call in contig_calls:
-            if len(pos):
-                sel = (pos >= call.start) & (pos < call.end)
-                het = (vaf[sel] > 0.15) & (vaf[sel] < 0.85)
-                call.baf_n = int(het.sum())
-                if call.baf_n:
-                    call.baf_dev = float(np.mean(np.abs(vaf[sel][het] - 0.5)))
+            genotyper.genotype(call, data)
         calls.extend(contig_calls)
-        logger.info("%s %s: %d candidate calls", sample, name, len(contig_calls))
+        logger.info(
+            "%s %s: %d segments, %d junctions -> %d candidates",
+            sample, name, len(segments), len(junctions), len(contig_calls),
+        )
 
     vcf_path = out_dir / f"{sample}.vedette.vcf.gz"
     write_vcf(calls, [by_name[n] for n in call_names], sample, vcf_path, command)

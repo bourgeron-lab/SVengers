@@ -54,6 +54,7 @@ class InsertModel:
     mu: float
     sigma: float
     n_pairs: int
+    read_length: float = 150.0
 
     def discordant_threshold(self, z: float) -> float:
         return self.mu + z * self.sigma

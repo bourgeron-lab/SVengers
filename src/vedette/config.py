@@ -51,6 +51,7 @@ class BreakpointConfig:
     sr_pos_tolerance: int = 5        # bp tolerance when piling up clip positions
     max_junction_size: int = 20_000_000   # ignore candidate junctions larger than this
     min_size: int = 50               # minimum SV size reported
+    junction_only_max_size: int = 10_000  # junction without depth support kept below this size
 
 
 @dataclass(frozen=True)

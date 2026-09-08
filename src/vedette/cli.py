@@ -148,9 +148,43 @@ def _not_yet(name: str) -> None:
 
 
 @app.command()
-def filter() -> None:
+def filter(
+    vcf: Path = typer.Argument(..., help="Single-sample Vedette VCF"),
+    store: Path = typer.Option(..., help="Matching evidence store (.zarr)"),
+    out: Path = typer.Option(..., help="Output filtered VCF (.vcf.gz)"),
+    segdup_bed: Optional[Path] = typer.Option(None, help="Segmental duplications BED"),
+    lcr_bed: Optional[Path] = typer.Option(None, help="LCR/self-chain BED"),
+    exclude_bed: Optional[Path] = typer.Option(None, help="Exclusion regions BED"),
+    popcov_bw: Optional[Path] = typer.Option(None, help="Population coverage stdev bigWig"),
+    model_dir: Optional[Path] = typer.Option(
+        None, help="Trained filter model directory (enables SQ scoring)"
+    ),
+    features_out: Optional[Path] = typer.Option(
+        None, help="Also export the per-call feature matrix (TSV)"
+    ),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="TOML configuration"),
+) -> None:
     """Tiered false-positive filtering (hard filters + calibrated SQ score)."""
-    _not_yet("filter")
+    from .filter.pipeline import run_filter
+
+    overrides: dict = {"reference": {}}
+    if segdup_bed:
+        overrides["reference"]["segdup_bed"] = str(segdup_bed)
+    if lcr_bed:
+        overrides["reference"]["lcr_bed"] = str(lcr_bed)
+    if exclude_bed:
+        overrides["reference"]["exclude_bed"] = str(exclude_bed)
+    if popcov_bw:
+        overrides["reference"]["pop_cov_stdev_bw"] = str(popcov_bw)
+    config = load_config(config_file, **overrides)
+    counts = run_filter(
+        vcf, store, out, config,
+        model_dir=model_dir, features_out=features_out,
+    )
+    typer.echo(
+        f"{counts['total']} calls: {counts['pass']} PASS, "
+        f"{counts['hard_filtered']} hard-filtered, {counts['low_sq']} LowSQ -> {out}"
+    )
 
 
 @app.command()
