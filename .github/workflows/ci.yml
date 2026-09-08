@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          src: "src tests"
+
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: containers/environment.yml
+          create-args: python=${{ matrix.python-version }}
+          cache-environment: true
+      - name: Install vedette
+        shell: micromamba-shell {0}
+        run: pip install -e .[dev]
+      - name: Run tests
+        shell: micromamba-shell {0}
+        run: pytest tests/ -q
+
+  container:
+    runs-on: ubuntu-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -f containers/Dockerfile -t vedette:ci .
+      - name: Smoke test
+        run: docker run --rm vedette:ci --version

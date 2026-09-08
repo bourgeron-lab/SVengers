@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import csv
 import logging
-import math
 from pathlib import Path
 
 import pysam
 
-from ..ped import Pedigree
 from .. import __version__
+from ..ped import Pedigree
 
 logger = logging.getLogger(__name__)
 

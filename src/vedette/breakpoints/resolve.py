@@ -30,8 +30,8 @@ from collections import defaultdict
 import numpy as np
 
 from ..config import BreakpointConfig
-from ..extract.store import SR_LEFT_CLIP, SR_RIGHT_CLIP
-from .cluster import Junction, SRBreakpoint, cluster_sr
+from ..extract.store import SR_RIGHT_CLIP
+from .cluster import Junction, cluster_sr
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,6 @@ def recover_junctions(
     side_all = sr["side"]
     clip_all = sr["cliplen"].astype(np.int64)
     window = config.resolve_window
-    min_ident_score = None  # computed per clip
 
     # candidate adjacencies: (svtype, start, end) -> [homlen-capable evidence count]
     votes: dict[tuple[str, int, int], int] = defaultdict(int)
@@ -183,7 +182,7 @@ def recover_junctions(
     for svtype, cands in by_type.items():
         cands.sort()
         used = [False] * len(cands)
-        for i, (s, e, n) in enumerate(cands):
+        for i, (s, e, _n) in enumerate(cands):
             if used[i]:
                 continue
             support, s_list, e_list = 0, [], []

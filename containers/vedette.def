@@ -1,0 +1,37 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.10
+
+# Apptainer definition for Vedette.
+# Build FROM THE REPOSITORY ROOT:
+#   apptainer build --fakeroot containers/vedette.sif containers/vedette.def
+
+%files
+    pyproject.toml /opt/vedette/pyproject.toml
+    README.md /opt/vedette/README.md
+    LICENSE /opt/vedette/LICENSE
+    src /opt/vedette/src
+    containers/environment.yml /opt/environment.yml
+
+%post
+    micromamba install -y -n base -f /opt/environment.yml
+    micromamba clean -a -y
+    micromamba run -n base pip install --no-cache-dir /opt/vedette
+
+%environment
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH=/opt/conda/bin:$PATH
+
+%runscript
+    exec micromamba run -n base vedette "$@"
+
+%test
+    micromamba run -n base vedette --version
+
+%labels
+    Author Alexandre Mathieu (Institut Pasteur, GHFC)
+    Software Vedette
+    License MIT
+
+%help
+    Vedette: multi-evidence germline CNV caller (DEL/DUP) for short-read WGS.
+    Usage: apptainer run vedette.sif call --help

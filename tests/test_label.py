@@ -5,7 +5,6 @@ Exercises the riskiest interface: Truvari accepting Vedette's symbolic
 """
 
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 

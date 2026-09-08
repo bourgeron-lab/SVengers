@@ -19,8 +19,8 @@ from pathlib import Path
 import numpy as np
 import pysam
 
-from ..reference import Contig
 from .. import __version__
+from ..reference import Contig
 
 logger = logging.getLogger(__name__)
 

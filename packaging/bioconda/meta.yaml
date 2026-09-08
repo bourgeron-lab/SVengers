@@ -1,0 +1,55 @@
+# Bioconda recipe skeleton for Vedette.
+# Submission checklist (after the first PyPI release):
+#   1. update version + sha256 (from the PyPI sdist)
+#   2. fork bioconda/bioconda-recipes, add as recipes/vedette/meta.yaml
+#   3. Biocontainers then auto-builds Docker + Apptainer images
+{% set name = "vedette" %}
+{% set version = "0.1.0" %}
+
+package:
+  name: "{{ name }}"
+  version: "{{ version }}"
+
+source:
+  url: "https://pypi.org/packages/source/v/vedette/vedette-{{ version }}.tar.gz"
+  sha256: "TODO_FILL_FROM_PYPI_SDIST"
+
+build:
+  number: 0
+  noarch: python
+  script: "{{ PYTHON }} -m pip install . --no-deps -vv"
+  entry_points:
+    - vedette = vedette.cli:app
+
+requirements:
+  host:
+    - python >=3.11
+    - pip
+    - hatchling
+  run:
+    - python >=3.11
+    - pysam >=0.22
+    - numpy >=1.26
+    - scipy >=1.11
+    - numba >=0.59
+    - zarr >=2.17
+    - scikit-learn >=1.4
+    - typer >=0.12
+    - intervaltree >=3.1
+
+test:
+  commands:
+    - vedette --version
+    - vedette --help
+
+about:
+  home: "https://github.com/darkxander/vedette"
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  summary: "Multi-evidence germline CNV caller (DEL/DUP) for short-read WGS with calibrated post-calling filtering"
+  dev_url: "https://github.com/darkxander/vedette"
+
+extra:
+  recipe-maintainers:
+    - darkxander

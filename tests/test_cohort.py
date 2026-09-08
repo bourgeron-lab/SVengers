@@ -57,7 +57,7 @@ def test_hwe_extremes():
 
 def _hwe_brute_force(het, hom_alt, hom_ref):
     """Exact conditional test by direct enumeration (Wigginton definition)."""
-    from math import lgamma, exp
+    from math import exp, lgamma
 
     n = het + hom_alt + hom_ref
     rare = 2 * min(hom_alt, hom_ref) + het

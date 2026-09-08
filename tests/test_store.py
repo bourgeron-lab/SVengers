@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vedette.extract.store import EvidenceStore, EvidenceStoreWriter, PE_DEL, PE_DUP
+from vedette.extract.store import PE_DEL, PE_DUP, EvidenceStore, EvidenceStoreWriter
 
 
 @pytest.fixture()

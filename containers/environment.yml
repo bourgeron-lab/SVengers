@@ -1,0 +1,22 @@
+# Runtime environment for Vedette (container + CI)
+name: base
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - pysam>=0.22
+  - numpy>=1.26
+  - scipy>=1.11
+  - numba>=0.59
+  - zarr>=2.17
+  - zstandard
+  - scikit-learn>=1.4
+  - typer>=0.12
+  - intervaltree>=3.1
+  - pybigwig>=0.3.22
+  - matplotlib-base
+  - joblib
+  - pip
+  - pip:
+      - truvari>=4.3
