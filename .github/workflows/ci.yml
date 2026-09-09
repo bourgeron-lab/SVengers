@@ -30,7 +30,7 @@ jobs:
           cache-environment: true
       - name: Install vedette
         shell: micromamba-shell {0}
-        run: pip install -e .[dev]
+        run: pip install -e .[dev] "truvari>=4.3"
       - name: Run tests
         shell: micromamba-shell {0}
         run: pytest tests/ -q

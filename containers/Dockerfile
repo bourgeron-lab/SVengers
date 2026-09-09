@@ -1,6 +1,6 @@
 # Docker image for Vedette. Build from the repository root:
 #   docker build -f containers/Dockerfile -t vedette:latest .
-FROM mambaorg/micromamba:1.5.10
+FROM mambaorg/micromamba:1.5.8
 
 COPY --chown=$MAMBA_USER:$MAMBA_USER containers/environment.yml /tmp/environment.yml
 RUN micromamba install -y -n base -f /tmp/environment.yml && \

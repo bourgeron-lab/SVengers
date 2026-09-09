@@ -19,5 +19,6 @@ dependencies:
   - matplotlib-base
   - joblib
   - pip
-  - pip:
-      - truvari>=4.3
+# NOTE: truvari (training/benchmark only, not runtime) is installed by CI and
+# dev setups via pip — keeping this file pip-section-free so `micromamba
+# install -f` can consume it in container builds.
