@@ -113,7 +113,7 @@ def wisecondorx_to_vcf(
 
 
 def run_compare(
-    entries: list[tuple[str, str, str]],   # (name, kind: vcf|wisecondorx, path)
+    entries: list[tuple[str, str, str]],   # (name, kind: vcf|vcf-all|wisecondorx, path)
     truth_vcf: str | Path,
     include_bed: str | Path,
     contigs: list[Contig],
@@ -130,7 +130,10 @@ def run_compare(
         if kind == "wisecondorx":
             n = wisecondorx_to_vcf(path, norm, contigs, caller=name)
         else:
-            n = normalize_sv_vcf(path, norm, contigs, caller=name)
+            # "vcf-all" keeps non-PASS records (pre-thresholded operating points)
+            n = normalize_sv_vcf(
+                path, norm, contigs, caller=name, pass_only=(kind != "vcf-all")
+            )
         if n == 0:
             logger.warning("%s: no calls after normalization, skipping", name)
             continue

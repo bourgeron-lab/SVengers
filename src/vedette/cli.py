@@ -382,7 +382,8 @@ def bench_truth(
 @bench_app.command("compare")
 def bench_compare(
     entry: list[str] = typer.Option(
-        ..., "--entry", help="Caller entry name=kind=path (kind: vcf | wisecondorx), repeatable"
+        ..., "--entry",
+        help="Caller entry name=kind=path (kind: vcf | vcf-all | wisecondorx), repeatable",
     ),
     truth: Path = typer.Option(...),
     bed: Path = typer.Option(...),
@@ -400,8 +401,10 @@ def bench_compare(
     entries = []
     for e in entry:
         parts = e.split("=", 2)
-        if len(parts) != 3 or parts[1] not in ("vcf", "wisecondorx"):
-            raise typer.BadParameter(f"--entry must be name=vcf|wisecondorx=path, got {e!r}")
+        if len(parts) != 3 or parts[1] not in ("vcf", "vcf-all", "wisecondorx"):
+            raise typer.BadParameter(
+                f"--entry must be name=vcf|vcf-all|wisecondorx=path, got {e!r}"
+            )
         entries.append(tuple(parts))
     rows = run_compare(
         entries, truth, bed, read_fai(fasta), out_dir,
