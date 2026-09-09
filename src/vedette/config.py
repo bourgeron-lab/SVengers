@@ -77,6 +77,11 @@ class GenotypeConfig:
     """Unified genotype likelihood."""
 
     mismap_rate: float = 0.005       # P(supporting read | no variant)
+    # junction-read counts are overdispersed (mapping efficiency varies per
+    # locus): negative-binomial variance = mu + alpha*mu^2. Poisson (alpha=0)
+    # over-trusts the count and miscalls het vs hom on small events — the
+    # dominant Mendelian-violation mode measured on the CANDY_ghent cohort.
+    junction_overdispersion: float = 0.75
     baf_overdispersion: float = 50.0  # beta-binomial concentration for BAF terms
     het_prior: float = 1e-4          # prior P(0/1) at a random locus
     hom_prior: float = 1e-6          # prior P(1/1)

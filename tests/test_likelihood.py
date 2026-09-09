@@ -95,6 +95,21 @@ def test_small_dup_below_bin_size_genotyped_from_junction():
     assert call.gt != (0, 0)
 
 
+def test_overdispersion_flattens_het_hom_from_counts_alone():
+    """When zygosity rests on the junction count ALONE (depth fully masked),
+    the NB term must keep the winner but with humble confidence vs Poisson."""
+    results = {}
+    for alpha in (0.0, 0.75):
+        call = _call(50_000, 50_150, "DEL", pe=2, sr=6)
+        data = _data(np.ones(100))
+        data.mask[:] = True  # no usable depth: count-only zygosity
+        gtr = Genotyper(GenotypeConfig(junction_overdispersion=alpha))
+        gtr.genotype(call, data)
+        results[alpha] = call
+    assert results[0.75].gt != (0, 0)          # still a carrier
+    assert results[0.75].gq < results[0.0].gq  # but less cocksure about zygosity
+
+
 def test_haploid_del():
     rng = np.random.default_rng(5)
     ratio = rng.normal(0.5, 0.04, 100)

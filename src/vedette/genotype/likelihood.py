@@ -54,6 +54,23 @@ def _poisson_loglik(count: int, rate: float) -> float:
     return float(count * np.log(rate) - rate - gammaln(count + 1))
 
 
+def _nb_loglik(count: int, mean: float, alpha: float) -> float:
+    """Negative-binomial log-likelihood, variance = mean + alpha*mean^2.
+
+    alpha -> 0 recovers Poisson; alpha > 0 flattens the het-vs-hom contrast a
+    raw read count can support, which is what junction-read counts warrant.
+    """
+    if alpha <= 0:
+        return _poisson_loglik(count, mean)
+    mean = max(mean, 1e-6)
+    r = 1.0 / alpha
+    p = r / (r + mean)
+    return float(
+        gammaln(count + r) - gammaln(r) - gammaln(count + 1)
+        + r * np.log(p) + count * np.log1p(-p)
+    )
+
+
 def _baf_loglik(
     vaf: np.ndarray, alt_dosage: int, svtype: str, ploidy: int, mismap: float = 0.01,
     concentration: float = 30.0,
@@ -145,7 +162,9 @@ class Genotyper:
             )
             # junction term only informs when junction evidence was collected
             if call.source != "DEPTH" or support > 0:
-                logp[i] += _poisson_loglik(support, rate)
+                logp[i] += _nb_loglik(
+                    support, rate, self.config.junction_overdispersion
+                )
             logp[i] += self._baf_loglik_safe(hets, dosage, call.svtype, data.ploidy)
 
         logp -= logp.max()
