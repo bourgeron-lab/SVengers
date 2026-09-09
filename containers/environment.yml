@@ -1,5 +1,6 @@
 # Runtime environment for Vedette (container + CI)
-name: base
+# (the container installs it into -n base explicitly; CI overrides the name too)
+name: vedette
 channels:
   - conda-forge
   - bioconda
