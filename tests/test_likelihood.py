@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from vedette.config import GenotypeConfig
 from vedette.genotype.likelihood import ContigData, Genotyper, expected_ratio
@@ -95,19 +96,24 @@ def test_small_dup_below_bin_size_genotyped_from_junction():
     assert call.gt != (0, 0)
 
 
-def test_overdispersion_flattens_het_hom_from_counts_alone():
-    """When zygosity rests on the junction count ALONE (depth fully masked),
-    the NB term must keep the winner but with humble confidence vs Poisson."""
-    results = {}
-    for alpha in (0.0, 0.75):
-        call = _call(50_000, 50_150, "DEL", pe=2, sr=6)
-        data = _data(np.ones(100))
-        data.mask[:] = True  # no usable depth: count-only zygosity
-        gtr = Genotyper(GenotypeConfig(junction_overdispersion=alpha))
-        gtr.genotype(call, data)
-        results[alpha] = call
-    assert results[0.75].gt != (0, 0)          # still a carrier
-    assert results[0.75].gq < results[0.0].gq  # but less cocksure about zygosity
+def test_overdispersion_flattens_het_hom_likelihood_gap():
+    """The NB junction term must shrink the het-vs-hom log-likelihood gap a
+    raw read count can produce (the measured Mendelian-violation mechanism),
+    while barely touching the carrier-vs-noncarrier contrast."""
+    from vedette.genotype.likelihood import _nb_loglik, _poisson_loglik
+
+    lam_het, lam_hom, lam_bg = 2.1, 4.2, 0.175
+    for count in (4, 8, 12):
+        gap_pois = abs(_poisson_loglik(count, lam_hom) - _poisson_loglik(count, lam_het))
+        gap_nb = abs(
+            _nb_loglik(count, lam_hom, 0.75) - _nb_loglik(count, lam_het, 0.75)
+        )
+        assert gap_nb < gap_pois
+        # carrier vs background stays strongly discriminative
+        carrier_gap = _nb_loglik(count, lam_het, 0.75) - _nb_loglik(count, lam_bg, 0.75)
+        assert carrier_gap > 3.0
+    # alpha=0 recovers Poisson exactly
+    assert _nb_loglik(5, 2.0, 0.0) == pytest.approx(_poisson_loglik(5, 2.0))
 
 
 def test_haploid_del():
