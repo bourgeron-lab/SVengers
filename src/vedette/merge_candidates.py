@@ -103,6 +103,13 @@ def reconcile(
     for j, junc in enumerate(junctions):
         if used_junction[j] or junc.size > max_no_depth:
             continue
+        if (
+            config.breakpoint.dup_junction_requires_sr
+            and junc.svtype == "DUP"
+            and junc.sr == 0
+            and junc.cig == 0
+        ):
+            continue  # everted pairs alone: overwhelmingly artifactual
         call = CNVCall(
             contig=contig,
             start=junc.start,

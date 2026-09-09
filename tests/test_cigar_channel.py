@@ -40,6 +40,22 @@ def test_small_dels_below_min_size_dropped():
     assert cluster_cigar_dels(cig, BreakpointConfig()) == []
 
 
+def test_dup_junction_only_requires_sr():
+    from vedette.breakpoints.cluster import Junction
+    from vedette.config import Config
+    from vedette.merge_candidates import reconcile
+
+    cfg = Config()
+    pe_only_dup = Junction("DUP", 10_000, 10_500, (0, 0), (0, 0), 6, 0, 0, False)
+    sr_dup = Junction("DUP", 30_000, 30_500, (0, 0), (0, 0), 4, 3, 3, True)
+    pe_only_del = Junction("DEL", 50_000, 50_500, (0, 0), (0, 0), 6, 0, 0, False)
+    calls = reconcile("chr1", [], [pe_only_dup, sr_dup, pe_only_del], 1000, 2, cfg)
+    kinds = {(c.svtype, c.start) for c in calls}
+    assert ("DUP", 30_000) in kinds          # SR-supported DUP kept
+    assert ("DUP", 10_000) not in kinds      # everted-only DUP dropped
+    assert ("DEL", 50_000) in kinds          # DEL rule unchanged
+
+
 def test_cig_junction_merges_into_pe_junction():
     from vedette.breakpoints.cluster import Junction
 

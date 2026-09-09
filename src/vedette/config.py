@@ -52,6 +52,9 @@ class BreakpointConfig:
     min_pe: int = 3                  # discordant pairs to seed a PE cluster
     min_sr: int = 2                  # clipped reads at the same position to seed an SR breakpoint
     min_cigar_support: int = 3       # reads sharing a CIGAR deletion to form a junction
+    # everted-pair clusters with zero split-read/realignment support are ~99.8%
+    # false (HG002: 37689 FP / 74 TP): junction-only DUPs require SR evidence
+    dup_junction_requires_sr: bool = True
     # insert-size-shift detector (SurVIndel2-style) for sub-insert deletions
     insert_shift_z: float = 3.5      # per-bin z-score threshold on the local mean insert
     insert_shift_min_bins: int = 3   # consecutive shifted bins required
