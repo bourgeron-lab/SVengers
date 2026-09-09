@@ -443,6 +443,32 @@ def bench_trios(
 
 
 @app.command()
+def report(
+    run_dir: Path = typer.Argument(..., help="Cohort run directory (Nextflow wrapper layout)"),
+    pedigree: Optional[Path] = typer.Option(None, help="Pedigree TSV (enables family sections)"),
+    out: Optional[Path] = typer.Option(None, help="Output HTML (default: <run_dir>/report.html)"),
+    cohort_name: str = typer.Option("", help="Display name (default: run dir name)"),
+    no_family_workspaces: bool = typer.Option(
+        False, help="Skip writing families/<FID>/ VCF subsets"
+    ),
+    min_denovo_gq: int = typer.Option(20, help="GQ threshold for reported de novo candidates"),
+) -> None:
+    """Self-contained HTML cohort report + per-family workspaces."""
+    from .ped import parse_ped
+    from .report import generate_report
+
+    path = generate_report(
+        run_dir,
+        parse_ped(pedigree) if pedigree else None,
+        out_html=out,
+        cohort_name=cohort_name,
+        make_family_workspaces=not no_family_workspaces,
+        min_denovo_gq=min_denovo_gq,
+    )
+    typer.echo(f"rapport -> {path}")
+
+
+@app.command()
 def label(
     features: Path = typer.Argument(..., help="Feature TSV from `vedette filter --features-out`"),
     calls_vcf: Path = typer.Option(..., help="The (unfiltered) calls VCF the features came from"),

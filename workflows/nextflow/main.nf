@@ -19,9 +19,10 @@ include { VEDETTE_MERGE } from './modules/vedette_merge'
 include { VEDETTE_GENOTYPE } from './modules/vedette_genotype'
 include { VEDETTE_COHORT_FILTER } from './modules/vedette_cohort_filter'
 include { VEDETTE_PED } from './modules/vedette_ped'
+include { VEDETTE_REPORT } from './modules/vedette_report'
 
 def validatedSteps() {
-    def valid_steps = ['call', 'filter', 'merge', 'genotype', 'cohort', 'ped']
+    def valid_steps = ['call', 'filter', 'merge', 'genotype', 'cohort', 'ped', 'report']
     if (!params.manifest) {
         error "ERROR: --manifest parameter is required (vedette manifest discover ...)"
     }
@@ -111,5 +112,15 @@ workflow {
 
     if ('ped' in steps) {
         VEDETTE_PED(VEDETTE_COHORT_FILTER.out.cohort_vcf)
+    }
+
+    if ('report' in steps) {
+        VEDETTE_REPORT(
+            VEDETTE_COHORT_FILTER.out.cohort_vcf,
+            VEDETTE_COHORT_FILTER.out.cohort_index,
+            VEDETTE_PED.out.report,
+            VEDETTE_PED.out.summary,
+            VEDETTE_PED.out.sweep,
+        )
     }
 }
