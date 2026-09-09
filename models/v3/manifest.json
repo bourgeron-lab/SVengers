@@ -1,0 +1,142 @@
+{
+  "model_version": "v3",
+  "vedette_version": "0.1.0.dev0",
+  "schema_hash": "ba0895662be9f484",
+  "features": [
+    "size_log10",
+    "is_dup",
+    "precise",
+    "src_both",
+    "src_junction",
+    "maskfrac",
+    "dhffc",
+    "fc_chrom",
+    "fc_residual",
+    "depth_cv",
+    "frac_consistent",
+    "n_bins_informative",
+    "flank_asym",
+    "pe",
+    "sr",
+    "cig",
+    "ins_z",
+    "ins_pairs",
+    "evidence_ratio",
+    "homlen",
+    "baf_n",
+    "baf_dev",
+    "segdup_ovl",
+    "lcr_ovl",
+    "exclude_ovl",
+    "popcov_stdev",
+    "gq",
+    "cn",
+    "cnq"
+  ],
+  "created": "2026-09-09T12:18:33",
+  "training_data": "HG002 (self-labeled, strict DUP nomination) + HG003/HG004 (transmission semi-supervised), 40x NovaSeq GHFC-style, truth GIAB v5.0q stvar",
+  "metrics": {
+    "DEL": {
+      "n": 25151,
+      "n_tp": 11047,
+      "n_labeled_oof": 25151,
+      "pr_auc_oof": 0.9607,
+      "roc_auc_oof": 0.9699,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 11944,
+          "fdr": 0.1306,
+          "recall": 0.94
+        },
+        {
+          "sq": 7,
+          "kept": 9279,
+          "fdr": 0.0654,
+          "recall": 0.785
+        },
+        {
+          "sq": 10,
+          "kept": 5944,
+          "fdr": 0.0143,
+          "recall": 0.5304
+        },
+        {
+          "sq": 13,
+          "kept": 5362,
+          "fdr": 0.0097,
+          "recall": 0.4807
+        },
+        {
+          "sq": 17,
+          "kept": 4475,
+          "fdr": 0.0054,
+          "recall": 0.4029
+        },
+        {
+          "sq": 20,
+          "kept": 2977,
+          "fdr": 0.0027,
+          "recall": 0.2688
+        },
+        {
+          "sq": 30,
+          "kept": 629,
+          "fdr": 0.0,
+          "recall": 0.0569
+        }
+      ]
+    },
+    "DUP": {
+      "n": 21879,
+      "n_tp": 3862,
+      "n_labeled_oof": 21879,
+      "pr_auc_oof": 0.7327,
+      "roc_auc_oof": 0.9261,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 3188,
+          "fdr": 0.2942,
+          "recall": 0.5826
+        },
+        {
+          "sq": 7,
+          "kept": 813,
+          "fdr": 0.0861,
+          "recall": 0.1924
+        },
+        {
+          "sq": 10,
+          "kept": 347,
+          "fdr": 0.0144,
+          "recall": 0.0886
+        },
+        {
+          "sq": 13,
+          "kept": 347,
+          "fdr": 0.0144,
+          "recall": 0.0886
+        },
+        {
+          "sq": 17,
+          "kept": 327,
+          "fdr": 0.0122,
+          "recall": 0.0836
+        },
+        {
+          "sq": 20,
+          "kept": 121,
+          "fdr": 0.0,
+          "recall": 0.0313
+        },
+        {
+          "sq": 30,
+          "kept": 121,
+          "fdr": 0.0,
+          "recall": 0.0313
+        }
+      ]
+    }
+  }
+}
