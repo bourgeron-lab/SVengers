@@ -122,7 +122,7 @@ class Genotyper:
         if len(hets):
             call.baf_dev = float(np.mean(np.abs(hets - 0.5)))
 
-        support = call.pe_support + call.sr_support
+        support = call.pe_support + call.sr_support + call.cig_support
         haploid_cov = data.mean_depth / 2.0
 
         genotypes = self._genotypes(data.ploidy)

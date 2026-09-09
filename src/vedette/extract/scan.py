@@ -9,7 +9,11 @@ collecting, per record and with minimal Python work:
 - discordant pairs: orientation class DEL/DUP/INV/INTER (recorded once, from
   the leftmost read of the pair);
 - split reads: soft-clip positions >= min_clip_len with decent clip base
-  quality.
+  quality;
+- CIGAR deletions: D operations >= min_cigar_sv bp in primary alignments —
+  the dominant (often only) evidence for 50-300 bp deletions, which bwa
+  aligns THROUGH rather than clipping (raw-candidate recall for that size
+  class was 29% before this channel existed).
 
 The insert-size model is fit beforehand on a sample of proper pairs.
 """
@@ -49,6 +53,8 @@ class ContigEvidence:
     pe: dict[str, np.ndarray] = field(default_factory=dict)
     sr: dict[str, np.ndarray] = field(default_factory=dict)
     sr_seq: list[bytes] = field(default_factory=list)  # clip sequences, aligned with sr rows
+    cig: dict[str, np.ndarray] = field(default_factory=dict)  # large CIGAR deletions
+    ins: dict[str, np.ndarray] = field(default_factory=dict)  # binned insert-size track
     n_reads: int = 0
 
 
@@ -125,6 +131,28 @@ def scan_contig(
     sr_mapq: list[int] = []
     sr_cliplen: list[int] = []
     sr_seq: list[bytes] = []
+    cig_pos: list[int] = []
+    cig_len: list[int] = []
+    min_cigar = config.min_cigar_sv
+    merge_gap = config.cigar_merge_gap
+
+    # local insert-size track: mean template length of spanning proper pairs
+    # per small bin — the collective shift detects sub-insert deletions that
+    # leave no clean junction (VNTR contractions)
+    ins_bin = config.insert_bin_size
+    n_ins_bins = -(-contig_length // ins_bin)
+    ins_sum = np.zeros(n_ins_bins, dtype=np.float64)
+    ins_n = np.zeros(n_ins_bins, dtype=np.uint32)
+    buf_mid: list[int] = []
+    buf_tlen: list[int] = []
+
+    def _flush_insert_buffer() -> None:
+        if buf_mid:
+            bins = np.asarray(buf_mid, np.int64) // ins_bin
+            np.add.at(ins_sum, bins, np.asarray(buf_tlen, np.float64))
+            np.add.at(ins_n, bins, 1)
+            buf_mid.clear()
+            buf_tlen.clear()
 
     n_reads = 0
     with pysam.AlignmentFile(cram, "r", reference_filename=fasta) as af:
@@ -158,6 +186,28 @@ def scan_contig(
                             sr_cliplen.append(min(len0, 65535))
                             seq = rec.query_sequence
                             sr_seq.append(seq[:len0].encode() if seq else b"")
+                    # large CIGAR deletions (op 2 = D): walk ref-consuming ops.
+                    # Nearby D ops within one read are summed — aligners often
+                    # fragment one VNTR-contraction deletion into several gaps.
+                    if len(cigar) > 2:
+                        ref_cursor = pos
+                        run_start, run_len, run_end = -1, 0, -1
+                        for op, oplen in cigar:
+                            if op == 2:  # D
+                                if run_start >= 0 and ref_cursor - run_end <= merge_gap:
+                                    run_len += oplen
+                                else:
+                                    if run_len >= min_cigar:
+                                        cig_pos.append(run_start)
+                                        cig_len.append(run_len)
+                                    run_start, run_len = ref_cursor, oplen
+                                ref_cursor += oplen
+                                run_end = ref_cursor
+                            elif op in (0, 3, 7, 8):  # M, N, =, X consume reference
+                                ref_cursor += oplen
+                        if run_len >= min_cigar:
+                            cig_pos.append(run_start)
+                            cig_len.append(run_len)
                     opn, lenn = cigar[-1]
                     if opn == 4 and lenn >= min_clip:  # trailing soft clip
                         qlen = rec.query_length
@@ -171,6 +221,15 @@ def scan_contig(
                             sr_cliplen.append(min(lenn, 65535))
                             seq = rec.query_sequence
                             sr_seq.append(seq[qlen - lenn :].encode() if seq else b"")
+
+            # ---- local insert-size track (proper pairs, leftmost read)
+            if not is_supp and flag & _PAIRED and rec.is_proper_pair:
+                tlen = rec.template_length
+                if 0 < tlen < 100_000:
+                    buf_mid.append(pos + tlen // 2)
+                    buf_tlen.append(tlen)
+                    if len(buf_mid) >= 2_000_000:
+                        _flush_insert_buffer()
 
             # ---- discordant pairs (record once, from the leftmost read)
             if is_supp or not (flag & _PAIRED) or flag & _MATE_UNMAPPED:
@@ -223,6 +282,11 @@ def scan_contig(
             "cliplen": np.asarray(sr_cliplen, np.uint16),
         },
         sr_seq=sr_seq,
+        cig={
+            "pos": np.asarray(cig_pos, np.uint32),
+            "svlen": np.asarray(cig_len, np.uint32),
+        },
+        ins=(_flush_insert_buffer() or {"sum": ins_sum.astype(np.float32), "n": ins_n}),
         n_reads=n_reads,
     )
 

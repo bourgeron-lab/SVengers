@@ -44,6 +44,9 @@ FORMAT_DEFS = [
     ("RD", "1", "Float", "Mean GC-corrected copy ratio over the call"),
     ("PE", "1", "Integer", "Supporting discordant pairs"),
     ("SR", "1", "Integer", "Supporting split/clipped reads"),
+    ("CG", "1", "Integer", "Reads carrying the event as a CIGAR deletion"),
+    ("IZ", "1", "Float", "Insert-size-shift z-score (INSERT-source calls)"),
+    ("IP", "1", "Integer", "Spanning proper pairs behind the insert-shift estimate"),
     ("BAFN", "1", "Integer", "Informative het sites within the call"),
     ("BAFDEV", "1", "Float", "Mean absolute deviation of het VAF from 0.5"),
 ]
@@ -120,6 +123,10 @@ def write_vcf(
                 fmt["RD"] = round(call.mean_ratio, 4)
             fmt["PE"] = call.pe_support
             fmt["SR"] = call.sr_support
+            fmt["CG"] = call.cig_support
+            if call.ins_z > 0:
+                fmt["IZ"] = round(call.ins_z, 2)
+                fmt["IP"] = call.ins_pairs
             fmt["BAFN"] = call.baf_n
             if not math.isnan(call.baf_dev):
                 fmt["BAFDEV"] = round(call.baf_dev, 4)

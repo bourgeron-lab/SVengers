@@ -88,6 +88,7 @@ def reconcile(
             call.cipos, call.ciend = junc.cipos, junc.ciend
             call.pe_support = junc.pe
             call.sr_support = junc.sr
+            call.cig_support = junc.cig
             call.precise = junc.precise
             call.source = SOURCE_BOTH
             if junc.homlen >= 0:
@@ -112,6 +113,7 @@ def reconcile(
             ciend=junc.ciend,
             pe_support=junc.pe,
             sr_support=junc.sr,
+            cig_support=junc.cig,
             precise=junc.precise,
         )
         if junc.homlen >= 0:

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 SOURCE_DEPTH = "DEPTH"
 SOURCE_JUNCTION = "JUNCTION"
 SOURCE_BOTH = "BOTH"
+SOURCE_INSERT = "INSERT"   # sub-insert DEL detected by the local insert-size shift
 
 
 @dataclass
@@ -27,6 +28,9 @@ class CNVCall:
     # breakpoint evidence
     pe_support: int = 0
     sr_support: int = 0
+    cig_support: int = 0   # reads carrying the event as a CIGAR deletion
+    ins_z: float = 0.0     # insert-size-shift z-score (INSERT-source calls)
+    ins_pairs: int = 0     # spanning proper pairs behind the shift estimate
     cipos: tuple[int, int] = (0, 0)
     ciend: tuple[int, int] = (0, 0)
     precise: bool = False

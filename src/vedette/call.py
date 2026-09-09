@@ -203,6 +203,9 @@ def run_call(
             ev = scan_results[name]
             writer.write_pe(name, **ev.pe)
             writer.write_sr(name, **ev.sr, seqs=ev.sr_seq)
+            writer.write_cig(name, **ev.cig)
+            if ev.ins:
+                writer.write_ins(name, **ev.ins)
 
     # ---- segmentation, junctions, reconciliation, genotyping
     # sequence coverage estimate (for the junction-support Poisson rate)
@@ -230,12 +233,20 @@ def run_call(
         )
         junctions = []
         if scan_results is not None and insert.n_pairs:
+            from .breakpoints.cluster import cluster_cigar_dels
+            from .breakpoints.resolve import merge_junction_sets
+
             ev = scan_results[name]
             junctions = make_junctions(ev.pe, ev.sr, insert, config.breakpoint)
+            cig_junctions = cluster_cigar_dels(ev.cig, config.breakpoint)
+            junctions = merge_junction_sets(junctions, cig_junctions)
+            logger.info(
+                "%s %s: %d CIGAR-deletion junctions", sample, name, len(cig_junctions)
+            )
             if config.breakpoint.hidden_splits and ev.sr_seq:
                 import pysam as _pysam
 
-                from .breakpoints.resolve import merge_junction_sets, recover_junctions
+                from .breakpoints.resolve import recover_junctions
 
                 with _pysam.FastaFile(fasta) as fa:
                     ref_arr = np.frombuffer(
@@ -260,7 +271,25 @@ def run_call(
             sigma0=hmm.fit_sigma0(ratio[name], mask[name]),
         )
         for call in contig_calls:
-            genotyper.genotype(call, data)
+            if call.source != "INSERT":  # INSERT calls are pre-genotyped by the detector
+                genotyper.genotype(call, data)
+
+        # sub-insert DELs from the local insert-size shift (no clean junction)
+        if scan_results is not None and insert.n_pairs and scan_results[name].ins:
+            from .breakpoints.insert_shift import (
+                dedupe_against,
+                detect_insert_shift_dels,
+            )
+
+            ev = scan_results[name]
+            ins_calls = detect_insert_shift_dels(
+                name, ev.ins["sum"], ev.ins["n"],
+                config.extract.insert_bin_size, insert, config.breakpoint,
+            )
+            ins_calls = dedupe_against(ins_calls, contig_calls)
+            logger.info("%s %s: %d insert-shift DEL candidates", sample, name, len(ins_calls))
+            contig_calls.extend(ins_calls)
+            contig_calls.sort(key=lambda c: (c.start, c.end))
         calls.extend(contig_calls)
         logger.info(
             "%s %s: %d segments, %d junctions -> %d candidates",

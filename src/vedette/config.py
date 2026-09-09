@@ -23,6 +23,9 @@ class ExtractConfig:
     min_mapq_evidence: int = 10      # MAPQ threshold for PE/SR evidence
     min_clip_len: int = 15           # minimum soft-clip length to record
     min_clip_baseq: float = 10.0     # minimum mean base quality of the clip
+    min_cigar_sv: int = 30           # CIGAR deletion (D) ops >= this are junction evidence
+    cigar_merge_gap: int = 30        # D ops closer than this within one read are summed
+    insert_bin_size: int = 100       # bin size of the local insert-size track
     insert_fit_pairs: int = 1_000_000  # proper pairs used to fit the insert-size model
     insert_z_discordant: float = 4.0   # |insert - mu| > z*sigma => discordant
     max_discordant_insert: int = 10_000_000  # ignore pairs beyond this span (chromosome arms)
@@ -48,6 +51,11 @@ class BreakpointConfig:
 
     min_pe: int = 3                  # discordant pairs to seed a PE cluster
     min_sr: int = 2                  # clipped reads at the same position to seed an SR breakpoint
+    min_cigar_support: int = 3       # reads sharing a CIGAR deletion to form a junction
+    # insert-size-shift detector (SurVIndel2-style) for sub-insert deletions
+    insert_shift_z: float = 3.5      # per-bin z-score threshold on the local mean insert
+    insert_shift_min_bins: int = 3   # consecutive shifted bins required
+    insert_shift_min_pairs: int = 10 # spanning pairs required across the run
     sr_pos_tolerance: int = 5        # bp tolerance when piling up clip positions
     max_junction_size: int = 20_000_000   # ignore candidate junctions larger than this
     min_size: int = 50               # minimum SV size reported

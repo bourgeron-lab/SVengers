@@ -35,15 +35,15 @@ $V label "$OUT/HG002.features.tsv" \
     --out "$OUT/HG002.labeled.tsv"
 
 echo "== 4. train models v1 =="
-$V train "$OUT/HG002.labeled.tsv" --out models/v1 --model-version v1 \
+$V train "$OUT/HG002.labeled.tsv" --out models/v2 --model-version v2 \
     --training-data "HG002 40x NovaSeq PCR-free (brain-genomics-public), GHFC-style alignment, truth GIAB v5.0q stvar"
 
 echo "== 5. re-filter with the trained model =="
 $V filter "$OUT/HG002.vedette.vcf.gz" \
     --store "$OUT/HG002.evidence.zarr" \
-    --out "$OUT/HG002.filtered_v1.vcf.gz" \
+    --out "$OUT/HG002.filtered_v2.vcf.gz" \
     --config configs/giab.toml \
-    --model-dir models/v1
+    --model-dir models/v2
 
 echo "== 6. stratified evaluation: tier1-PASS vs SQ-filtered =="
 $V bench truth "$OUT/HG002.tier1.vcf.gz" \

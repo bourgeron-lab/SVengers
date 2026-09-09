@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 GENOTYPE_COLUMNS = [
     "site_id", "contig", "start", "end", "svtype",
-    "sample", "gt", "gq", "cn", "cnq", "rd", "pe", "sr", "baf_n", "baf_dev",
+    "sample", "gt", "gq", "cn", "cnq", "rd", "pe", "sr", "cig", "baf_n", "baf_dev",
 ]
 
 _SR_TOL = 100  # bp tolerance around site breakpoints for SR support
@@ -70,8 +70,8 @@ class StoreGenotyper:
 
     def _junction_support(
         self, contig: str, start: int, end: int, svtype: str
-    ) -> tuple[int, int]:
-        """(pe, sr) support for the adjacency start->end in this sample."""
+    ) -> tuple[int, int, int]:
+        """(pe, sr, cig) support for the adjacency start->end in this sample."""
         w = self.pe_window
         orient = PE_DEL if svtype == "DEL" else PE_DUP
         pe = self.store.pe(contig, max(start - w, 0), start + w)
@@ -89,7 +89,14 @@ class StoreGenotyper:
             n_sr += int((sr_start["side"] == SR_RIGHT_CLIP).sum())
         if len(sr_end["pos"]):
             n_sr += int((sr_end["side"] == SR_LEFT_CLIP).sum())
-        return n_pe, n_sr
+        n_cig = 0
+        if svtype == "DEL":
+            cig = self.store.cig(contig, max(start - _SR_TOL, 0), start + _SR_TOL)
+            if len(cig["pos"]):
+                size = max(end - start, 1)
+                sel = np.abs(cig["svlen"].astype(np.int64) - size) <= max(10, 0.2 * size)
+                n_cig = int(sel.sum())
+        return n_pe, n_sr, n_cig
 
     def genotype_site(
         self, site_id: str, contig: str, start: int, end: int, svtype: str
@@ -100,11 +107,13 @@ class StoreGenotyper:
         if data.ploidy == 0:
             return None  # chrY in a female sample
         has_junc = self._has_junctions.get(contig, False)
-        pe, sr = self._junction_support(contig, start, end, svtype) if has_junc else (0, 0)
+        pe, sr, cig = (
+            self._junction_support(contig, start, end, svtype) if has_junc else (0, 0, 0)
+        )
         call = CNVCall(
             contig=contig, start=start, end=end, svtype=svtype,
             source=SOURCE_BOTH if has_junc else SOURCE_DEPTH,
-            pe_support=pe, sr_support=sr,
+            pe_support=pe, sr_support=sr, cig_support=cig,
         )
         self.genotyper.genotype(call, data)
         gt = "./." if call.gt == (-1, -1) else f"{call.gt[0]}/{call.gt[1]}"
@@ -114,7 +123,7 @@ class StoreGenotyper:
             "gt": gt, "gq": call.gq, "cn": call.cn,
             "cnq": round(call.cn_posterior, 4) if call.cn >= 0 else "",
             "rd": round(call.mean_ratio, 4) if not np.isnan(call.mean_ratio) else "",
-            "pe": pe, "sr": sr, "baf_n": call.baf_n,
+            "pe": pe, "sr": sr, "cig": cig, "baf_n": call.baf_n,
             "baf_dev": round(call.baf_dev, 4) if not np.isnan(call.baf_dev) else "",
         }
 

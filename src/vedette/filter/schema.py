@@ -28,7 +28,10 @@ FEATURES: list[str] = [
     # breakpoint
     "pe",
     "sr",
-    "evidence_ratio",    # (pe + sr) / sequence coverage
+    "cig",               # reads carrying the event as a CIGAR deletion
+    "ins_z",             # insert-size-shift z-score (0 unless SOURCE=INSERT)
+    "ins_pairs",         # spanning pairs behind the shift estimate
+    "evidence_ratio",    # (pe + sr + cig) / sequence coverage
     "homlen",            # junction micro-homology (-1 = not measured)
     # BAF
     "baf_n",

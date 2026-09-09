@@ -29,8 +29,9 @@ from typing import Any
 import numpy as np
 import zarr
 
-SCHEMA_VERSION = "0.2"
-SUPPORTED_SCHEMAS = {"0.1", "0.2"}  # 0.2 adds optional sr clip sequences
+SCHEMA_VERSION = "0.3"
+# 0.2 adds optional sr clip sequences; 0.3 adds large CIGAR deletions (cig/)
+SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3"}
 
 PE_DEL, PE_DUP, PE_INV, PE_INTER = 0, 1, 2, 3
 SR_LEFT_CLIP, SR_RIGHT_CLIP = 0, 1
@@ -113,6 +114,17 @@ class EvidenceStoreWriter:
         _create_array(g, "mate_tid", mate_tid[order].astype(np.int32), _EVENT_CHUNK)
         _create_array(g, "orient", orient[order].astype(np.uint8), _EVENT_CHUNK)
         _create_array(g, "mapq", mapq[order].astype(np.uint8), _EVENT_CHUNK)
+
+    def write_ins(self, contig: str, sum: np.ndarray, n: np.ndarray) -> None:  # noqa: A002
+        g = self._contig(contig).create_group("ins")
+        _create_array(g, "sum", sum.astype(np.float32), _DEPTH_CHUNK)
+        _create_array(g, "n", n.astype(np.uint32), _DEPTH_CHUNK)
+
+    def write_cig(self, contig: str, pos: np.ndarray, svlen: np.ndarray) -> None:
+        order = np.argsort(pos, kind="stable")
+        g = self._contig(contig).create_group("cig")
+        _create_array(g, "pos", pos[order].astype(np.uint32), _EVENT_CHUNK)
+        _create_array(g, "svlen", svlen[order].astype(np.uint32), _EVENT_CHUNK)
 
     def write_sr(
         self,
@@ -218,6 +230,24 @@ class EvidenceStore:
             return {k: np.array([]) for k in ("pos1", "pos2", "mate_tid", "orient", "mapq")}
         sl = self._ranged(pe, "pos1", start, end)
         return {name: pe[name][sl] for name in ("pos1", "pos2", "mate_tid", "orient", "mapq")}
+
+    def ins(self, contig: str) -> dict[str, np.ndarray] | None:
+        """Binned insert-size track (sum, n) for the whole contig, or None."""
+        try:
+            g = self.root[contig]["ins"]
+        except KeyError:
+            return None
+        return {"sum": g["sum"][:], "n": g["n"][:]}
+
+    def cig(self, contig: str, start: int, end: int) -> dict[str, np.ndarray]:
+        """Large CIGAR deletions whose start falls in [start, end)."""
+        g = self.root[contig]
+        try:
+            cig = g["cig"]
+        except KeyError:  # schema <= 0.2 store
+            return {"pos": np.array([], np.uint32), "svlen": np.array([], np.uint32)}
+        sl = self._ranged(cig, "pos", start, end)
+        return {name: cig[name][sl] for name in ("pos", "svlen")}
 
     def sr(
         self, contig: str, start: int, end: int, with_seq: bool = False

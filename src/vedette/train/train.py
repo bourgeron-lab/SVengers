@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 # +1: P(true) non-decreasing in the feature; -1: non-increasing; 0: free
 _MONOTONE = {
-    "DEL": {"dhffc": -1, "fc_chrom": -1, "sr": +1, "pe": +1, "frac_consistent": +1},
+    "DEL": {"dhffc": -1, "fc_chrom": -1, "sr": +1, "pe": +1, "cig": +1, "ins_z": +1,
+            "frac_consistent": +1},
     "DUP": {"dhffc": +1, "fc_chrom": +1, "sr": +1, "pe": +1, "frac_consistent": +1},
 }
 

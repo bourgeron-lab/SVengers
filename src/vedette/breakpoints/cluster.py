@@ -51,6 +51,7 @@ class Junction:
     sr_end: int
     precise: bool
     homlen: int = -1   # reference micro-homology at the junction (-1 = not measured)
+    cig: int = 0       # reads carrying the event as a CIGAR deletion
 
     @property
     def sr(self) -> int:
@@ -149,6 +150,48 @@ def cluster_sr(
                 start = i
     out.sort(key=lambda b: b.pos)
     return out
+
+
+def cluster_cigar_dels(
+    cig: dict[str, np.ndarray], config: BreakpointConfig, pos_tol: int = 10
+) -> list[Junction]:
+    """Cluster large CIGAR deletions into precise DEL junctions.
+
+    Aligners left-align indels, so reads carrying the same deletion agree on
+    (pos, len) almost exactly; a small tolerance absorbs tandem-repeat jitter.
+    """
+    if not len(cig.get("pos", ())):
+        return []
+    pos = cig["pos"].astype(np.int64)
+    svlen = cig["svlen"].astype(np.int64)
+    order = np.lexsort((svlen, pos))
+    pos, svlen = pos[order], svlen[order]
+
+    junctions: list[Junction] = []
+    start_idx = 0
+    for i in range(1, len(pos) + 1):
+        boundary = (
+            i == len(pos)
+            or pos[i] - pos[start_idx] > pos_tol
+            or abs(svlen[i] - svlen[start_idx]) > max(pos_tol, 0.1 * svlen[start_idx])
+        )
+        if not boundary:
+            continue
+        n = i - start_idx
+        if n >= config.min_cigar_support:
+            p = int(np.median(pos[start_idx:i]))
+            ln = int(np.median(svlen[start_idx:i]))
+            if config.min_size <= ln <= config.max_junction_size:
+                junctions.append(
+                    Junction(
+                        svtype="DEL", start=p, end=p + ln,
+                        cipos=(0, 0), ciend=(0, 0),
+                        pe=0, sr_start=0, sr_end=0,
+                        precise=True, cig=n,
+                    )
+                )
+        start_idx = i
+    return junctions
 
 
 def _nearest_sr(

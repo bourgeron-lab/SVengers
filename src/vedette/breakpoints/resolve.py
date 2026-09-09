@@ -244,8 +244,10 @@ def merge_junction_sets(
                 existing.cipos = existing.ciend = (0, 0)
                 existing.sr_start = max(existing.sr_start, junc.sr_start)
                 existing.sr_end = max(existing.sr_end, junc.sr_end)
+                existing.cig = max(existing.cig, junc.cig)
                 existing.precise = True
-                existing.homlen = junc.homlen
+                if junc.homlen >= 0:
+                    existing.homlen = junc.homlen
                 matched = True
                 break
         if not matched:
