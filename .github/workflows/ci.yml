@@ -11,22 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          src: "src tests"
+          python-version: "3.12"
+      - name: Ruff
+        run: |
+          pip install ruff
+          ruff check src tests
 
   tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: containers/environment.yml
           environment-name: ci
-          create-args: python=${{ matrix.python-version }}
           cache-environment: true
       - name: Install vedette
         shell: micromamba-shell {0}
