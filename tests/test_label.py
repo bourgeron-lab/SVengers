@@ -85,3 +85,47 @@ def test_truvari_labeling_roundtrip(tmp_path):
     assert labels["c_fp"] == "0"
     assert labels["c_dup"] == "1", "--dup-to-ins should match the DUP to the truth INS"
     assert counts["tp"] == 2 and counts["fp"] == 1
+
+
+@pytest.mark.skipif(truvari_missing, reason="truvari not installed")
+def test_parent_mode_labeling(tmp_path):
+    """Parent mode: truth match -> TP; non-match -> FP only on recurrent-FP loci."""
+    truth = tmp_path / "truth.vcf.gz"
+    _write(truth, _header(), [
+        ("chr1", 100_000, 100_501, ("A" + "T" * 500, "A"), "DEL", -500, "t1"),
+    ])
+    calls = tmp_path / "calls.vcf.gz"
+    _write(calls, _header(with_symbolic=True), [
+        ("chr1", 100_010, 100_505, ("N", "<DEL>"), "DEL", -495, "p_tp"),      # transmis
+        ("chr1", 500_000, 501_000, ("N", "<DEL>"), "DEL", -1000, "p_artifact"),  # FP récurrent
+        ("chr1", 700_000, 700_400, ("N", "<DEL>"), "DEL", -400, "p_private"),    # privé -> drop
+    ])
+    # loci FP récurrents (les FP du proband)
+    fp_vcf = tmp_path / "hg002_fp.vcf.gz"
+    _write(fp_vcf, _header(with_symbolic=True), [
+        ("chr1", 499_900, 501_100, ("N", "<DEL>"), "DEL", -1200, "fp1"),
+    ])
+    bed = tmp_path / "conf.bed"
+    bed.write_text("chr1\t0\t1000000\n")
+
+    tdir = run_truvari_bench(calls, truth, bed, None, tmp_path / "bench")
+    feats = tmp_path / "features.tsv"
+    with open(feats, "w") as fh:
+        cols = ["call_id", "contig", "start", "end", "svtype", *FEATURES]
+        fh.write("\t".join(cols) + "\n")
+        for rid, start, end in (("p_tp", 100_010, 100_505),
+                                ("p_artifact", 500_000, 501_000),
+                                ("p_private", 700_000, 700_400)):
+            fh.write("\t".join([rid, "chr1", str(start), str(end), "DEL"]
+                               + ["0"] * len(FEATURES)) + "\n")
+
+    out = tmp_path / "labeled.tsv"
+    counts = label_features(
+        feats, tdir, out, parent_mode=True, recurrent_fp_vcf=fp_vcf
+    )
+    labels = {
+        line.split("\t")[0]: line.strip().split("\t")[-1]
+        for line in out.read_text().splitlines()[1:]
+    }
+    assert labels == {"p_tp": "1", "p_artifact": "0"}
+    assert counts == {"tp": 1, "fp": 1, "ambiguous": 1, "unlabeled": 0}

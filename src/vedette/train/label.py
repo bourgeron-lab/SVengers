@@ -81,24 +81,54 @@ def _ids_of(vcf_path: Path) -> set[str]:
     return ids
 
 
+def _fp_intervals(vcf_path: str | Path):
+    """IntervalSet of FP-labeled calls (for parent-mode recurrent-artifact labels)."""
+    import numpy as np
+
+    from ..filter.annotate import IntervalSet
+
+    bed: dict[str, list[tuple[int, int]]] = {}
+    with pysam.VariantFile(str(vcf_path)) as vcf:
+        for rec in vcf:
+            bed.setdefault(rec.contig, []).append((rec.start, max(rec.stop, rec.start + 1)))
+    return IntervalSet(
+        {c: np.array(sorted(ivs), dtype=np.int64) for c, ivs in bed.items()}
+    )
+
+
 def label_features(
     features_tsv: str | Path,
     truvari_dir: str | Path,
     out_tsv: str | Path,
+    parent_mode: bool = False,
+    recurrent_fp_vcf: str | Path | None = None,
+    min_fp_overlap: float = 0.5,
 ) -> dict[str, int]:
-    """Join truvari TP/FP status onto the feature matrix -> labeled TSV."""
+    """Join truvari TP/FP status onto the feature matrix -> labeled TSV.
+
+    ``parent_mode`` implements transmission-based semi-supervision for samples
+    WITHOUT their own truth set (HG003/HG004 vs the HG002 truth): a truth match
+    is a certain TP (transmitted variant); a non-match is labeled FP only when
+    it overlaps a known recurrent-FP locus (``recurrent_fp_vcf``, e.g. the
+    proband's FP calls) — otherwise it may be a private true variant and is
+    dropped as ambiguous.
+    """
     truvari_dir = Path(truvari_dir)
     tp_ids = _ids_of(truvari_dir / "tp-comp.vcf.gz")
     fp_ids = _ids_of(truvari_dir / "fp.vcf.gz")
     overlap = tp_ids & fp_ids
     if overlap:
         raise RuntimeError(f"{len(overlap)} call IDs are both TP and FP — duplicate IDs?")
+    fp_loci = _fp_intervals(recurrent_fp_vcf) if parent_mode and recurrent_fp_vcf else None
+    if parent_mode and fp_loci is None:
+        raise ValueError("parent_mode requires recurrent_fp_vcf")
 
-    counts = {"tp": 0, "fp": 0, "unlabeled": 0}
+    counts = {"tp": 0, "fp": 0, "ambiguous": 0, "unlabeled": 0}
     with open(features_tsv, newline="") as fin, open(out_tsv, "w", newline="") as fout:
         reader = csv.reader(fin, delimiter="\t")
         writer = csv.writer(fout, delimiter="\t")
         header = next(reader)
+        idx = {name: i for i, name in enumerate(header)}
         writer.writerow([*header, "label"])
         for row in reader:
             call_id = row[0]
@@ -106,11 +136,21 @@ def label_features(
                 writer.writerow([*row, 1])
                 counts["tp"] += 1
             elif call_id in fp_ids:
-                writer.writerow([*row, 0])
-                counts["fp"] += 1
+                if not parent_mode:
+                    writer.writerow([*row, 0])
+                    counts["fp"] += 1
+                else:
+                    contig = row[idx["contig"]]
+                    start, end = int(row[idx["start"]]), int(row[idx["end"]])
+                    if fp_loci.overlap_fraction(contig, start, end) >= min_fp_overlap:
+                        writer.writerow([*row, 0])
+                        counts["fp"] += 1
+                    else:
+                        counts["ambiguous"] += 1  # possibly a private true variant
             else:
                 counts["unlabeled"] += 1  # outside confident regions / size range
     logger.info(
-        "labels: %(tp)d TP, %(fp)d FP, %(unlabeled)d unlabeled (dropped)", counts
+        "labels: %(tp)d TP, %(fp)d FP, %(ambiguous)d ambiguous (dropped), "
+        "%(unlabeled)d unlabeled (dropped)", counts,
     )
     return counts

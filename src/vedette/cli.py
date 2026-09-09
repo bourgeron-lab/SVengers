@@ -453,14 +453,24 @@ def label(
     truvari_dir: Path = typer.Option(
         Path("truvari_bench"), help="Truvari output directory (recreated)"
     ),
+    parent_mode: bool = typer.Option(
+        False, help="Transmission-based semi-supervision (sample without its own truth)"
+    ),
+    recurrent_fp_vcf: Optional[Path] = typer.Option(
+        None, help="FP calls of the truth-bearing sample (required with --parent-mode)"
+    ),
 ) -> None:
     """Label calls TP/FP against a truth set (Truvari bench) for filter training."""
     from .train.label import label_features, run_truvari_bench
 
     run_truvari_bench(calls_vcf, truth_vcf, truth_bed, fasta, truvari_dir)
-    counts = label_features(features, truvari_dir, out)
+    counts = label_features(
+        features, truvari_dir, out,
+        parent_mode=parent_mode, recurrent_fp_vcf=recurrent_fp_vcf,
+    )
     typer.echo(
-        f"{counts['tp']} TP, {counts['fp']} FP, {counts['unlabeled']} unlabeled -> {out}"
+        f"{counts['tp']} TP, {counts['fp']} FP, {counts.get('ambiguous', 0)} ambiguous, "
+        f"{counts['unlabeled']} unlabeled -> {out}"
     )
 
 
