@@ -1,0 +1,142 @@
+{
+  "model_version": "v2",
+  "vedette_version": "0.1.0.dev0",
+  "schema_hash": "ba0895662be9f484",
+  "features": [
+    "size_log10",
+    "is_dup",
+    "precise",
+    "src_both",
+    "src_junction",
+    "maskfrac",
+    "dhffc",
+    "fc_chrom",
+    "fc_residual",
+    "depth_cv",
+    "frac_consistent",
+    "n_bins_informative",
+    "flank_asym",
+    "pe",
+    "sr",
+    "cig",
+    "ins_z",
+    "ins_pairs",
+    "evidence_ratio",
+    "homlen",
+    "baf_n",
+    "baf_dev",
+    "segdup_ovl",
+    "lcr_ovl",
+    "exclude_ovl",
+    "popcov_stdev",
+    "gq",
+    "cn",
+    "cnq"
+  ],
+  "created": "2026-09-09T05:06:51",
+  "training_data": "HG002 40x NovaSeq GHFC-style + CIGAR/insert-shift channels, truth GIAB v5.0q stvar",
+  "metrics": {
+    "DEL": {
+      "n": 12783,
+      "n_tp": 4193,
+      "n_labeled_oof": 12783,
+      "pr_auc_oof": 0.952,
+      "roc_auc_oof": 0.9758,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 4569,
+          "fdr": 0.1521,
+          "recall": 0.9239
+        },
+        {
+          "sq": 7,
+          "kept": 3134,
+          "fdr": 0.0539,
+          "recall": 0.7071
+        },
+        {
+          "sq": 10,
+          "kept": 2115,
+          "fdr": 0.0085,
+          "recall": 0.5001
+        },
+        {
+          "sq": 13,
+          "kept": 2115,
+          "fdr": 0.0085,
+          "recall": 0.5001
+        },
+        {
+          "sq": 17,
+          "kept": 1974,
+          "fdr": 0.0061,
+          "recall": 0.4679
+        },
+        {
+          "sq": 20,
+          "kept": 1268,
+          "fdr": 0.0032,
+          "recall": 0.3015
+        },
+        {
+          "sq": 30,
+          "kept": 467,
+          "fdr": 0.0,
+          "recall": 0.1114
+        }
+      ]
+    },
+    "DUP": {
+      "n": 54036,
+      "n_tp": 1500,
+      "n_labeled_oof": 54036,
+      "pr_auc_oof": 0.6431,
+      "roc_auc_oof": 0.9739,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 759,
+          "fdr": 0.249,
+          "recall": 0.38
+        },
+        {
+          "sq": 7,
+          "kept": 256,
+          "fdr": 0.0781,
+          "recall": 0.1573
+        },
+        {
+          "sq": 10,
+          "kept": 215,
+          "fdr": 0.0698,
+          "recall": 0.1333
+        },
+        {
+          "sq": 13,
+          "kept": 62,
+          "fdr": 0.0323,
+          "recall": 0.04
+        },
+        {
+          "sq": 17,
+          "kept": 20,
+          "fdr": 0.0,
+          "recall": 0.0133
+        },
+        {
+          "sq": 20,
+          "kept": 20,
+          "fdr": 0.0,
+          "recall": 0.0133
+        },
+        {
+          "sq": 30,
+          "kept": 20,
+          "fdr": 0.0,
+          "recall": 0.0133
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,97 @@
+caller	svtype	stratum_kind	stratum	tp_base	fn	recall	tp_comp	fp	precision	f1
+manta	DEL	all	all	3816	6336	0.3759	3816	268	0.9344	0.5361
+manta	DEL	context	clean	3721	5490	0.404	3721	249	0.9373	0.5646
+manta	DEL	context	segdup	95	846	0.101	95	19	0.8333	0.1801
+manta	DEL	size	50-300bp	2203	5053	0.3036	2201	174	0.9267	0.4574
+manta	DEL	size	300bp-1kb	1094	991	0.5247	1095	44	0.9614	0.6789
+manta	DEL	size	1-10kb	486	258	0.6532	487	34	0.9347	0.769
+manta	DEL	size	10-100kb	33	33	0.5	33	12	0.7333	0.5946
+manta	DEL	size	100kb-1Mb	0	1	0.0	0	4	0.0	
+manta	INS	all	all	290	17703	0.0161	290	98	0.7474	0.0316
+manta	INS	context	clean	284	16515	0.0169	284	93	0.7533	0.0331
+manta	INS	context	segdup	6	1188	0.005	6	5	0.5455	0.01
+manta	INS	size	50-300bp	236	10637	0.0217	236	31	0.8839	0.0424
+manta	INS	size	300bp-1kb	40	4881	0.0081	42	19	0.6885	0.0161
+manta	INS	size	1-10kb	14	2071	0.0067	12	34	0.2609	0.0131
+manta	INS	size	10-100kb	0	111	0.0	0	11	0.0	
+manta	INS	size	100kb-1Mb	0	3	0.0	0	3	0.0	
+delly	DEL	all	all	2883	7269	0.284	2883	606	0.8263	0.4227
+delly	DEL	context	clean	2810	6401	0.3051	2810	531	0.8411	0.4477
+delly	DEL	context	segdup	73	868	0.0776	73	75	0.4932	0.1341
+delly	DEL	size	50-300bp	1105	6151	0.1523	1101	159	0.8738	0.2594
+delly	DEL	size	300bp-1kb	1142	943	0.5477	1139	209	0.845	0.6646
+delly	DEL	size	1-10kb	597	147	0.8024	604	154	0.7968	0.7996
+delly	DEL	size	10-100kb	39	27	0.5909	39	66	0.3714	0.4561
+delly	DEL	size	100kb-1Mb	0	1	0.0	0	18	0.0	
+delly	INS	all	all	226	17767	0.0126	226	477	0.3215	0.0242
+delly	INS	context	clean	208	16591	0.0124	208	380	0.3537	0.0239
+delly	INS	context	segdup	18	1176	0.0151	18	97	0.1565	0.0275
+delly	INS	size	50-300bp	49	10824	0.0045	35	53	0.3977	0.0089
+delly	INS	size	300bp-1kb	154	4767	0.0313	170	232	0.4229	0.0583
+delly	INS	size	1-10kb	21	2064	0.0101	19	101	0.1583	0.0189
+delly	INS	size	10-100kb	2	109	0.018	2	76	0.0256	0.0212
+delly	INS	size	100kb-1Mb	0	3	0.0	0	15	0.0	
+dysgu	DEL	all	all	3944	6208	0.3885	3944	544	0.8788	0.5388
+dysgu	DEL	context	clean	3848	5363	0.4178	3848	524	0.8801	0.5666
+dysgu	DEL	context	segdup	96	845	0.102	96	20	0.8276	0.1816
+dysgu	DEL	size	50-300bp	2251	5005	0.3102	2241	458	0.8303	0.4517
+dysgu	DEL	size	300bp-1kb	1185	900	0.5683	1193	66	0.9476	0.7105
+dysgu	DEL	size	1-10kb	486	258	0.6532	488	20	0.9606	0.7777
+dysgu	DEL	size	10-100kb	22	44	0.3333	22	0	1.0	0.5
+dysgu	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+dysgu	INS	all	all	25	17968	0.0014	25	53	0.3205	0.0028
+dysgu	INS	context	clean	23	16776	0.0014	23	47	0.3286	0.0027
+dysgu	INS	context	segdup	2	1192	0.0017	2	6	0.25	0.0033
+dysgu	INS	size	50-300bp	2	10871	0.0002	2	18	0.1	0.0004
+dysgu	INS	size	300bp-1kb	14	4907	0.0028	13	11	0.5417	0.0057
+dysgu	INS	size	1-10kb	9	2076	0.0043	10	22	0.3125	0.0085
+dysgu	INS	size	10-100kb	0	111	0.0	0	2	0.0	
+dysgu	INS	size	100kb-1Mb	0	3	0.0	0	0		
+vedette_raw	DEL	all	all	4190	5962	0.4127	4190	8593	0.3278	0.3654
+vedette_raw	DEL	context	clean	4035	5176	0.4381	4036	7029	0.3648	0.3981
+vedette_raw	DEL	context	segdup	155	786	0.1647	154	1564	0.0896	0.1161
+vedette_raw	DEL	size	50-300bp	2132	5124	0.2938	2123	1515	0.5836	0.3909
+vedette_raw	DEL	size	300bp-1kb	1372	713	0.658	1381	4882	0.2205	0.3303
+vedette_raw	DEL	size	1-10kb	639	105	0.8589	638	1979	0.2438	0.3798
+vedette_raw	DEL	size	10-100kb	47	19	0.7121	48	214	0.1832	0.2914
+vedette_raw	DEL	size	100kb-1Mb	0	1	0.0	0	3	0.0	
+vedette_raw	INS	all	all	1499	16494	0.0833	1499	52537	0.0277	0.0416
+vedette_raw	INS	context	clean	1424	15375	0.0848	1425	51171	0.0271	0.0411
+vedette_raw	INS	context	segdup	75	1119	0.0628	74	1366	0.0514	0.0565
+vedette_raw	INS	size	50-300bp	1145	9728	0.1053	1127	4347	0.2059	0.1393
+vedette_raw	INS	size	300bp-1kb	288	4633	0.0585	281	45939	0.0061	0.011
+vedette_raw	INS	size	1-10kb	65	2020	0.0312	90	2216	0.039	0.0347
+vedette_raw	INS	size	10-100kb	1	110	0.009	1	32	0.0303	0.0139
+vedette_raw	INS	size	100kb-1Mb	0	3	0.0	0	3	0.0	
+vedette_sq7	DEL	all	all	3035	7117	0.299	3035	87	0.9721	0.4573
+vedette_sq7	DEL	context	clean	2962	6249	0.3216	2962	86	0.9718	0.4832
+vedette_sq7	DEL	context	segdup	73	868	0.0776	73	1	0.9865	0.1438
+vedette_sq7	DEL	size	50-300bp	1338	5918	0.1844	1333	71	0.9494	0.3088
+vedette_sq7	DEL	size	300bp-1kb	1133	952	0.5434	1136	8	0.993	0.7024
+vedette_sq7	DEL	size	1-10kb	530	214	0.7124	532	8	0.9852	0.8269
+vedette_sq7	DEL	size	10-100kb	34	32	0.5152	34	0	1.0	0.68
+vedette_sq7	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_sq7	INS	all	all	245	17748	0.0136	245	7	0.9722	0.0269
+vedette_sq7	INS	context	clean	241	16558	0.0143	241	7	0.9718	0.0283
+vedette_sq7	INS	context	segdup	4	1190	0.0034	4	0	1.0	0.0067
+vedette_sq7	INS	size	50-300bp	240	10633	0.0221	240	7	0.9717	0.0432
+vedette_sq7	INS	size	300bp-1kb	5	4916	0.001	5	0	1.0	0.002
+vedette_sq7	INS	size	1-10kb	0	2085	0.0	0	0		
+vedette_sq7	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_sq7	INS	size	100kb-1Mb	0	3	0.0	0	0		
+vedette_pass	DEL	all	all	2118	8034	0.2086	2118	6	0.9972	0.3451
+vedette_pass	DEL	context	clean	2076	7135	0.2254	2076	6	0.9971	0.3677
+vedette_pass	DEL	context	segdup	42	899	0.0446	42	0	1.0	0.0855
+vedette_pass	DEL	size	50-300bp	658	6598	0.0907	654	4	0.9939	0.1662
+vedette_pass	DEL	size	300bp-1kb	1007	1078	0.483	1011	0	1.0	0.6514
+vedette_pass	DEL	size	1-10kb	422	322	0.5672	422	2	0.9953	0.7226
+vedette_pass	DEL	size	10-100kb	31	35	0.4697	31	0	1.0	0.6392
+vedette_pass	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_pass	INS	all	all	84	17909	0.0047	84	0	1.0	0.0093
+vedette_pass	INS	context	clean	82	16717	0.0049	82	0	1.0	0.0097
+vedette_pass	INS	context	segdup	2	1192	0.0017	2	0	1.0	0.0033
+vedette_pass	INS	size	50-300bp	84	10789	0.0077	84	0	1.0	0.0153
+vedette_pass	INS	size	300bp-1kb	0	4921	0.0	0	0		
+vedette_pass	INS	size	1-10kb	0	2085	0.0	0	0		
+vedette_pass	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_pass	INS	size	100kb-1Mb	0	3	0.0	0	0		
