@@ -21,7 +21,7 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
 - Backlog v1.1 : (a) recall petites DEL 50-300 pb (jonctions SR-only élaguées
   trop fort, matching truvari des DEL en représentation séquence) ; (b) FP DUP
   en amont (nomination everted plus stricte, deux côtés requis) ; (c) HG003/4
-  semi-supervisé ; (d) isoler les tandem-dups de la vérité pour l'éval DUP ;
+  semi-supervisé ; (d) éval DUP tandem-only FAITE (12321/28942 INS tandem ; SQ≥7 : 91,3 % précision vs Manta 60,1 % à recall égal, réservoir brut 5× Manta) ;
   (e) rerun avec PoN fondateurs génome entier.
 
 ### 1bis. Détail du plan d'entraînement initial (référence)

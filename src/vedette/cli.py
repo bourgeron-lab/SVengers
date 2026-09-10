@@ -422,6 +422,23 @@ def bench_compare(
         plot_size_stratified(rows, Path(out_dir) / "comparison_f1_by_size.png")
 
 
+@bench_app.command("dup-truth")
+def bench_dup_truth(
+    truth: Path = typer.Argument(..., help="INS-represented truth VCF (e.g. GIAB v5.0q stvar)"),
+    fasta: Path = typer.Option(..., help="Reference FASTA"),
+    out: Path = typer.Option(..., help="Output tandem-duplication truth subset (.vcf.gz)"),
+    min_identity: float = typer.Option(0.80, help="Flank identity to call an INS tandem"),
+) -> None:
+    """Isolate the tandem-duplication subset of an INS truth (fair DUP denominator)."""
+    from .bench.dupspace import make_tandem_truth
+
+    counts = make_tandem_truth(truth, fasta, out, min_identity=min_identity)
+    typer.echo(
+        f"{counts['tandem']} tandem / {counts['ins_total']} INS -> {out} "
+        f"({counts['other_ins']} insertions non-tandem écartées)"
+    )
+
+
 @bench_app.command("trios")
 def bench_trios(
     cohort_vcf: Path = typer.Argument(..., help="Multi-sample cohort VCF"),
