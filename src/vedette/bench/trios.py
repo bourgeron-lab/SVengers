@@ -42,6 +42,13 @@ def sweep(
     out_tsv: str | Path | None = None,
 ) -> list[dict]:
     trios = pedigree.trios()
+    thresholds = sorted(thresholds)
+    # single streaming pass: per (site, trio) update every threshold <= min GQ
+    # (storing all trio genotypes first costs tens of GB at 2676 x 80k sites)
+    counters = [
+        {"n_geno": 0, "n_carrier": 0, "n_viol": 0, "n_opp": 0, "n_trans": 0, "n_denovo": 0}
+        for _ in thresholds
+    ]
     with pysam.VariantFile(str(cohort_vcf)) as vcf:
         vcf_samples = set(vcf.header.samples)
         usable = [t for t in trios if all(i.sample_id in vcf_samples for i in t)]
@@ -49,40 +56,40 @@ def sweep(
             raise ValueError("No complete trio present in the cohort VCF")
         if field not in vcf.header.formats:
             raise ValueError(f"FORMAT/{field} absent from {cohort_vcf}")
-        # load once: per site, per trio, (gts, quals)
-        site_data = []
         for rec in vcf:
-            per_trio = []
             for child, father, mother in usable:
-                trio_gt = []
-                for ind in (child, father, mother):
-                    gt, _gq = _gt_of(rec, ind.sample_id)
-                    trio_gt.append((gt, _qual_of(rec, ind.sample_id, field)))
-                per_trio.append(trio_gt)
-            site_data.append(per_trio)
-
-    rows = []
-    for th in thresholds:
-        n_geno = n_carrier = n_viol = n_opp = n_trans = n_denovo = 0
-        for per_trio in site_data:
-            for (cgt, cq), (fgt, fq), (mgt, mq) in per_trio:
+                cgt, _ = _gt_of(rec, child.sample_id)
+                fgt, _ = _gt_of(rec, father.sample_id)
+                mgt, _ = _gt_of(rec, mother.sample_id)
                 if cgt is None or fgt is None or mgt is None:
                     continue
-                if min(cq, fq, mq) < th:
-                    continue
-                n_geno += 1
+                minq = min(
+                    _qual_of(rec, ind.sample_id, field)
+                    for ind in (child, father, mother)
+                )
                 inheritance, violation = classify_trio(cgt, fgt, mgt)
-                if sum(cgt) > 0:
-                    n_carrier += 1
-                if violation:
-                    n_viol += 1
-                if inheritance == "denovo":
-                    n_denovo += 1
-                for pgt in (fgt, mgt):
-                    if sum(pgt) == 1:
-                        n_opp += 1
-                        if sum(cgt) > 0:
-                            n_trans += 1
+                carrier = sum(cgt) > 0
+                opp = sum(1 for pgt in (fgt, mgt) if sum(pgt) == 1)
+                for k, th in enumerate(thresholds):
+                    if th > minq:
+                        break
+                    c = counters[k]
+                    c["n_geno"] += 1
+                    if carrier:
+                        c["n_carrier"] += 1
+                        c["n_trans"] += opp
+                    if violation:
+                        c["n_viol"] += 1
+                    if inheritance == "denovo":
+                        c["n_denovo"] += 1
+                    c["n_opp"] += opp
+
+    rows = []
+    for th, c in zip(thresholds, counters, strict=True):
+        n_geno, n_carrier = c["n_geno"], c["n_carrier"]
+        n_viol, n_opp, n_trans, n_denovo = (
+            c["n_viol"], c["n_opp"], c["n_trans"], c["n_denovo"]
+        )
         rows.append({
             "threshold": th, "field": field,
             "n_genotyped": n_geno, "n_carrier": n_carrier,

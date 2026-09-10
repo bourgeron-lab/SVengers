@@ -43,10 +43,16 @@ def test_headered(tmp_path):
     assert ped.individuals["C0005IO"].phenotype == "-9"
 
 
-def test_duplicate_id(tmp_path):
-    content = HEADERLESS + "FAM1\tCHILD1\t0\t0\t1\t1\n"
+def test_conflicting_duplicate_id_raises(tmp_path):
+    content = HEADERLESS + "FAM9\tCHILD1\t0\t0\t1\t1\n"  # different family: conflict
     with pytest.raises(ValueError, match="duplicate"):
         parse_ped(_write(tmp_path, content))
+
+
+def test_identical_duplicate_line_tolerated(tmp_path):
+    content = HEADERLESS + "FAM1\tMOM1\t0\t0\t2\t1\n"  # exact repeat of MOM1
+    ped = parse_ped(_write(tmp_path, content))
+    assert len(ped.individuals) == 3
 
 
 def test_too_few_columns(tmp_path):

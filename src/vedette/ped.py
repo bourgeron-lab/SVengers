@@ -96,7 +96,16 @@ def parse_ped(path: str | Path) -> Pedigree:
             raise ValueError(f"{path}:{i}: expected >=6 columns, got {len(fields)}")
         fam, sid, father, mother, sex, pheno = (f.strip() for f in fields[:6])
         if sid in ped.individuals:
-            raise ValueError(f"{path}:{i}: duplicate sample_id {sid!r}")
+            prev = ped.individuals[sid]
+            same = (
+                prev.family_id == fam
+                and (prev.father_id or "0") in (father, "0")
+                and (prev.mother_id or "0") in (mother, "0")
+            )
+            if same:  # strictly repeated line: tolerate (real GHFC files have these)
+                logger.warning("%s:%d: duplicate identical line for %s, ignored", path, i, sid)
+                continue
+            raise ValueError(f"{path}:{i}: conflicting duplicate sample_id {sid!r}")
         try:
             sex_code = int(sex)
         except ValueError:
