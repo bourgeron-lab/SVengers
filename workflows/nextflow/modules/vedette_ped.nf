@@ -8,7 +8,7 @@ process VEDETTE_PED {
     output:
     path "mendel_report.tsv", emit: report
     path "mendel_summary.tsv", emit: summary
-    path "trio_sweep.tsv", emit: sweep, optional: true
+    path "trio_sweep.tsv", emit: sweep
     path "trio_sweep.png", emit: sweep_plot, optional: true
 
     script:
@@ -20,5 +20,8 @@ process VEDETTE_PED {
     ${params.vedette_bin} bench trios ${cohort_vcf} \\
         --pedigree '${params.pedigree}' \\
         --out trio_sweep.tsv --plot || true
+    # a cohort without complete trios yields no sweep: emit an empty one so
+    # downstream report wiring always fires
+    touch trio_sweep.tsv
     """
 }
