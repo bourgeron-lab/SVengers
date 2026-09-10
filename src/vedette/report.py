@@ -180,7 +180,7 @@ def generate_report(
     sample_stats = {
         s: {"genotyped": 0, "carrier": 0, "gq": []} for s in samples
     }
-    for site_id, gts in gt_by_site.items():
+    for gts in gt_by_site.values():
         for s, (nalt, gq) in gts.items():
             st = sample_stats[s]
             st["genotyped"] += 1
