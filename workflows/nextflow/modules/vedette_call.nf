@@ -1,6 +1,6 @@
 process VEDETTE_CALL {
     tag "$sample"
-    publishDir path: { "${params.outdir}/samples/${sample}" }, mode: params.publish_mode, overwrite: true
+    publishDir path: { "${params.outdir}/samples/${sample}" }, mode: params.publish_mode, overwrite: true, failOnError: false
 
     input:
     tuple val(sample), val(cram), val(depth_bg), val(vaf_bg)

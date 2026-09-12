@@ -1,6 +1,6 @@
 process VEDETTE_FILTER {
     tag "$sample"
-    publishDir path: { "${params.outdir}/samples/${sample}" }, mode: params.publish_mode, overwrite: true
+    publishDir path: { "${params.outdir}/samples/${sample}" }, mode: params.publish_mode, overwrite: true, failOnError: false
 
     input:
     tuple val(sample), path(vcf), path(tbi), path(store)
