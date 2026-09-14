@@ -170,6 +170,13 @@ def run_call(
             n_new_masked += int(mask[name].sum()) - before
         logger.info("PoN: applied (%s), %d additional bins masked", sex, n_new_masked)
 
+    # ---- wave QC (megabase-scale coverage oscillations surviving GC correction)
+    from .qc import sample_wave_score
+
+    wave_score, wave_by_contig = sample_wave_score(ratio, mask, bin_size)
+    if wave_score is not None:
+        logger.info("%s: wave score %.3f", sample, wave_score)
+
     # ---- BAF
     baf: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
     for name in call_names:
@@ -193,6 +200,8 @@ def run_call(
         insert_mu=insert.mu,
         insert_sigma=insert.sigma,
         insert_n_pairs=insert.n_pairs,
+        wave_score=wave_score,
+        wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
     )
     for name in call_names:
         writer.write_depth(name, raw[name], corr[name], mask[name])

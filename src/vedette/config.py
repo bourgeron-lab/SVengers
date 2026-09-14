@@ -70,6 +70,10 @@ class BreakpointConfig:
     resolve_min_identity: float = 0.85
     resolve_max_clips: int = 3       # longest clips realigned per pileup
     resolve_min_support: int = 2     # concordant realigned clips to call a junction
+    # per-contig budget of fit alignments: wavy samples fragment the HMM and
+    # flood the recovery with pileups (5x median runtime); healthy 40x genomes
+    # stay far below this, pathological ones keep their strongest pileups
+    resolve_max_alignments: int = 150_000
 
 
 @dataclass(frozen=True)

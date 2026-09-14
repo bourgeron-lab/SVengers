@@ -48,6 +48,7 @@ class FilterModel:
         self.model_dup = model_dup
         self.manifest = manifest
         self.version = manifest.get("model_version", "unknown")
+        self.features = manifest.get("features") or list(FEATURES)
 
     @classmethod
     def load(cls, model_dir: str | Path) -> "FilterModel":
@@ -56,11 +57,16 @@ class FilterModel:
         model_dir = Path(model_dir)
         manifest = json.loads((model_dir / "manifest.json").read_text())
         if manifest["schema_hash"] != schema_hash():
-            raise ValueError(
-                f"Model {model_dir} was trained on feature schema "
-                f"{manifest['schema_hash']}, this build has {schema_hash()}: "
-                "retrain or use a matching vedette version"
-            )
+            # append-only contract: a model trained on a PREFIX of the current
+            # schema still scores (with its own feature list); anything else
+            # is a real mismatch
+            trained = manifest.get("features")
+            if not trained or trained != FEATURES[: len(trained)]:
+                raise ValueError(
+                    f"Model {model_dir} was trained on feature schema "
+                    f"{manifest['schema_hash']}, this build has {schema_hash()}: "
+                    "retrain or use a matching vedette version"
+                )
         return cls(
             joblib.load(model_dir / "model_del.joblib"),
             joblib.load(model_dir / "model_dup.joblib"),
@@ -70,7 +76,7 @@ class FilterModel:
     def score(self, features: dict[str, float], svtype: str) -> float:
         """Phred-scaled calibrated P(true call)."""
         x = np.array(
-            [[features[name] for name in FEATURES]], dtype=np.float64
+            [[features[name] for name in self.features]], dtype=np.float64
         )
         model = self.model_dup if svtype == "DUP" else self.model_del
         p_true = float(model.predict_proba(x)[0, 1])

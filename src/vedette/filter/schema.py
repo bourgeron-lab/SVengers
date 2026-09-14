@@ -45,6 +45,8 @@ FEATURES: list[str] = [
     "gq",
     "cn",
     "cnq",
+    # sample QC (appended v4; -1 when the evidence store predates schema 0.4)
+    "wave_score",
 ]
 
 

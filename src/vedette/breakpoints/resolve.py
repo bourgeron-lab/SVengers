@@ -121,6 +121,11 @@ def recover_junctions(
     pileups = cluster_sr(sr, config)
     if not pileups:
         return []
+    # runtime guard: strongest pileups first, stop at the alignment budget
+    pileups = sorted(pileups, key=lambda b: (-b.n, -b.max_cliplen))
+    budget = config.resolve_max_alignments
+    n_aligned = 0
+    n_skipped_pileups = 0
 
     pos_all = sr["pos"].astype(np.int64)
     side_all = sr["side"]
@@ -131,6 +136,9 @@ def recover_junctions(
     votes: dict[tuple[str, int, int], int] = defaultdict(int)
 
     for bp in pileups:
+        if n_aligned >= budget:
+            n_skipped_pileups += 1
+            continue
         # clips belonging to this pileup, longest first, capped
         sel = np.flatnonzero(
             (np.abs(pos_all - bp.pos) <= config.sr_pos_tolerance)
@@ -151,6 +159,7 @@ def recover_junctions(
             if len(seq) < config.resolve_min_clip:
                 continue
             query = _seq_to_arr(seq)
+            n_aligned += 1
             score, rs, re_ = _fit_align(query, ref_win)
             if score < _MATCH * config.resolve_min_identity * len(query):
                 continue
@@ -214,6 +223,12 @@ def recover_junctions(
                 )
             )
     junctions.sort(key=lambda j: (j.start, j.end))
+    if n_skipped_pileups:
+        logger.warning(
+            "hidden splits: alignment budget %d exhausted, %d/%d weakest "
+            "pileups skipped (wavy/noisy depth profile?)",
+            budget, n_skipped_pileups, len(pileups),
+        )
     logger.debug(
         "hidden splits: %d pileups -> %d junctions (%d DUP)",
         len(pileups), len(junctions),

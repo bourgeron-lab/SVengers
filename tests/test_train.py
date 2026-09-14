@@ -74,11 +74,29 @@ def test_train_and_score_roundtrip(tmp_path):
 
 
 def test_schema_mismatch_refused(tmp_path):
+    # append-only contract: a manifest whose features are NOT a prefix of the
+    # current schema (reordered here) is refused even if it self-declares a hash
     tsv = _synthetic_labeled_tsv(tmp_path)
     out = tmp_path / "models"
     train_models([tsv], out, model_version="test")
     manifest = json.loads((out / "manifest.json").read_text())
     manifest["schema_hash"] = "0" * 16
+    manifest["features"] = manifest["features"][::-1]
     (out / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="schema"):
         FilterModel.load(out)
+
+
+def test_prefix_schema_model_still_loads_and_scores(tmp_path):
+    # a model trained before a feature was appended (its features are a strict
+    # prefix of the current schema) keeps loading and scores on its own list
+    tsv = _synthetic_labeled_tsv(tmp_path)
+    out = tmp_path / "models"
+    train_models([tsv], out, model_version="test")
+    manifest = json.loads((out / "manifest.json").read_text())
+    manifest["schema_hash"] = "0" * 16  # simulate: hashed before the append
+    (out / "manifest.json").write_text(json.dumps(manifest))
+    model = FilterModel.load(out)
+    assert model.features == FEATURES  # trained on today's full list
+    feats = {name: 0.0 for name in FEATURES}
+    assert model.score(feats, "DEL") >= 0.0

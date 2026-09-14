@@ -22,6 +22,8 @@ class FeatureExtractor:
         self.annotator = annotator
         self.coverage = float(store.meta.get("coverage", store.meta.get("mean_depth", 30.0)))
         self.mean_depth = float(store.meta["mean_depth"])
+        ws = store.meta.get("wave_score")  # store schema >= 0.4
+        self.wave_score = float(ws) if ws is not None else -1.0
         self._chrom_median: dict[str, float] = {}
 
     def _chrom_median_depth(self, contig: str) -> float:
@@ -114,6 +116,7 @@ class FeatureExtractor:
             "gq": float(gq),
             "cn": float(cn),
             "cnq": float(cnq) if not math.isnan(cnq) else -1.0,
+            "wave_score": self.wave_score,
         }
         feats.update(self.annotator.annotate(contig, start, end))
         missing = set(FEATURES) - set(feats)

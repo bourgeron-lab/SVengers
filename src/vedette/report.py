@@ -27,6 +27,7 @@ import pysam
 
 from . import __version__
 from .ped import Pedigree
+from .qc import WAVE_WARN
 
 logger = logging.getLogger(__name__)
 
@@ -243,12 +244,29 @@ workspace : <code>families/{html.escape(fid)}/</code></p>
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
 
+    # ---- per-sample wave QC (evidence-store meta, absent on old stores)
+    wave_scores: dict[str, float | None] = {}
+    for s in samples:
+        store_path = run_dir / "samples" / s / f"{s}.evidence.zarr"
+        wave_scores[s] = None
+        if store_path.exists():
+            try:
+                from .extract.store import EvidenceStore
+
+                wave_scores[s] = EvidenceStore(store_path).meta.get("wave_score")
+            except Exception:  # report survives a broken/foreign store
+                pass
+    n_wavy = sum(1 for v in wave_scores.values() if v is not None and v >= WAVE_WARN)
+
     # ---- HTML assembly
     svc = Counter(s["svtype"] for s in passing)
     sample_rows = sorted(
         (
             [s, st["genotyped"], st["carrier"],
-             round(float(np.median(st["gq"])), 1) if st["gq"] else 0]
+             round(float(np.median(st["gq"])), 1) if st["gq"] else 0,
+             ("—" if wave_scores[s] is None else
+              f"{wave_scores[s]:.3f} ⚠" if wave_scores[s] >= WAVE_WARN
+              else f"{wave_scores[s]:.3f}")]
             for s, st in sample_stats.items()
         ),
         key=lambda r: r[0],
@@ -278,6 +296,7 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 <span class=kpi><b>{svc.get("DUP", 0)}</b>DUP</span>
 <span class=kpi><b>{n_artifact}</b>artefacts cohorte</span>
 <span class=kpi><b>{len(rare)}</b>sites rares (≤2 porteurs)</span>
+<span class=kpi><b>{n_wavy}</b>échantillons wavy (score ≥ {WAVE_WARN})</span>
 </div>
 
 <h2>Spectres (sites PASS)</h2>
@@ -298,7 +317,10 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 {_table(["site", "locus", "type", "taille", "AF", "porteurs"], rare_rows, limit=50)}
 
 <h2>Échantillons</h2>
-{_table(["échantillon", "génotypés", "porteur", "GQ médian"], sample_rows)}
+<p>Le score de wave mesure les oscillations mégabase de couverture survivant à la
+correction GC (artefact de librairie) ; au-delà de {WAVE_WARN}, les calls depth-only
+de l'échantillon sont à considérer avec prudence.</p>
+{_table(["échantillon", "génotypés", "porteur", "GQ médian", "wave"], sample_rows)}
 
 </body></html>"""
 

@@ -119,3 +119,22 @@ def test_merge_junction_sets_refines_and_appends():
     assert (dup.start, dup.end, dup.precise, dup.homlen) == (4000, 4800, True, 7)
     assert dup.pe == 6  # PE support preserved
     assert any(j.svtype == "DEL" and j.start == 8000 for j in merged)
+
+
+def test_alignment_budget_keeps_strongest_pileups(ref):
+    # one strong pileup (4 clips, capped at resolve_max_clips=3 alignments) +
+    # many weak ones (2 clips each); a budget of 3 is exhausted by the strong
+    # pileup and every weak pileup is skipped (the check is per pileup: a
+    # pileup that starts under budget realigns all its clips)
+    clip = bytes(ref[2500:2545])
+    entries = [(2000, SR_RIGHT_CLIP, clip)] * 4
+    for k in range(20):
+        # target within the +/-2kb realignment window of the clip position
+        weak = bytes(ref[4200 + 60 * k : 4245 + 60 * k])
+        entries += [(3100 + 40 * k, SR_RIGHT_CLIP, weak)] * 2
+    sr, seqs = _sr(entries)
+    cfg = BreakpointConfig(resolve_max_alignments=3)
+    junctions = recover_junctions(sr, seqs, ref, cfg)
+    assert [(j.svtype, j.start, j.end) for j in junctions] == [("DEL", 2000, 2500)]
+    # no budget: the weak pileups also realign (sanity that the cap did the cut)
+    assert len(recover_junctions(sr, seqs, ref, BreakpointConfig())) > 1
