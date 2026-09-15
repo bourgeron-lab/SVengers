@@ -15,6 +15,7 @@ process VEDETTE_REPORT {
 
     script:
     def ped_arg = params.pedigree ? "--pedigree '${params.pedigree}'" : ""
+    def genes_arg = params.genes_gff ? "--genes-gff '${params.genes_gff}'" : ""
     """
     mkdir -p rundir/cohort
     # published per-sample evidence stores: wave-QC column of the sample table
@@ -26,7 +27,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir ${ped_arg} \\
+    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi

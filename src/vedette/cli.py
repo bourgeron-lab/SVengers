@@ -203,6 +203,15 @@ def merge(
     include_filtered: bool = typer.Option(
         False, help="Also cluster non-PASS calls (default: PASS/LowPosterior only)"
     ),
+    rescue_min_sq: float = typer.Option(
+        1.0, help="LowSQ calls at or above this SQ join clusters as sub-threshold members (<0 disables)"
+    ),
+    rescue_min_samples: int = typer.Option(
+        2, help="Distinct sub-threshold carriers required to rescue a site with no PASS member"
+    ),
+    rescue_total_sq: float = typer.Option(
+        8.0, help="Summed best-SQ across carriers required to rescue such a site"
+    ),
 ) -> None:
     """Cross-sample clustering of filtered calls into cohort sites."""
     from .cohort.merge import run_merge
@@ -215,7 +224,9 @@ def merge(
         else:
             paths.append(v)
     n = run_merge(
-        paths, read_fai(fasta), out, min_gq=min_gq, pass_only=not include_filtered
+        paths, read_fai(fasta), out, min_gq=min_gq, pass_only=not include_filtered,
+        rescue_min_sq=None if rescue_min_sq < 0 else rescue_min_sq,
+        rescue_min_samples=rescue_min_samples, rescue_total_sq=rescue_total_sq,
     )
     typer.echo(f"{len(paths)} VCFs -> {n} sites -> {out}")
 
@@ -469,6 +480,9 @@ def report(
         False, help="Skip writing families/<FID>/ VCF subsets"
     ),
     min_denovo_gq: int = typer.Option(20, help="GQ threshold for reported de novo candidates"),
+    genes_gff: Optional[Path] = typer.Option(
+        None, help="Tabix-indexed Ensembl GFF: adds a gene column to site tables"
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .ped import parse_ped
@@ -481,6 +495,7 @@ def report(
         cohort_name=cohort_name,
         make_family_workspaces=not no_family_workspaces,
         min_denovo_gq=min_denovo_gq,
+        genes_gff=genes_gff,
     )
     typer.echo(f"rapport -> {path}")
 

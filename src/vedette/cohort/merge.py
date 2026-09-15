@@ -32,6 +32,8 @@ class MemberCall:
     end: int
     precise: bool
     gq: int
+    passing: bool = True   # PASS (or kept-filter) in the single-sample VCF
+    sq: float = 0.0
 
 
 @dataclass
@@ -116,8 +118,16 @@ def read_sample_calls(
     min_gq: int = 0,
     pass_only: bool = True,
     keep_filters: tuple[str, ...] = ("LowPosterior",),
+    rescue_min_sq: float | None = 1.0,
 ) -> dict[tuple[str, str], list[MemberCall]]:
-    """{(contig, svtype): calls} from one filtered single-sample VCF."""
+    """{(contig, svtype): calls} from one filtered single-sample VCF.
+
+    A LowSQ-only call with SQ >= rescue_min_sq is loaded as a NON-passing
+    member: it cannot nominate a site alone, but recurrent sub-threshold
+    calls across samples can (see run_merge) — a familial CNV in a hard
+    region scores SQ ~2 in every carrier and would otherwise vanish from
+    the cohort (real case: 30 kb DEL over the SHANK3 start, 5 carriers).
+    """
     out: dict[tuple[str, str], list[MemberCall]] = {}
     with pysam.VariantFile(str(vcf_path)) as vcf:
         sample = list(vcf.header.samples)[0]
@@ -125,9 +135,20 @@ def read_sample_calls(
             svtype = rec.info.get("SVTYPE")
             if svtype not in ("DEL", "DUP"):
                 continue
-            filters = set(rec.filter.keys())
-            if pass_only and filters - {"PASS"} - set(keep_filters):
-                continue
+            fmt = rec.samples[sample]
+            sq = fmt.get("SQ")
+            sq = float(sq) if sq is not None else 0.0
+            extra = set(rec.filter.keys()) - {"PASS"} - set(keep_filters)
+            passing = not extra
+            if pass_only and not passing:
+                # only the calibrated-score filter is rescuable; hard-filter
+                # failures (NoEvidence, MaxN, ...) stay out
+                if (
+                    rescue_min_sq is None
+                    or extra != {"LowSQ"}
+                    or sq < rescue_min_sq
+                ):
+                    continue
             fmt = rec.samples[sample]
             gt = fmt.get("GT")
             if gt is None or not any(a == 1 for a in gt if a is not None):
@@ -142,6 +163,8 @@ def read_sample_calls(
                     end=rec.stop,
                     precise="IMPRECISE" not in rec.info,
                     gq=gq,
+                    passing=passing or not pass_only,
+                    sq=sq,
                 )
             )
     return out
@@ -153,11 +176,22 @@ def run_merge(
     out_vcf: str | Path,
     min_gq: int = 0,
     pass_only: bool = True,
+    rescue_min_sq: float | None = 1.0,
+    rescue_min_samples: int = 2,
+    rescue_total_sq: float = 8.0,
 ) -> int:
-    """Merge per-sample VCFs into a sites-only VCF; returns the site count."""
+    """Merge per-sample VCFs into a sites-only VCF; returns the site count.
+
+    A cluster with no passing member is still emitted (INFO/RESCUE=RECURRENT)
+    when >= rescue_min_samples distinct carriers support it and their summed
+    best SQ reaches rescue_total_sq — treating per-sample calibrated scores
+    as accumulating evidence for recurrent sub-threshold sites.
+    """
     by_key: dict[tuple[str, str], list[MemberCall]] = {}
     for path in vcf_paths:
-        for key, calls in read_sample_calls(path, min_gq, pass_only).items():
+        for key, calls in read_sample_calls(
+            path, min_gq, pass_only, rescue_min_sq=rescue_min_sq
+        ).items():
             by_key.setdefault(key, []).extend(calls)
 
     header = pysam.VariantHeader()
@@ -173,6 +207,11 @@ def run_merge(
     header.info.add("NSAMPLES", "1", "Integer", "Number of distinct carrier samples")
     header.info.add("SPREAD", "1", "Integer", "Breakpoint spread among members (bp)")
     header.info.add("PRECISE_FRAC", "1", "Float", "Fraction of members with precise breakpoints")
+    header.info.add(
+        "RESCUE", "1", "String",
+        "Site discovery mode when no member passed the single-sample filter "
+        "(RECURRENT: rescued by cross-sample recurrence of sub-threshold calls)",
+    )
 
     n_sites = 0
     contig_order = {c.name: i for i, c in enumerate(contigs)}
@@ -192,6 +231,16 @@ def run_merge(
                     merged.append((cl.start, cl))
             merged.sort(key=lambda t: t[0])
             for _pos, cl in merged:
+                rescued = not any(m.passing for m in cl.members)
+                if rescued:
+                    best_sq: dict[str, float] = {}
+                    for m in cl.members:
+                        best_sq[m.sample] = max(best_sq.get(m.sample, 0.0), m.sq)
+                    if (
+                        len(best_sq) < rescue_min_samples
+                        or sum(best_sq.values()) < rescue_total_sq
+                    ):
+                        continue
                 n_sites += 1
                 start, end = cl.start, cl.end
                 if end <= start:
@@ -205,12 +254,17 @@ def run_merge(
                 )
                 rec.info["SVTYPE"] = cl.svtype
                 rec.info["SVLEN"] = (end - start) * (1 if cl.svtype == "DUP" else -1)
+                # explicit END: pysam otherwise re-derives stop from SVLEN on
+                # read-back, one base off the half-open intent
+                rec.stop = end
                 rec.info["NMEMBERS"] = len(cl.members)
                 rec.info["NSAMPLES"] = len({m.sample for m in cl.members})
                 rec.info["SPREAD"] = cl.spread
                 rec.info["PRECISE_FRAC"] = round(
                     sum(1 for m in cl.members if m.precise) / len(cl.members), 3
                 )
+                if rescued:
+                    rec.info["RESCUE"] = "RECURRENT"
                 out.write(rec)
     if mode == "wz":
         pysam.tabix_index(out_path, preset="vcf", force=True)
