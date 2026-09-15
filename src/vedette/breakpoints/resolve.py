@@ -132,6 +132,17 @@ def recover_junctions(
     clip_all = sr["cliplen"].astype(np.int64)
     window = config.resolve_window
 
+    # position-sorted clip index per side: pileup membership by binary search,
+    # not a full-array scan per pileup (quadratic on junction-dense genomes —
+    # profiled at hours/contig on wavy GHFC samples)
+    by_side: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+    for side in np.unique(side_all):
+        idx = np.flatnonzero(
+            (side_all == side) & (clip_all >= config.resolve_min_clip)
+        )
+        idx = idx[np.argsort(pos_all[idx], kind="stable")]
+        by_side[int(side)] = (pos_all[idx], idx)
+
     # candidate adjacencies: (svtype, start, end) -> [homlen-capable evidence count]
     votes: dict[tuple[str, int, int], int] = defaultdict(int)
 
@@ -140,11 +151,12 @@ def recover_junctions(
             n_skipped_pileups += 1
             continue
         # clips belonging to this pileup, longest first, capped
-        sel = np.flatnonzero(
-            (np.abs(pos_all - bp.pos) <= config.sr_pos_tolerance)
-            & (side_all == bp.side)
-            & (clip_all >= config.resolve_min_clip)
-        )
+        if bp.side not in by_side:
+            continue
+        sorted_pos, sorted_idx = by_side[bp.side]
+        lo = np.searchsorted(sorted_pos, bp.pos - config.sr_pos_tolerance, "left")
+        hi = np.searchsorted(sorted_pos, bp.pos + config.sr_pos_tolerance, "right")
+        sel = sorted_idx[lo:hi]
         if len(sel) == 0:
             continue
         sel = sel[np.argsort(-clip_all[sel])][: config.resolve_max_clips]
