@@ -145,7 +145,9 @@ def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     out = tmp_path / "sites.vcf.gz"
     contigs = [Contig("chr22", 50_818_468, "autosome")]
     n = run_merge(paths, contigs, out)
-    sites = {(r.start, r.stop): r for r in pysam.VariantFile(str(out))}
+    # read-back stop is END = POS + |SVLEN| (htslib symbolic-allele rule),
+    # one base past the half-open end — the codebase-wide convention
+    sites = {(r.start, r.stop - 1): r for r in pysam.VariantFile(str(out))}
     # rescued familial site present and flagged
     assert (50_654_000, 50_684_001) in sites
     assert sites[(50_654_000, 50_684_001)].info["RESCUE"] == "RECURRENT"

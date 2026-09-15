@@ -253,10 +253,11 @@ def run_merge(
                     id=f"vedette_site_{n_sites}",
                 )
                 rec.info["SVTYPE"] = cl.svtype
+                # NB: with SVLEN set on a symbolic allele, htslib forces
+                # END = POS + |SVLEN|, one base past the half-open end — the
+                # same convention every vedette VCF carries (see ROADMAP,
+                # coordinate-normalization item)
                 rec.info["SVLEN"] = (end - start) * (1 if cl.svtype == "DUP" else -1)
-                # explicit END: pysam otherwise re-derives stop from SVLEN on
-                # read-back, one base off the half-open intent
-                rec.stop = end
                 rec.info["NMEMBERS"] = len(cl.members)
                 rec.info["NSAMPLES"] = len({m.sample for m in cl.members})
                 rec.info["SPREAD"] = cl.spread

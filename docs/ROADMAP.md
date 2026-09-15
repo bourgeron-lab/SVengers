@@ -22,7 +22,10 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   trop fort, matching truvari des DEL en représentation séquence) ; (b) FP DUP
   en amont (nomination everted plus stricte, deux côtés requis) ; (c) HG003/4
   semi-supervisé ; (d) éval DUP tandem-only FAITE (12321/28942 INS tandem ; SQ≥7 : 91,3 % précision vs Manta 60,1 % à recall égal, réservoir brut 5× Manta) ;
-  (e) rerun avec PoN fondateurs génome entier.
+  (e) rerun avec PoN fondateurs génome entier ; (f) normaliser la convention
+  SVLEN/END des VCF (htslib force END=POS+|SVLEN| sur les allèles symboliques,
+  +1 vs notre demi-ouvert — cohérent partout mais à assainir avant publication) ;
+  (g) réentraîner v4 avec la feature wave_score.
 
 ### 1bis. Détail du plan d'entraînement initial (référence)
 - Télécharger (proxy configuré) dans `resources/giab/` :
