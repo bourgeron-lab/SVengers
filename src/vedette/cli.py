@@ -483,6 +483,9 @@ def report(
     genes_gff: Optional[Path] = typer.Option(
         None, help="Tabix-indexed Ensembl GFF: adds a gene column to site tables"
     ),
+    ndd_tsv: Optional[Path] = typer.Option(
+        None, help="GeneTrek TSV: NDD tiers feed the impact score of site tables"
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .ped import parse_ped
@@ -496,6 +499,7 @@ def report(
         make_family_workspaces=not no_family_workspaces,
         min_denovo_gq=min_denovo_gq,
         genes_gff=genes_gff,
+        ndd_tsv=ndd_tsv,
     )
     typer.echo(f"rapport -> {path}")
 

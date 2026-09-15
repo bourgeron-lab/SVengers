@@ -18,3 +18,4 @@ resources/
 logs/
 models/*.joblib.tmp
 runs/
+genetrek-data-*.tsv

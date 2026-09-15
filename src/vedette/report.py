@@ -74,35 +74,85 @@ def _table(headers: list[str], rows: list[list], limit: int | None = None) -> st
 
 
 class _GeneIndex:
-    """Overlap lookup of gene names in a tabix-indexed Ensembl GFF."""
+    """Overlap lookup of genes/exons in a tabix-indexed Ensembl GTF/GFF."""
 
-    def __init__(self, gff_path: str | Path):
+    def __init__(self, gff_path: str | Path, ndd_tsv: str | Path | None = None):
         self.tbx = pysam.TabixFile(str(gff_path))
         self._contigs = set(self.tbx.contigs)
+        # GeneTrek NDD tiers, keyed by ENSG and by symbol
+        self.ndd: dict[str, int] = {}   # 2 = high-confidence, 1 = candidate
+        if ndd_tsv:
+            with open(ndd_tsv) as fh:
+                for row in csv.DictReader(fh, delimiter="\t"):
+                    tier = 0
+                    if row.get("hc_ndd_v7", "").strip().lower() == "true":
+                        tier = 2
+                    elif row.get("candidate_ndd_v5", "").strip().lower() == "true":
+                        tier = 1
+                    if tier:
+                        for key in (row.get("ensg", ""), row.get("hgnc_symbol", "")):
+                            if key:
+                                self.ndd[key] = max(self.ndd.get(key, 0), tier)
 
-    def genes(self, contig: str, start: int, end: int, max_names: int = 6) -> str:
+    def _hits(self, contig: str, start: int, end: int):
+        """[(name, ensg, coding, exon_overlap)] of genes overlapping the site."""
         if contig not in self._contigs:
             contig = contig.removeprefix("chr")
             if contig not in self._contigs:
-                return ""
-        coding, other = [], []
+                return []
+        genes: dict[str, list] = {}
         try:
             rows = self.tbx.fetch(contig, max(start, 0), end)
         except (ValueError, OSError):
-            return ""
+            return []
         for row in rows:
             f = row.split("\t")
-            if len(f) < 9 or f[2] != "gene":
+            if len(f) < 9 or f[2] not in ("gene", "exon"):
                 continue
-            m = re.search(r'gene_name="?([^";]+)"?', f[8])
-            if not m:
+            gid = re.search(r'gene_id="?([^";.]+)', f[8])
+            name = re.search(r'gene_name="?([^";]+)"?', f[8])
+            if not gid:
                 continue
-            (coding if "protein_coding" in f[8] else other).append(m.group(1))
-        names = coding or other  # non-coding only when nothing coding overlaps
+            g = genes.setdefault(
+                gid.group(1),
+                [name.group(1) if name else gid.group(1), gid.group(1),
+                 "protein_coding" in f[8], False],
+            )
+            if f[2] == "exon":
+                g[3] = True
+            elif "protein_coding" in f[8]:
+                g[2] = True
+        return list(genes.values())
+
+    def genes(self, contig: str, start: int, end: int, max_names: int = 6) -> str:
+        hits = self._hits(contig, start, end)
+        coding = [h[0] for h in hits if h[2]]
+        names = coding or [h[0] for h in hits]
         out = ", ".join(names[:max_names])
         if len(names) > max_names:
             out += f" (+{len(names) - max_names})"
         return out
+
+    def impact(self, contig: str, start: int, end: int) -> tuple[int, str]:
+        """(score, label): 0 intergénique, 1 intronique, 2 exonique,
+        +1 gène NDD candidat / +2 NDD haute confiance (GeneTrek)."""
+        hits = [h for h in self._hits(contig, start, end) if h[2]]  # coding only
+        if not hits:
+            return 0, "intergénique"
+        exonic = any(h[3] for h in hits)
+        score = 2 if exonic else 1
+        label = "exonique" if exonic else "intronique"
+        ndd_tier, ndd_genes = 0, []
+        for name, ensg, _coding, _exon in hits:
+            tier = max(self.ndd.get(ensg, 0), self.ndd.get(name, 0))
+            if tier:
+                ndd_genes.append(name)
+                ndd_tier = max(ndd_tier, tier)
+        if ndd_tier:
+            score += ndd_tier
+            label += " · NDD-" + ("HC" if ndd_tier == 2 else "cand")
+            label += f" ({', '.join(sorted(set(ndd_genes))[:3])})"
+        return score, f"{score} — {label}"
 
 
 def _read_cohort_vcf(path: Path):
@@ -184,6 +234,7 @@ def generate_report(
     make_family_workspaces: bool = True,
     min_denovo_gq: int = 20,
     genes_gff: str | Path | None = None,
+    ndd_tsv: str | Path | None = None,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -193,10 +244,13 @@ def generate_report(
     out_html = Path(out_html) if out_html else run_dir / "report.html"
     cohort_name = cohort_name or run_dir.name
 
-    gene_idx = _GeneIndex(genes_gff) if genes_gff else None
+    gene_idx = _GeneIndex(genes_gff, ndd_tsv) if genes_gff else None
 
     def _genes(contig: str, start: int, end: int) -> str:
         return gene_idx.genes(contig, start, end) if gene_idx else ""
+
+    def _impact(contig: str, start: int, end: int) -> tuple[int, str]:
+        return gene_idx.impact(contig, start, end) if gene_idx else (0, "")
 
     samples, sites, gt_by_site = _read_cohort_vcf(vcf_path)
     passing = [s for s in sites if s["filter"] == "PASS"]
@@ -272,15 +326,17 @@ def generate_report(
                 [r["site_id"], f'{r["contig"]}:{int(r["start"]) + 1}-{r["end"]}',
                  r["svtype"], int(r["end"]) - int(r["start"]),
                  _genes(r["contig"], int(r["start"]), int(r["end"])),
+                 _impact(r["contig"], int(r["start"]), int(r["end"]))[1],
                  r["child"], r["child_gq"], r["dnq"]]
                 for r in denovo
             ]
+            dn_rows.sort(key=lambda row: -int(str(row[5]).split(" ")[0] or 0))
             family_sections.append(f"""
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
 {len(denovo)} de novo (GQ≥{min_denovo_gq}), {len(fam_viol)} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code></p>
-{_table(["site", "locus", "type", "taille", "gènes", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
+{_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
 
@@ -321,12 +377,19 @@ workspace : <code>families/{html.escape(fid)}/</code></p>
         return out
 
     def _rare_rows(svtype: str) -> list[list]:
-        return [
-            [s["id"], f'{s["contig"]}:{s["start"] + 1}-{s["end"]}', s["size"],
-             _genes(s["contig"], s["start"], s["end"]),
-             f'{s["af"]:.4f}', _carrier_ids(s)]
-            for s in rare if s["svtype"] == svtype
-        ]
+        rows = []
+        for s in rare:
+            if s["svtype"] != svtype:
+                continue
+            score, label = _impact(s["contig"], s["start"], s["end"])
+            rows.append((score, [
+                s["id"], f'{s["contig"]}:{s["start"] + 1}-{s["end"]}', s["size"],
+                _genes(s["contig"], s["start"], s["end"]), label,
+                f'{s["af"]:.4f}', _carrier_ids(s),
+            ]))
+        # triage: NDD/exonique d'abord, puis porteurs rares, puis taille
+        rows.sort(key=lambda t: (-t[0], -t[1][2]))
+        return [r for _score, r in rows]
     sweep_table = _table(
         ["seuil GQ", "génotypés", "violations", "MVR", "transmission", "de novo"],
         [[r["threshold"], r["n_genotyped"], r["n_violation"], r["mvr"],
@@ -365,10 +428,12 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 {"".join(family_sections) if family_sections else "<p>Pedigree non fourni.</p>"}
 
 <h2>Sites rares (≤ 2 porteurs)</h2>
+<p>Impact : 0 intergénique, 1 intronique, 2 exonique ; +1 gène NDD candidat,
++2 gène NDD haute confiance (GeneTrek). Tri par impact puis taille.</p>
 <h3>DEL ({sum(1 for s in rare if s["svtype"] == "DEL")})</h3>
-{_table(["site", "locus", "taille", "gènes", "AF", "porteurs"], _rare_rows("DEL"), limit=40)}
+{_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DEL"), limit=40)}
 <h3>DUP ({sum(1 for s in rare if s["svtype"] == "DUP")})</h3>
-{_table(["site", "locus", "taille", "gènes", "AF", "porteurs"], _rare_rows("DUP"), limit=40)}
+{_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DUP"), limit=40)}
 
 <h2>Échantillons</h2>
 <p>Le score de wave mesure les oscillations mégabase de couverture survivant à la

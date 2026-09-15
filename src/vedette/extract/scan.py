@@ -317,9 +317,20 @@ def scan_cram(
             results[ev.contig] = ev
             logger.info("scan %s: %d reads", ev.contig, ev.n_reads)
     else:
-        ctx = get_context("spawn")  # htslib handles must not cross fork
-        with ctx.Pool(min(threads, len(jobs))) as pool:
-            for ev in pool.imap_unordered(_scan_worker, jobs):
+        # ProcessPoolExecutor, not multiprocessing.Pool: when a worker is
+        # OOM-killed, Pool.imap_unordered blocks forever on the result queue
+        # (observed: 6h at 0% CPU on a deep genome), while the executor raises
+        # BrokenProcessPool so the task fails fast and SLURM retries with more
+        # memory. spawn context: htslib handles must not cross fork.
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        ctx = get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=min(threads, len(jobs)), mp_context=ctx
+        ) as pool:
+            futures = [pool.submit(_scan_worker, job) for job in jobs]
+            for fut in as_completed(futures):
+                ev = fut.result()
                 results[ev.contig] = ev
                 logger.info("scan %s: %d reads", ev.contig, ev.n_reads)
     return insert, results
