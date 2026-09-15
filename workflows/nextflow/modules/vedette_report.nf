@@ -17,6 +17,10 @@ process VEDETTE_REPORT {
     def ped_arg = params.pedigree ? "--pedigree '${params.pedigree}'" : ""
     """
     mkdir -p rundir/cohort
+    # published per-sample evidence stores: wave-QC column of the sample table
+    if [ -d "${params.outdir}/samples" ]; then
+        ln -s "${params.outdir}/samples" rundir/samples
+    fi
     ln -s \$(readlink -f ${cohort_vcf}) rundir/cohort/cohort.vcf.gz
     ln -s \$(readlink -f ${cohort_index}) rundir/cohort/cohort.vcf.gz.tbi
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
