@@ -28,7 +28,10 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   (g) réentraîner v4 avec la feature wave_score ; (h) critère de rescue du
   merge adaptatif à la taille de cohorte (2670 éch. : 80 % des sites sont
   RESCUE avec ΣSQ>=8/2 porteurs — resserrer en fraction de porteurs + ΣSQ
-  moyen, ou calibrer sur le taux d'artefacts CohortArtifact).
+  moyen, ou calibrer sur le taux d'artefacts CohortArtifact) ; (i) workspaces
+  familles en une passe batchée (le subset VCF par famille relit tout le VCF
+  cohorte : 1207 familles x 635M génotypes = infaisable — assembler depuis
+  les gt.tsv par échantillon, chaque fichier lu une seule fois).
 
 ### 1bis. Détail du plan d'entraînement initial (référence)
 - Télécharger (proxy configuré) dans `resources/giab/` :

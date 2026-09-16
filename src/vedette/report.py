@@ -156,18 +156,29 @@ class _GeneIndex:
 
 
 def _read_cohort_vcf(path: Path):
-    """One dict per site + per-sample GT map."""
-    sites, gt_by_site = [], {}
+    """One dict per site + compact genotype matrices.
+
+    Dict-of-dicts genotypes cost ~80 bytes/genotype and OOM-killed the report
+    on 238k sites x 2670 samples (635M genotypes); nalt/gq live in two numpy
+    matrices (int8+int16 = 3 bytes/genotype, ~1.9 GB at that scale) and each
+    site carries its row index.
+    """
+    sites = []
+    nalt_rows, gq_rows = [], []
     with pysam.VariantFile(str(path)) as vcf:
         samples = list(vcf.header.samples)
+        n = len(samples)
         for rec in vcf:
             af = rec.info.get("AF", (0.0,))
             af = af[0] if isinstance(af, tuple) else af
-            gts = {}
-            for s in samples:
-                gt = rec.samples[s].get("GT")
+            nalt = np.full(n, -1, np.int8)   # -1 = missing
+            gq = np.zeros(n, np.int16)
+            for i, s in enumerate(samples):
+                fmt = rec.samples[s]
+                gt = fmt.get("GT")
                 if gt is not None and None not in gt:
-                    gts[s] = (sum(gt), int(rec.samples[s].get("GQ") or 0))
+                    nalt[i] = sum(gt)
+                    gq[i] = int(fmt.get("GQ") or 0)
             sites.append({
                 "id": rec.id, "contig": rec.contig, "start": rec.start, "end": rec.stop,
                 "svtype": rec.info.get("SVTYPE", "?"), "size": rec.stop - rec.start,
@@ -175,9 +186,13 @@ def _read_cohort_vcf(path: Path):
                 "ncarrier": int(rec.info.get("NCARRIER", 0)),
                 "hwe": float(rec.info.get("HWE_P", 1.0)),
                 "filter": ";".join(rec.filter.keys()) or "PASS",
+                "idx": len(sites),
             })
-            gt_by_site[rec.id] = gts
-    return samples, sites, gt_by_site
+            nalt_rows.append(nalt)
+            gq_rows.append(gq)
+    nalt_m = np.vstack(nalt_rows) if nalt_rows else np.zeros((0, len(samples)), np.int8)
+    gq_m = np.vstack(gq_rows) if gq_rows else np.zeros((0, len(samples)), np.int16)
+    return samples, sites, nalt_m, gq_m
 
 
 def _spectra_figures(sites: list[dict]):
@@ -252,7 +267,7 @@ def generate_report(
     def _impact(contig: str, start: int, end: int) -> tuple[int, str]:
         return gene_idx.impact(contig, start, end) if gene_idx else (0, "")
 
-    samples, sites, gt_by_site = _read_cohort_vcf(vcf_path)
+    samples, sites, nalt_m, gq_m = _read_cohort_vcf(vcf_path)
     passing = [s for s in sites if s["filter"] == "PASS"]
     n_artifact = sum(1 for s in sites if "CohortArtifact" in s["filter"])
     # "rare" by carrier count (an AF cutoff is meaningless in small cohorts:
@@ -262,25 +277,48 @@ def generate_report(
         key=lambda s: (s["ncarrier"], -s["size"]),
     )
 
-    sweep_rows, mendel_rows, summary_rows = [], [], []
+    sweep_rows, summary_rows = [], []
     if (cohort_dir / "trio_sweep.tsv").exists():
         sweep_rows = list(csv.DictReader(open(cohort_dir / "trio_sweep.tsv"), delimiter="\t"))
-    if (cohort_dir / "mendel_report.tsv").exists():
-        mendel_rows = list(csv.DictReader(open(cohort_dir / "mendel_report.tsv"), delimiter="\t"))
     if (cohort_dir / "mendel_summary.tsv").exists():
         summary_rows = list(csv.DictReader(open(cohort_dir / "mendel_summary.tsv"), delimiter="\t"))
 
-    # ---- per-sample stats
+    # mendel_report.tsv scales with trios x sites (11 GB on dataset_paper):
+    # stream it, keeping only GQ-filtered de novo rows and per-family
+    # violation rows (the latter only when family workspaces are written)
+    denovo_by_family: dict[str, list[dict]] = defaultdict(list)
+    viol_by_family: dict[str, list[dict]] = defaultdict(list)
+    viol_counts: dict[str, int] = defaultdict(int)
+    mendel_fields: list[str] = []
+    if (cohort_dir / "mendel_report.tsv").exists():
+        with open(cohort_dir / "mendel_report.tsv") as fh:
+            reader = csv.DictReader(fh, delimiter="\t")
+            mendel_fields = list(reader.fieldnames or [])
+            for r in reader:
+                if r["violation"] == "1":
+                    viol_counts[r["family_id"]] += 1
+                    if make_family_workspaces:
+                        viol_by_family[r["family_id"]].append(r)
+                if (
+                    r["inheritance"] == "denovo"
+                    and min(int(r["child_gq"]), int(r["father_gq"]), int(r["mother_gq"]))
+                    >= min_denovo_gq
+                ):
+                    denovo_by_family[r["family_id"]].append(r)
+
+    # ---- per-sample stats (vectorized over the genotype matrices)
+    genotyped_per_sample = (nalt_m >= 0).sum(axis=0)
+    carrier_per_sample = (nalt_m > 0).sum(axis=0)
+    masked_gq = np.ma.masked_array(gq_m, mask=(nalt_m < 0))
+    median_gq_per_sample = np.ma.median(masked_gq, axis=0).filled(0)
     sample_stats = {
-        s: {"genotyped": 0, "carrier": 0, "gq": []} for s in samples
+        s: {
+            "genotyped": int(genotyped_per_sample[i]),
+            "carrier": int(carrier_per_sample[i]),
+            "median_gq": float(median_gq_per_sample[i]),
+        }
+        for i, s in enumerate(samples)
     }
-    for gts in gt_by_site.values():
-        for s, (nalt, gq) in gts.items():
-            st = sample_stats[s]
-            st["genotyped"] += 1
-            st["gq"].append(gq)
-            if nalt:
-                st["carrier"] += 1
 
     # ---- family workspaces
     family_sections = []
@@ -293,12 +331,9 @@ def generate_report(
         for fid in sorted(families):
             members = families[fid]
             fam_dir = run_dir / "families" / fid
-            fam_viol = [r for r in mendel_rows if r["family_id"] == fid and r["violation"] == "1"]
-            denovo = [
-                r for r in mendel_rows
-                if r["family_id"] == fid and r["inheritance"] == "denovo"
-                and min(int(r["child_gq"]), int(r["father_gq"]), int(r["mother_gq"])) >= min_denovo_gq
-            ]
+            fam_viol = viol_by_family.get(fid, [])
+            n_viol = viol_counts.get(fid, 0)
+            denovo = denovo_by_family.get(fid, [])
             if make_family_workspaces:
                 fam_dir.mkdir(parents=True, exist_ok=True)
                 # family-subset VCF: sites where >=1 member carries
@@ -314,11 +349,9 @@ def generate_report(
                             ):
                                 vout.write(rec)
                 pysam.tabix_index(str(fam_dir / f"{fid}.vcf.gz"), preset="vcf", force=True)
-                if fam_viol or denovo:
+                if (fam_viol or denovo) and mendel_fields:
                     with open(fam_dir / "mendel.tsv", "w", newline="") as fh:
-                        writer = csv.DictWriter(
-                            fh, fieldnames=list(mendel_rows[0]), delimiter="\t"
-                        )
+                        writer = csv.DictWriter(fh, fieldnames=mendel_fields, delimiter="\t")
                         writer.writeheader()
                         writer.writerows(fam_viol + denovo)
 
@@ -333,7 +366,7 @@ def generate_report(
             dn_rows.sort(key=lambda row: -int(str(row[5]).split(" ")[0] or 0))
             family_sections.append(f"""
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
-{len(denovo)} de novo (GQ≥{min_denovo_gq}), {len(fam_viol)} violations</summary>
+{len(denovo)} de novo (GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code></p>
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
@@ -359,7 +392,7 @@ workspace : <code>families/{html.escape(fid)}/</code></p>
     sample_rows = sorted(
         (
             [s, st["genotyped"], st["carrier"],
-             round(float(np.median(st["gq"])), 1) if st["gq"] else 0,
+             round(st["median_gq"], 1),
              ("—" if wave_scores[s] is None else
               f"{wave_scores[s]:.3f} ⚠" if wave_scores[s] >= WAVE_WARN
               else f"{wave_scores[s]:.3f}")]
@@ -368,9 +401,7 @@ workspace : <code>families/{html.escape(fid)}/</code></p>
         key=lambda r: r[0],
     )
     def _carrier_ids(site: dict, cap: int = 6) -> str:
-        ids = sorted(
-            s for s, (nalt, _gq) in gt_by_site.get(site["id"], {}).items() if nalt
-        )
+        ids = sorted(samples[i] for i in np.flatnonzero(nalt_m[site["idx"]] > 0))
         out = ", ".join(ids[:cap])
         if len(ids) > cap:
             out += f" (+{len(ids) - cap})"
