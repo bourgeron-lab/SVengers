@@ -25,7 +25,10 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   (e) rerun avec PoN fondateurs génome entier ; (f) normaliser la convention
   SVLEN/END des VCF (htslib force END=POS+|SVLEN| sur les allèles symboliques,
   +1 vs notre demi-ouvert — cohérent partout mais à assainir avant publication) ;
-  (g) réentraîner v4 avec la feature wave_score.
+  (g) réentraîner v4 avec la feature wave_score ; (h) critère de rescue du
+  merge adaptatif à la taille de cohorte (2670 éch. : 80 % des sites sont
+  RESCUE avec ΣSQ>=8/2 porteurs — resserrer en fraction de porteurs + ΣSQ
+  moyen, ou calibrer sur le taux d'artefacts CohortArtifact).
 
 ### 1bis. Détail du plan d'entraînement initial (référence)
 - Télécharger (proxy configuré) dans `resources/giab/` :
