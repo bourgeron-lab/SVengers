@@ -40,14 +40,30 @@ class MemberCall:
 class SiteCluster:
     svtype: str
     members: list[MemberCall] = field(default_factory=list)
+    # cached centroid: recomputing the median on EVERY start/end access made
+    # cluster_calls quadratic-ish (py-spy'd at 6h+ on the 2670-sample cohort —
+    # each sweep step probes every active cluster's centroid)
+    _centroid: tuple[int, int] | None = None
+
+    def add(self, member: MemberCall) -> None:
+        self.members.append(member)
+        self._centroid = None
+
+    def _compute(self) -> tuple[int, int]:
+        if self._centroid is None:
+            self._centroid = (
+                int(np.median([m.start for m in self.members])),
+                int(np.median([m.end for m in self.members])),
+            )
+        return self._centroid
 
     @property
     def start(self) -> int:
-        return int(np.median([m.start for m in self.members]))
+        return self._compute()[0]
 
     @property
     def end(self) -> int:
-        return int(np.median([m.end for m in self.members]))
+        return self._compute()[1]
 
     @property
     def spread(self) -> int:
@@ -104,7 +120,7 @@ def cluster_calls(
                 if ro > best_ro:
                     best, best_ro = cl, ro
         if best is not None:
-            best.members.append(call)
+            best.add(call)
         else:
             active.append(SiteCluster(svtype=svtype, members=[call]))
 
