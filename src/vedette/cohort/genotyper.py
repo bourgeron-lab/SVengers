@@ -45,6 +45,7 @@ class StoreGenotyper:
         self.pe_window = int(insert_mu + 3 * insert_sigma) if insert_mu else 1000
         self._data: dict[str, ContigData] = {}
         self._has_junctions: dict[str, bool] = {}
+        self._junc: dict[str, dict] = {}
 
     def _contig_data(self, contig: str) -> ContigData | None:
         if contig not in self._data:
@@ -68,33 +69,60 @@ class StoreGenotyper:
                 self._has_junctions[contig] = self.store.has_junction_evidence(contig)
         return self._data[contig]
 
+    def _junction_arrays(self, contig: str) -> dict:
+        """Whole-contig PE/SR/CIG arrays, loaded once: per-site ranged zarr
+        reads decompress the same chunks over and over (profiled at ~9 sites/s
+        on 238k cohort sites — days per cohort); in-memory searchsorted slices
+        are ~100x faster for a few hundred MB per contig at most."""
+        if contig not in self._junc:
+            length = 2**62  # whole contig
+            pe = self.store.pe(contig, 0, length)
+            sr = self.store.sr(contig, 0, length)
+            cig = self.store.cig(contig, 0, length)
+            self._junc[contig] = {
+                "pe_pos1": pe["pos1"].astype(np.int64),
+                "pe_pos2": pe["pos2"].astype(np.int64),
+                "pe_orient": pe["orient"],
+                "sr_pos": sr["pos"].astype(np.int64),
+                "sr_side": sr["side"],
+                "cig_pos": cig["pos"].astype(np.int64),
+                "cig_svlen": cig["svlen"].astype(np.int64),
+            }
+        return self._junc[contig]
+
     def _junction_support(
         self, contig: str, start: int, end: int, svtype: str
     ) -> tuple[int, int, int]:
         """(pe, sr, cig) support for the adjacency start->end in this sample."""
+        j = self._junction_arrays(contig)
         w = self.pe_window
         orient = PE_DEL if svtype == "DEL" else PE_DUP
-        pe = self.store.pe(contig, max(start - w, 0), start + w)
         n_pe = 0
-        if len(pe["pos1"]):
-            sel = (pe["orient"] == orient) & (
-                (pe["pos2"].astype(np.int64) >= end - w)
-                & (pe["pos2"].astype(np.int64) <= end + w)
+        lo = int(np.searchsorted(j["pe_pos1"], max(start - w, 0), side="left"))
+        hi = int(np.searchsorted(j["pe_pos1"], start + w, side="right"))
+        if hi > lo:
+            pos2 = j["pe_pos2"][lo:hi]
+            sel = (
+                (j["pe_orient"][lo:hi] == orient)
+                & (pos2 >= end - w) & (pos2 <= end + w)
             )
             n_pe = int(sel.sum())
-        sr_start = self.store.sr(contig, max(start - _SR_TOL, 0), start + _SR_TOL)
-        sr_end = self.store.sr(contig, max(end - _SR_TOL, 0), end + _SR_TOL)
         n_sr = 0
-        if len(sr_start["pos"]):
-            n_sr += int((sr_start["side"] == SR_RIGHT_CLIP).sum())
-        if len(sr_end["pos"]):
-            n_sr += int((sr_end["side"] == SR_LEFT_CLIP).sum())
+        lo = int(np.searchsorted(j["sr_pos"], max(start - _SR_TOL, 0), side="left"))
+        hi = int(np.searchsorted(j["sr_pos"], start + _SR_TOL, side="right"))
+        if hi > lo:
+            n_sr += int((j["sr_side"][lo:hi] == SR_RIGHT_CLIP).sum())
+        lo = int(np.searchsorted(j["sr_pos"], max(end - _SR_TOL, 0), side="left"))
+        hi = int(np.searchsorted(j["sr_pos"], end + _SR_TOL, side="right"))
+        if hi > lo:
+            n_sr += int((j["sr_side"][lo:hi] == SR_LEFT_CLIP).sum())
         n_cig = 0
         if svtype == "DEL":
-            cig = self.store.cig(contig, max(start - _SR_TOL, 0), start + _SR_TOL)
-            if len(cig["pos"]):
+            lo = int(np.searchsorted(j["cig_pos"], max(start - _SR_TOL, 0), side="left"))
+            hi = int(np.searchsorted(j["cig_pos"], start + _SR_TOL, side="right"))
+            if hi > lo:
                 size = max(end - start, 1)
-                sel = np.abs(cig["svlen"].astype(np.int64) - size) <= max(10, 0.2 * size)
+                sel = np.abs(j["cig_svlen"][lo:hi] - size) <= max(10, 0.2 * size)
                 n_cig = int(sel.sum())
         return n_pe, n_sr, n_cig
 
