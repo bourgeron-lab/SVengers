@@ -138,7 +138,7 @@ class _GeneIndex:
         +1 gène NDD candidat / +2 NDD haute confiance (GeneTrek)."""
         hits = [h for h in self._hits(contig, start, end) if h[2]]  # coding only
         if not hits:
-            return 0, "intergénique"
+            return 0, "0 — intergénique"
         exonic = any(h[3] for h in hits)
         score = 2 if exonic else 1
         label = "exonique" if exonic else "intronique"

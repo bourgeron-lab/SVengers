@@ -74,3 +74,23 @@ def test_sample_score_aggregates_and_gates_on_contig_count():
 
 def test_band_definition_sane():
     assert WAVE_MAX_K == 50
+
+
+def test_impact_labels_parse_as_scores(tmp_path):
+    # every impact label must start with its integer score (the de novo
+    # tables sort by that prefix; a bare label crashed the cohort report)
+    import pysam
+
+    from vedette.report import _GeneIndex
+
+    gff = tmp_path / "genes.gff"
+    lines = [
+        'chr1\thavana\tgene\t10000\t20000\t.\t+\t.\tgene_id="ENSG1";gene_name="GENE1";gene_biotype="protein_coding";',
+        'chr1\thavana\texon\t10000\t11000\t.\t+\t.\tgene_id="ENSG1";gene_name="GENE1";gene_biotype="protein_coding";',
+    ]
+    gff.write_text("\n".join(lines) + "\n")
+    pysam.tabix_index(str(gff), preset="gff", force=True)  # bgzips to .gff.gz
+    idx = _GeneIndex(str(gff) + ".gz")
+    for span in ((10_500, 10_600), (15_000, 16_000), (50_000, 60_000)):
+        score, label = idx.impact("chr1", *span)
+        assert int(label.split(" ")[0]) == score
