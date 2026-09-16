@@ -30,7 +30,11 @@ jobs:
           cache-environment: true
       - name: Install vedette
         shell: micromamba-shell {0}
-        run: pip install -e .[dev] "truvari>=4.3"
+        run: |
+          # pyabpoa >1.5.2 ships a broken sdist and no cp312 wheels (fatal:
+          # abpoa_simd_internal.h); pin the last wheeled release before truvari
+          pip install "pyabpoa==1.5.2"
+          pip install -e .[dev] "truvari>=4.3"
       - name: Run tests
         shell: micromamba-shell {0}
         run: pytest tests/ -q
