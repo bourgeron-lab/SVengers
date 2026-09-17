@@ -7,3 +7,8 @@ exclude_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata
 segdup_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/GRCh38GenomicSuperDup.bed.gz"
 lcr_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/selfchain-LCR.hg38.bed"
 pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/popCovStdev.bw"
+
+[filter]
+# v4 models (30 features, wave_score): the calibration shifted vs v3 — v4's
+# SQ 5 sits at v3's SQ 7 operating point (precision 0.95-0.96 on HG002 v5.0q)
+low_sq_threshold = 5.0

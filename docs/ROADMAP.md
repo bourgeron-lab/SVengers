@@ -6,6 +6,12 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
+### 0. Production : models/v4 + seuil SQ>=5 (2026-09-17)
+Pipelines GHFC basculés sur models/v4 (30 features, wave_score),
+low_sq_threshold=5 dans configs/ghfc.toml (calibration décalée : SQ5 v4 =
+point d'opération SQ7 v3 ; HG002 v5.0q : P 0,953 / R 0,337 / F1 0,498).
+Prochain gain attendu : réentraînement enrichi en génomes wavy GHFC.
+
 ### 1. Entraînement du filtre ML — v1 FAIT (2026-09-09)
 Modèles `models/v1` entraînés sur HG002 40x NovaSeq PCR-free aligné façon GHFC,
 vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
