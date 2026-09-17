@@ -309,6 +309,10 @@ def generate_report(
     viol_counts: dict[str, int] = defaultdict(int)
     mendel_fields: list[str] = []
     if (cohort_dir / "mendel_report.tsv").exists():
+        # de novo candidacy demands a PASS site: the rescue reservoir and
+        # cohort-artifact sites otherwise flood the tables (dataset_paper:
+        # ~490 "de novo"/child on all sites vs a median of 2 on PASS)
+        pass_ids = {s["id"] for s in sites if s["filter"] == "PASS"}
         with open(cohort_dir / "mendel_report.tsv") as fh:
             reader = csv.DictReader(fh, delimiter="\t")
             mendel_fields = list(reader.fieldnames or [])
@@ -319,6 +323,7 @@ def generate_report(
                         viol_by_family[r["family_id"]].append(r)
                 if (
                     r["inheritance"] == "denovo"
+                    and r["site_id"] in pass_ids
                     and min(int(r["child_gq"]), int(r["father_gq"]), int(r["mother_gq"]))
                     >= min_denovo_gq
                 ):
@@ -397,7 +402,7 @@ def generate_report(
             dn_rows.sort(key=lambda row: -int(str(row[5]).split(" ")[0] or 0))
             family_sections.append(f"""
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
-{len(denovo)} de novo (GQ≥{min_denovo_gq}), {n_viol} violations</summary>
+{len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code></p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {max_denovo_per_child} candidats de novo — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
