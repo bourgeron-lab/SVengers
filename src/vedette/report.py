@@ -155,6 +155,23 @@ class _GeneIndex:
         return score, f"{score} — {label}"
 
 
+def denovo_outliers(
+    denovo_by_family: dict[str, list[dict]], threshold: int
+) -> dict[str, int]:
+    """Children carrying more GQ-filtered de novo candidates than `threshold`.
+
+    A genuine genome carries <1 de novo CNV on average; a child with dozens is
+    a technical outlier (waviness under the QC bar, contamination, swap) whose
+    candidates would drown the family tables — measured on dataset_paper: two
+    such children held 39 of the 81 top-impact candidates.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for rows in denovo_by_family.values():
+        for r in rows:
+            counts[r["child"]] += 1
+    return {c: n for c, n in counts.items() if n > threshold}
+
+
 def _read_cohort_vcf(path: Path):
     """One dict per site + compact genotype matrices.
 
@@ -250,6 +267,7 @@ def generate_report(
     min_denovo_gq: int = 20,
     genes_gff: str | Path | None = None,
     ndd_tsv: str | Path | None = None,
+    max_denovo_per_child: int = 20,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -306,6 +324,15 @@ def generate_report(
                 ):
                     denovo_by_family[r["family_id"]].append(r)
 
+    # ---- de novo per-child guard: technical outliers leave the family tables
+    dn_outliers = denovo_outliers(denovo_by_family, max_denovo_per_child)
+    if dn_outliers:
+        logger.warning(
+            "garde-fou de novo: %d enfant(s) au-dessus de %d candidats exclu(s): %s",
+            len(dn_outliers), max_denovo_per_child,
+            ", ".join(f"{c} ({n})" for c, n in sorted(dn_outliers.items())),
+        )
+
     # ---- per-sample stats (vectorized over the genotype matrices)
     genotyped_per_sample = (nalt_m >= 0).sum(axis=0)
     carrier_per_sample = (nalt_m > 0).sum(axis=0)
@@ -333,7 +360,11 @@ def generate_report(
             fam_dir = run_dir / "families" / fid
             fam_viol = viol_by_family.get(fid, [])
             n_viol = viol_counts.get(fid, 0)
-            denovo = denovo_by_family.get(fid, [])
+            denovo_all = denovo_by_family.get(fid, [])
+            denovo = [r for r in denovo_all if r["child"] not in dn_outliers]
+            fam_outliers = sorted(
+                {r["child"] for r in denovo_all} & set(dn_outliers)
+            )
             if make_family_workspaces:
                 fam_dir.mkdir(parents=True, exist_ok=True)
                 # family-subset VCF: sites where >=1 member carries
@@ -369,6 +400,7 @@ def generate_report(
 {len(denovo)} de novo (GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code></p>
+{f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {max_denovo_per_child} candidats de novo — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
@@ -442,6 +474,7 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 <span class=kpi><b>{n_artifact}</b>artefacts cohorte</span>
 <span class=kpi><b>{len(rare)}</b>sites rares (≤2 porteurs)</span>
 <span class=kpi><b>{n_wavy}</b>échantillons wavy (score ≥ {WAVE_WARN})</span>
+<span class=kpi><b>{len(dn_outliers)}</b>enfants outliers de novo (&gt;{max_denovo_per_child})</span>
 </div>
 
 <h2>Spectres (sites PASS)</h2>

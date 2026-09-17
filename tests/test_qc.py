@@ -94,3 +94,16 @@ def test_impact_labels_parse_as_scores(tmp_path):
     for span in ((10_500, 10_600), (15_000, 16_000), (50_000, 60_000)):
         score, label = idx.impact("chr1", *span)
         assert int(label.split(" ")[0]) == score
+
+
+def test_denovo_outlier_guard():
+    from vedette.report import denovo_outliers
+
+    dn = {
+        "F1": [{"child": "kidA"}] * 3,
+        "F2": [{"child": "kidB"}] * 25 + [{"child": "kidC"}],
+        "F3": [{"child": "kidB"}] * 5,   # counted across families
+    }
+    out = denovo_outliers(dn, threshold=20)
+    assert out == {"kidB": 30}
+    assert denovo_outliers({}, 20) == {}

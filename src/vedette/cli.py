@@ -493,6 +493,9 @@ def report(
     ndd_tsv: Optional[Path] = typer.Option(
         None, help="GeneTrek TSV: NDD tiers feed the impact score of site tables"
     ),
+    max_denovo_per_child: int = typer.Option(
+        20, help="Children above this many de novo candidates are flagged as technical outliers and left out of family tables"
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .ped import parse_ped
@@ -507,6 +510,7 @@ def report(
         min_denovo_gq=min_denovo_gq,
         genes_gff=genes_gff,
         ndd_tsv=ndd_tsv,
+        max_denovo_per_child=max_denovo_per_child,
     )
     typer.echo(f"rapport -> {path}")
 
