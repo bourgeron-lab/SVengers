@@ -1,0 +1,143 @@
+{
+  "model_version": "v4",
+  "vedette_version": "0.1.0.dev0",
+  "schema_hash": "f89b9e8890da996f",
+  "features": [
+    "size_log10",
+    "is_dup",
+    "precise",
+    "src_both",
+    "src_junction",
+    "maskfrac",
+    "dhffc",
+    "fc_chrom",
+    "fc_residual",
+    "depth_cv",
+    "frac_consistent",
+    "n_bins_informative",
+    "flank_asym",
+    "pe",
+    "sr",
+    "cig",
+    "ins_z",
+    "ins_pairs",
+    "evidence_ratio",
+    "homlen",
+    "baf_n",
+    "baf_dev",
+    "segdup_ovl",
+    "lcr_ovl",
+    "exclude_ovl",
+    "popcov_stdev",
+    "gq",
+    "cn",
+    "cnq",
+    "wave_score"
+  ],
+  "created": "2026-09-17T14:39:59",
+  "training_data": "HG002 (self-labeled) + HG003/HG004 (transmission semi-supervised), 40x NovaSeq GHFC-style, truth GIAB v5.0q stvar, 30-feature schema incl. wave_score",
+  "metrics": {
+    "DEL": {
+      "n": 25151,
+      "n_tp": 11047,
+      "n_labeled_oof": 25151,
+      "pr_auc_oof": 0.9618,
+      "roc_auc_oof": 0.9709,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 11737,
+          "fdr": 0.122,
+          "recall": 0.9328
+        },
+        {
+          "sq": 7,
+          "kept": 9092,
+          "fdr": 0.0599,
+          "recall": 0.7737
+        },
+        {
+          "sq": 10,
+          "kept": 5935,
+          "fdr": 0.0145,
+          "recall": 0.5295
+        },
+        {
+          "sq": 13,
+          "kept": 5396,
+          "fdr": 0.0096,
+          "recall": 0.4838
+        },
+        {
+          "sq": 17,
+          "kept": 4802,
+          "fdr": 0.0069,
+          "recall": 0.4317
+        },
+        {
+          "sq": 20,
+          "kept": 3611,
+          "fdr": 0.0036,
+          "recall": 0.3257
+        },
+        {
+          "sq": 30,
+          "kept": 975,
+          "fdr": 0.0,
+          "recall": 0.0883
+        }
+      ]
+    },
+    "DUP": {
+      "n": 21879,
+      "n_tp": 3862,
+      "n_labeled_oof": 21879,
+      "pr_auc_oof": 0.7435,
+      "roc_auc_oof": 0.9328,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 3407,
+          "fdr": 0.2947,
+          "recall": 0.6222
+        },
+        {
+          "sq": 7,
+          "kept": 899,
+          "fdr": 0.0979,
+          "recall": 0.21
+        },
+        {
+          "sq": 10,
+          "kept": 363,
+          "fdr": 0.0275,
+          "recall": 0.0914
+        },
+        {
+          "sq": 13,
+          "kept": 297,
+          "fdr": 0.0168,
+          "recall": 0.0756
+        },
+        {
+          "sq": 17,
+          "kept": 59,
+          "fdr": 0.0,
+          "recall": 0.0153
+        },
+        {
+          "sq": 20,
+          "kept": 59,
+          "fdr": 0.0,
+          "recall": 0.0153
+        },
+        {
+          "sq": 30,
+          "kept": 59,
+          "fdr": 0.0,
+          "recall": 0.0153
+        }
+      ]
+    }
+  }
+}

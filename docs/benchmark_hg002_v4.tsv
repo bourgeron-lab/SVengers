@@ -1,0 +1,61 @@
+caller	svtype	stratum_kind	stratum	tp_base	fn	recall	tp_comp	fp	precision	f1
+vedette_v4_sq5	DEL	all	all	3418	6734	0.3367	3418	169	0.9529	0.4976
+vedette_v4_sq5	DEL	context	clean	3418	6734	0.3367	3418	169	0.9529	0.4976
+vedette_v4_sq5	DEL	size	50-300bp	1645	5611	0.2267	1643	141	0.921	0.3639
+vedette_v4_sq5	DEL	size	300bp-1kb	1180	905	0.5659	1184	14	0.9883	0.7197
+vedette_v4_sq5	DEL	size	1-10kb	556	188	0.7473	554	14	0.9754	0.8462
+vedette_v4_sq5	DEL	size	10-100kb	37	29	0.5606	37	0	1.0	0.7184
+vedette_v4_sq5	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_v4_sq5	INS	all	all	437	17556	0.0243	437	40	0.9161	0.0473
+vedette_v4_sq5	INS	context	clean	437	17556	0.0243	437	40	0.9161	0.0473
+vedette_v4_sq5	INS	size	50-300bp	428	10445	0.0394	428	40	0.9145	0.0755
+vedette_v4_sq5	INS	size	300bp-1kb	8	4913	0.0016	8	0	1.0	0.0032
+vedette_v4_sq5	INS	size	1-10kb	1	2084	0.0005	1	0	1.0	0.001
+vedette_v4_sq5	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_v4_sq5	INS	size	100kb-1Mb	0	3	0.0	0	0		
+vedette_v4_sq6	DEL	all	all	3101	7051	0.3055	3101	89	0.9721	0.4648
+vedette_v4_sq6	DEL	context	clean	3101	7051	0.3055	3101	89	0.9721	0.4648
+vedette_v4_sq6	DEL	size	50-300bp	1388	5868	0.1913	1386	73	0.95	0.3185
+vedette_v4_sq6	DEL	size	300bp-1kb	1146	939	0.5496	1148	5	0.9957	0.7083
+vedette_v4_sq6	DEL	size	1-10kb	531	213	0.7137	531	11	0.9797	0.8258
+vedette_v4_sq6	DEL	size	10-100kb	36	30	0.5455	36	0	1.0	0.7059
+vedette_v4_sq6	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_v4_sq6	INS	all	all	314	17679	0.0175	314	15	0.9544	0.0343
+vedette_v4_sq6	INS	context	clean	314	17679	0.0175	314	15	0.9544	0.0343
+vedette_v4_sq6	INS	size	50-300bp	309	10564	0.0284	309	15	0.9537	0.0552
+vedette_v4_sq6	INS	size	300bp-1kb	5	4916	0.001	5	0	1.0	0.002
+vedette_v4_sq6	INS	size	1-10kb	0	2085	0.0	0	0		
+vedette_v4_sq6	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_v4_sq6	INS	size	100kb-1Mb	0	3	0.0	0	0		
+vedette_v4_sq7	DEL	all	all	3054	7098	0.3008	3054	85	0.9729	0.4596
+vedette_v4_sq7	DEL	context	clean	2981	6230	0.3236	2981	82	0.9732	0.4857
+vedette_v4_sq7	DEL	context	segdup	73	868	0.0776	73	3	0.9605	0.1436
+vedette_v4_sq7	DEL	size	50-300bp	1350	5906	0.1861	1348	69	0.9513	0.3112
+vedette_v4_sq7	DEL	size	300bp-1kb	1139	946	0.5463	1142	5	0.9956	0.7055
+vedette_v4_sq7	DEL	size	1-10kb	529	215	0.711	528	11	0.9796	0.824
+vedette_v4_sq7	DEL	size	10-100kb	36	30	0.5455	36	0	1.0	0.7059
+vedette_v4_sq7	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_v4_sq7	INS	all	all	261	17732	0.0145	261	8	0.9703	0.0286
+vedette_v4_sq7	INS	context	clean	255	16544	0.0152	255	8	0.9696	0.0299
+vedette_v4_sq7	INS	context	segdup	6	1188	0.005	6	0	1.0	0.01
+vedette_v4_sq7	INS	size	50-300bp	258	10615	0.0237	258	8	0.9699	0.0463
+vedette_v4_sq7	INS	size	300bp-1kb	3	4918	0.0006	3	0	1.0	0.0012
+vedette_v4_sq7	INS	size	1-10kb	0	2085	0.0	0	0		
+vedette_v4_sq7	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_v4_sq7	INS	size	100kb-1Mb	0	3	0.0	0	0		
+vedette_v4_pass	DEL	all	all	1998	8154	0.1968	1998	2	0.999	0.3288
+vedette_v4_pass	DEL	context	clean	1966	7245	0.2134	1966	2	0.999	0.3517
+vedette_v4_pass	DEL	context	segdup	32	909	0.034	32	0	1.0	0.0658
+vedette_v4_pass	DEL	size	50-300bp	602	6654	0.083	602	1	0.9983	0.1532
+vedette_v4_pass	DEL	size	300bp-1kb	987	1098	0.4734	987	0	1.0	0.6426
+vedette_v4_pass	DEL	size	1-10kb	376	368	0.5054	376	1	0.9973	0.6708
+vedette_v4_pass	DEL	size	10-100kb	33	33	0.5	33	0	1.0	0.6667
+vedette_v4_pass	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_v4_pass	INS	all	all	116	17877	0.0064	116	1	0.9915	0.0128
+vedette_v4_pass	INS	context	clean	114	16685	0.0068	114	1	0.9913	0.0135
+vedette_v4_pass	INS	context	segdup	2	1192	0.0017	2	0	1.0	0.0033
+vedette_v4_pass	INS	size	50-300bp	116	10757	0.0107	116	1	0.9915	0.0211
+vedette_v4_pass	INS	size	300bp-1kb	0	4921	0.0	0	0		
+vedette_v4_pass	INS	size	1-10kb	0	2085	0.0	0	0		
+vedette_v4_pass	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_v4_pass	INS	size	100kb-1Mb	0	3	0.0	0	0		
