@@ -457,12 +457,19 @@ def bench_trios(
     out: Path = typer.Option(..., help="Output sweep TSV"),
     field: str = typer.Option("GQ", help="FORMAT field to threshold (GQ or SQ)"),
     plot: bool = typer.Option(False, help="Also write MVR/transmission figure (PNG)"),
+    pass_only: bool = typer.Option(False, help="Restrict to FILTER=PASS sites"),
+    exclude_rescue: bool = typer.Option(
+        False, help="Also drop INFO/RESCUE sites (recurrent sub-threshold)"
+    ),
 ) -> None:
     """MVR and transmission rate as a function of the quality threshold."""
     from .bench.trios import sweep
     from .ped import parse_ped
 
-    rows = sweep(cohort_vcf, parse_ped(pedigree), field=field, out_tsv=out)
+    rows = sweep(
+        cohort_vcf, parse_ped(pedigree), field=field, out_tsv=out,
+        pass_only=pass_only, exclude_rescue=exclude_rescue,
+    )
     if plot:
         from .bench.plots import plot_trio_sweep
 

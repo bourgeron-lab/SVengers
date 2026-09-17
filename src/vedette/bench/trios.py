@@ -40,6 +40,8 @@ def sweep(
     thresholds: list[float] = (0, 3, 7, 10, 13, 17, 20, 30),
     field: str = "GQ",
     out_tsv: str | Path | None = None,
+    pass_only: bool = False,
+    exclude_rescue: bool = False,
 ) -> list[dict]:
     trios = pedigree.trios()
     thresholds = sorted(thresholds)
@@ -57,6 +59,10 @@ def sweep(
         if field not in vcf.header.formats:
             raise ValueError(f"FORMAT/{field} absent from {cohort_vcf}")
         for rec in vcf:
+            if pass_only and set(rec.filter.keys()) - {"PASS"}:
+                continue
+            if exclude_rescue and rec.info.get("RESCUE"):
+                continue
             for child, father, mother in usable:
                 cgt, _ = _gt_of(rec, child.sample_id)
                 fgt, _ = _gt_of(rec, father.sample_id)
