@@ -547,6 +547,24 @@ def label(
     )
 
 
+@app.command("label-trio")
+def label_trio(
+    features: Path = typer.Argument(..., help="Feature TSV of the truth-less (wavy) child"),
+    parent_gt: list[Path] = typer.Option(
+        ..., help="Parent genotype TSVs from `vedette genotype` (repeat for both parents)"
+    ),
+    out: Path = typer.Option(..., help="Output labeled feature TSV"),
+    min_gq: int = typer.Option(20, help="Parental GQ required for carrier/confident-ref"),
+) -> None:
+    """Transmission labels from clean parents for a truth-less child (wavy training)."""
+    from .train.label_trio import label_by_transmission
+
+    counts = label_by_transmission(features, parent_gt, out, min_gq=min_gq)
+    typer.echo(
+        f"{counts['tp']} TP, {counts['fp']} FP, {counts['ambiguous']} ambiguous -> {out}"
+    )
+
+
 @app.command()
 def train(
     labeled: list[Path] = typer.Argument(..., help="Labeled feature TSV(s) from `vedette label`"),

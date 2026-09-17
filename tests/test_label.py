@@ -129,3 +129,52 @@ def test_parent_mode_labeling(tmp_path):
     }
     assert labels == {"p_tp": "1", "p_artifact": "0"}
     assert counts == {"tp": 1, "fp": 1, "ambiguous": 1, "unlabeled": 0}
+
+
+def test_label_by_transmission(tmp_path):
+    import csv
+
+    from vedette.train.label_trio import label_by_transmission
+
+    def write_gt(path, rows):
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(
+                fh, fieldnames=["site_id", "contig", "start", "end", "svtype",
+                                "sample", "gt", "gq"], delimiter="\t")
+            w.writeheader()
+            for site_id, c, s, e, t, gt, gq in rows:
+                w.writerow({"site_id": site_id, "contig": c, "start": s, "end": e,
+                            "svtype": t, "sample": "P", "gt": gt, "gq": gq})
+
+    # father carries site A; both parents confident 0/0 at site B; site C low-GQ
+    write_gt(tmp_path / "father.gt.tsv", [
+        ("A", "chr1", 10_000, 20_000, "DEL", "0/1", 99),
+        ("B", "chr1", 50_000, 60_000, "DEL", "0/0", 80),
+        ("C", "chr1", 90_000, 95_000, "DUP", "0/0", 5),
+    ])
+    write_gt(tmp_path / "mother.gt.tsv", [
+        ("A", "chr1", 10_000, 20_000, "DEL", "0/0", 90),
+        ("B", "chr1", 50_000, 60_000, "DEL", "0/0", 75),
+        ("C", "chr1", 90_000, 95_000, "DUP", "0/0", 99),
+    ])
+    with open(tmp_path / "child.features.tsv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["call_id", "contig", "start", "end",
+                                           "svtype", "dhffc"], delimiter="\t")
+        w.writeheader()
+        rows = [
+            ("c1", "chr1", 10_100, 19_800, "DEL", 0.5),   # transmis (père) -> TP
+            ("c2", "chr1", 50_200, 59_500, "DEL", 0.6),   # 0/0 confiant x2 -> FP
+            ("c3", "chr1", 90_000, 95_000, "DUP", 1.5),   # père GQ 5 -> ambigu
+            ("c4", "chr1", 500_000, 505_000, "DEL", 0.5), # aucun site -> ambigu
+        ]
+        for r in rows:
+            w.writerow(dict(zip(w.fieldnames, r, strict=True)))
+
+    counts = label_by_transmission(
+        tmp_path / "child.features.tsv",
+        [tmp_path / "father.gt.tsv", tmp_path / "mother.gt.tsv"],
+        tmp_path / "child.labeled.tsv",
+    )
+    assert counts == {"tp": 1, "fp": 1, "ambiguous": 2}
+    labeled = list(csv.DictReader(open(tmp_path / "child.labeled.tsv"), delimiter="\t"))
+    assert {(r["call_id"], r["label"]) for r in labeled} == {("c1", "1"), ("c2", "0")}
