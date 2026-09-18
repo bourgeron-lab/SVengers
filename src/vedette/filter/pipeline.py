@@ -60,6 +60,50 @@ def run_filter(
         feat_writer = csv.writer(feat_fh, delimiter="\t")
         feat_writer.writerow(["call_id", "contig", "start", "end", "svtype", *FEATURES])
 
+    # pass 1: extract features and hard-filter tags for every call (the model,
+    # when present, scores everything in one vectorized pass afterwards —
+    # per-call predict_proba was the runtime bottleneck with deep forests)
+    feats_all: list[dict] = []
+    tags_all: list[tuple[list[str], list[str]]] = []  # (hard_tags, all_tags)
+    svtypes: list[str] = []
+    with pysam.VariantFile(str(vcf_in)) as vcf:
+        sample = list(vcf.header.samples)[0]
+        for rec in vcf:
+            svtype = rec.info["SVTYPE"]
+            fmt = rec.samples[sample]
+            feats = extractor.extract(
+                rec.contig,
+                rec.start,
+                rec.stop,
+                svtype,
+                cn=int(fmt.get("CN") or -1),
+                cnq=float(fmt.get("CNQ") or float("nan")),
+                gq=int(fmt.get("GQ") or 0),
+                pe=int(fmt.get("PE") or 0),
+                sr=int(fmt.get("SR") or 0),
+                cig=int(fmt.get("CG") or 0),
+                ins_z=float(fmt.get("IZ") or 0.0),
+                ins_pairs=int(fmt.get("IP") or 0),
+                source=rec.info.get("SOURCE", "DEPTH"),
+                precise="IMPRECISE" not in rec.info,
+                homlen=int(rec.info.get("HOMLEN", -1)),
+                baf_n=int(fmt.get("BAFN") or 0),
+                baf_dev=float(fmt.get("BAFDEV") or float("nan")),
+            )
+            tags = hard_filter_tags(feats, rec.stop - rec.start, config.filter)
+            if (
+                artifacts is not None
+                and artifacts.overlap_fraction(rec.contig, rec.start, rec.stop) > 0.5
+            ):
+                tags.append("CohortArtifact")
+            existing = [f for f in rec.filter.keys() if f != "PASS"]
+            feats_all.append(feats)
+            tags_all.append((tags, sorted(set(existing) | set(tags))))
+            svtypes.append(svtype)
+
+    sq_all = model.score_batch(feats_all, svtypes) if model is not None else None
+
+    # pass 2: re-read the input and write the annotated records in order
     with pysam.VariantFile(str(vcf_in)) as vcf:
         header = vcf.header.copy()
         for name, number, vtype, desc in _NEW_INFO:
@@ -70,29 +114,11 @@ def run_filter(
         out_path = str(vcf_out)
         mode = "wz" if out_path.endswith(".gz") else "w"
         with pysam.VariantFile(out_path, mode, header=header) as out:
-            for rec in vcf:
+            for i, rec in enumerate(vcf):
                 counts["total"] += 1
-                svtype = rec.info["SVTYPE"]
-                fmt = rec.samples[sample]
-                feats = extractor.extract(
-                    rec.contig,
-                    rec.start,
-                    rec.stop,
-                    svtype,
-                    cn=int(fmt.get("CN") or -1),
-                    cnq=float(fmt.get("CNQ") or float("nan")),
-                    gq=int(fmt.get("GQ") or 0),
-                    pe=int(fmt.get("PE") or 0),
-                    sr=int(fmt.get("SR") or 0),
-                    cig=int(fmt.get("CG") or 0),
-                    ins_z=float(fmt.get("IZ") or 0.0),
-                    ins_pairs=int(fmt.get("IP") or 0),
-                    source=rec.info.get("SOURCE", "DEPTH"),
-                    precise="IMPRECISE" not in rec.info,
-                    homlen=int(rec.info.get("HOMLEN", -1)),
-                    baf_n=int(fmt.get("BAFN") or 0),
-                    baf_dev=float(fmt.get("BAFDEV") or float("nan")),
-                )
+                feats = feats_all[i]
+                tags, all_tags = tags_all[i]
+                all_tags = list(all_tags)
 
                 new_rec = rec.copy()
                 new_rec.translate(header)
@@ -101,17 +127,8 @@ def run_filter(
                 new_rec.info["EXCLUDE_OVL"] = round(feats["exclude_ovl"], 4)
                 new_rec.info["POPCOV_SD"] = round(feats["popcov_stdev"], 3)
 
-                tags = hard_filter_tags(feats, rec.stop - rec.start, config.filter)
-                if (
-                    artifacts is not None
-                    and artifacts.overlap_fraction(rec.contig, rec.start, rec.stop) > 0.5
-                ):
-                    tags.append("CohortArtifact")
-                existing = [f for f in rec.filter.keys() if f != "PASS"]
-                all_tags = sorted(set(existing) | set(tags))
-
-                if model is not None:
-                    sq = model.score(feats, svtype)
+                if sq_all is not None:
+                    sq = float(sq_all[i])
                     new_rec.samples[sample]["SQ"] = round(sq, 2)
                     new_rec.info["MODEL_VER"] = model.version
                     if sq < config.filter.low_sq_threshold:
@@ -129,7 +146,7 @@ def run_filter(
 
                 if feat_writer is not None:
                     feat_writer.writerow(
-                        [rec.id, rec.contig, rec.start, rec.stop, svtype]
+                        [rec.id, rec.contig, rec.start, rec.stop, svtypes[i]]
                         + [f"{feats[name]:.6g}" for name in FEATURES]
                     )
     if feat_fh is not None:
