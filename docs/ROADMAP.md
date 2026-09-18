@@ -6,7 +6,14 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
-### 0. Production : models/v4 + seuil SQ>=5 (2026-09-17)
+### 0. Production : models/v5 + seuil SQ>=5 (2026-09-18)
+v5 = GIAB + 16 trios wavy GHFC (labels par transmission, `vedette label-trio`).
+Holdout 8 enfants wavy : DUP PR-AUC 0,908 (v4) -> 0,988 ; DEL 0,989 -> 0,997.
+HG002 : non-régression (SQ5 : P 0,951 / R 0,334 vs v4 0,953 / 0,337).
+Chantier perf ouvert : scoring du filtre par batch (predict_proba par call =
+~5 h/génome avec v5 ; une passe vectorisée attendue ~100x plus rapide).
+
+### 0bis. (archive) Production v4 (2026-09-17)
 Pipelines GHFC basculés sur models/v4 (30 features, wave_score),
 low_sq_threshold=5 dans configs/ghfc.toml (calibration décalée : SQ5 v4 =
 point d'opération SQ7 v3 ; HG002 v5.0q : P 0,953 / R 0,337 / F1 0,498).

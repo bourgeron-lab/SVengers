@@ -1,0 +1,29 @@
+caller	svtype	stratum_kind	stratum	tp_base	fn	recall	tp_comp	fp	precision	f1
+vedette_v5_sq5	DEL	all	all	3393	6759	0.3342	3393	175	0.951	0.4946
+vedette_v5_sq5	DEL	context	clean	3393	6759	0.3342	3393	175	0.951	0.4946
+vedette_v5_sq5	DEL	size	50-300bp	1636	5620	0.2255	1633	146	0.9179	0.362
+vedette_v5_sq5	DEL	size	300bp-1kb	1168	917	0.5602	1171	13	0.989	0.7153
+vedette_v5_sq5	DEL	size	1-10kb	552	192	0.7419	552	16	0.9718	0.8415
+vedette_v5_sq5	DEL	size	10-100kb	37	29	0.5606	37	0	1.0	0.7184
+vedette_v5_sq5	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_v5_sq5	INS	all	all	422	17571	0.0235	422	57	0.881	0.0457
+vedette_v5_sq5	INS	context	clean	422	17571	0.0235	422	57	0.881	0.0457
+vedette_v5_sq5	INS	size	50-300bp	412	10461	0.0379	412	57	0.8785	0.0727
+vedette_v5_sq5	INS	size	300bp-1kb	9	4912	0.0018	9	0	1.0	0.0037
+vedette_v5_sq5	INS	size	1-10kb	1	2084	0.0005	1	0	1.0	0.001
+vedette_v5_sq5	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_v5_sq5	INS	size	100kb-1Mb	0	3	0.0	0	0		
+vedette_v5_sq7	DEL	all	all	3025	7127	0.298	3025	91	0.9708	0.456
+vedette_v5_sq7	DEL	context	clean	3025	7127	0.298	3025	91	0.9708	0.456
+vedette_v5_sq7	DEL	size	50-300bp	1316	5940	0.1814	1314	76	0.9453	0.3043
+vedette_v5_sq7	DEL	size	300bp-1kb	1145	940	0.5492	1145	9	0.9922	0.707
+vedette_v5_sq7	DEL	size	1-10kb	527	217	0.7083	529	6	0.9888	0.8254
+vedette_v5_sq7	DEL	size	10-100kb	37	29	0.5606	37	0	1.0	0.7184
+vedette_v5_sq7	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+vedette_v5_sq7	INS	all	all	219	17774	0.0122	219	8	0.9648	0.024
+vedette_v5_sq7	INS	context	clean	219	17774	0.0122	219	8	0.9648	0.024
+vedette_v5_sq7	INS	size	50-300bp	216	10657	0.0199	216	8	0.9643	0.0389
+vedette_v5_sq7	INS	size	300bp-1kb	3	4918	0.0006	3	0	1.0	0.0012
+vedette_v5_sq7	INS	size	1-10kb	0	2085	0.0	0	0		
+vedette_v5_sq7	INS	size	10-100kb	0	111	0.0	0	0		
+vedette_v5_sq7	INS	size	100kb-1Mb	0	3	0.0	0	0		
