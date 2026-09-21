@@ -39,10 +39,16 @@ def validatedSteps() {
     if ('ped' in steps && !params.pedigree) {
         error "ERROR: step 'ped' requires --pedigree"
     }
-    // downstream steps need their upstream in the same run (no cross-run discovery in v1)
+    // downstream steps need their upstream in the same run, with one exception:
+    // starting at 'filter' discovers published calls (--calls_dir), the re-filter
+    // use case after a model update
     def wanted = valid_steps.findAll { it in steps }
-    if (wanted != valid_steps[0..wanted.size() - 1]) {
-        error "ERROR: steps must be a prefix of ${valid_steps.join(' -> ')} (got: ${wanted.join(', ')})"
+    if (wanted != valid_steps[0..wanted.size() - 1]
+            && !(wanted == valid_steps[1..wanted.size()])) {
+        error "ERROR: steps must be a prefix of ${valid_steps.join(' -> ')} (or start at 'filter' with --calls_dir; got: ${wanted.join(', ')})"
+    }
+    if (wanted[0] == 'filter' && !params.calls_dir) {
+        error "ERROR: starting at 'filter' requires --calls_dir (published <sample>/<sample>.vedette.vcf.gz + evidence store)"
     }
     return wanted
 }
@@ -79,14 +85,29 @@ workflow {
             ]
         }
 
-    VEDETTE_CALL(samples)
+    def calls = Channel.empty()
+    if ('call' in steps) {
+        VEDETTE_CALL(samples)
+        calls = VEDETTE_CALL.out.calls
+    } else {
+        // re-filter mode: pick up published calls for the manifest's samples
+        calls = samples.map { sample, cram, dbg, vbg ->
+            def d = file("${params.calls_dir}/${sample}")
+            def vcf = file("${d}/${sample}.vedette.vcf.gz")
+            def store = file("${d}/${sample}.evidence.zarr")
+            if (!vcf.exists() || !store.exists()) {
+                error "ERROR: published call missing for ${sample} under ${params.calls_dir}"
+            }
+            tuple(sample, vcf, file("${vcf}.tbi"), store)
+        }
+    }
 
     def filtered = Channel.empty()
     def sites = Channel.empty()
     def genotype_tables = Channel.empty()
 
     if ('filter' in steps) {
-        VEDETTE_FILTER(VEDETTE_CALL.out.calls)
+        VEDETTE_FILTER(calls)
         filtered = VEDETTE_FILTER.out.filtered
     }
 
