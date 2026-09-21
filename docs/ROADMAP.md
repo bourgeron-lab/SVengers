@@ -10,9 +10,9 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 v5 = GIAB + 16 trios wavy GHFC (labels par transmission, `vedette label-trio`).
 Holdout 8 enfants wavy : DUP PR-AUC 0,908 (v4) -> 0,988 ; DEL 0,989 -> 0,997.
 HG002 : non-régression (SQ5 : P 0,951 / R 0,334 vs v4 0,953 / 0,337).
-Scoring du filtre batché FAIT (2026-09-18) : 6h05 -> 21 min/génome avec v5
-(57 212 records byte-identiques) ; le coût restant est l'extraction de
-features par call (accès store), candidate au même traitement par contig.
+Filtre optimisé FAIT : scoring batché (2026-09-18, 6h05 -> 21 min) puis
+extraction de features avec cache depth par contig (2026-09-21, 21 min ->
+13 s/génome avec v5 ; VCF et features TSV identiques à la référence).
 
 ### 0bis. (archive) Production v4 (2026-09-17)
 Pipelines GHFC basculés sur models/v4 (30 features, wave_score),

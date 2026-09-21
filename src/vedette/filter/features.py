@@ -25,10 +25,27 @@ class FeatureExtractor:
         ws = store.meta.get("wave_score")  # store schema >= 0.4
         self.wave_score = float(ws) if ws is not None else -1.0
         self._chrom_median: dict[str, float] = {}
+        # whole-contig (corr, mask), loaded once: three ranged zarr reads per
+        # call (inside + both flanks) re-decompress the same chunks for every
+        # call — the filter's dominant cost once model scoring is batched
+        self._depth: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+
+    def _contig_depth(self, contig: str) -> tuple[np.ndarray, np.ndarray]:
+        if contig not in self._depth:
+            _raw, corr, mask = self.store.depth(contig)
+            self._depth[contig] = (corr, mask)
+        return self._depth[contig]
+
+    def _depth_slice(self, contig: str, start: int, end: int):
+        """(corr, mask) for bins overlapping [start, end) — mirrors
+        EvidenceStore.depth's slice semantics exactly."""
+        corr, mask = self._contig_depth(contig)
+        sl = slice(start // self.store.bin_size, -(-end // self.store.bin_size))
+        return corr[sl], mask[sl]
 
     def _chrom_median_depth(self, contig: str) -> float:
         if contig not in self._chrom_median:
-            _raw, corr, mask = self.store.depth(contig)
+            corr, mask = self._contig_depth(contig)
             vals = corr[~mask]
             vals = vals[vals > 0]
             self._chrom_median[contig] = float(np.median(vals)) if len(vals) else self.mean_depth
@@ -58,14 +75,14 @@ class FeatureExtractor:
     ) -> dict[str, float]:
         bs = self.store.bin_size
         b0, b1 = start // bs, max(-(-end // bs), start // bs + 1)
-        _raw, corr, mask = self.store.depth(contig, start, end)
+        corr, mask = self._depth_slice(contig, start, end)
         inside = corr[~mask]
 
         n_bins = b1 - b0
         flank_bins = int(np.clip(n_bins, _FLANK_BINS_MIN, _FLANK_BINS_MAX))
         lf0 = max(b0 - flank_bins, 0)
-        _r, lcorr, lmask = self.store.depth(contig, lf0 * bs, b0 * bs) if b0 > lf0 else (None, np.array([]), np.array([], bool))
-        _r, rcorr, rmask = self.store.depth(contig, b1 * bs, (b1 + flank_bins) * bs)
+        lcorr, lmask = self._depth_slice(contig, lf0 * bs, b0 * bs) if b0 > lf0 else (np.array([]), np.array([], bool))
+        rcorr, rmask = self._depth_slice(contig, b1 * bs, (b1 + flank_bins) * bs)
         left = lcorr[~lmask] if len(lcorr) else np.array([])
         right = rcorr[~rmask] if len(rcorr) else np.array([])
         flanks = np.concatenate([left, right]) if len(left) or len(right) else np.array([])
