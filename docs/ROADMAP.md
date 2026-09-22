@@ -45,7 +45,9 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   moyen, ou calibrer sur le taux d'artefacts CohortArtifact) ; (i) workspaces
   familles en une passe batchée (le subset VCF par famille relit tout le VCF
   cohorte : 1207 familles x 635M génotypes = infaisable — assembler depuis
-  les gt.tsv par échantillon, chaque fichier lu une seule fois).
+  les gt.tsv par échantillon, chaque fichier lu une seule fois) ; (j) rapport :
+  assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
+  re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
 ### 1bis. Détail du plan d'entraînement initial (référence)
 - Télécharger (proxy configuré) dans `resources/giab/` :
