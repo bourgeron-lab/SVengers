@@ -1,0 +1,268 @@
+<!-- Présentation de Vedette — page autonome, docs/vedette_overview.html -->
+<title>Vedette</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#f7f8f6; --surface:#ffffff; --ink:#1c2321; --muted:#5c6763;
+  --line:#dde2de; --del:#b3362b; --dup:#2a6f97; --accent:#2a6f97;
+  --code-bg:#eef1ee; --chip:#e7ece8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181a; --surface:#1b2124; --ink:#e6e9e6; --muted:#93a09a;
+    --line:#2c3438; --del:#e06152; --dup:#5da3c9; --accent:#5da3c9;
+    --code-bg:#20282c; --chip:#243036;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181a; --surface:#1b2124; --ink:#e6e9e6; --muted:#93a09a;
+  --line:#2c3438; --del:#e06152; --dup:#5da3c9; --accent:#5da3c9;
+  --code-bg:#20282c; --chip:#243036;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.65;
+  padding-inline:20px; padding-block:0 4rem; margin:0;
+}
+.wrap{max-width:76ch; margin:0 auto}
+h1,h2,h3{font-family:"Bricolage Grotesque","Arial Narrow",sans-serif; line-height:1.15; text-wrap:balance}
+h1{font-size:3.1rem; font-weight:800; margin:.4em 0 .1em}
+h2{font-size:1.65rem; font-weight:700; margin:2.6em 0 .5em; display:flex; align-items:baseline; gap:.55em}
+h2 .n{font-family:"JetBrains Mono",monospace; font-size:.72em; font-weight:600; color:var(--accent)}
+h3{font-size:1.12rem; font-weight:700; margin:1.8em 0 .4em}
+p{margin:.6em 0}
+a{color:var(--accent)}
+.lede{font-size:1.22rem; color:var(--muted); max-width:62ch; margin-top:.2em}
+.kicker{font-family:"JetBrains Mono",monospace; font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-top:3rem}
+code,pre{font-family:"JetBrains Mono",monospace; font-size:.84em}
+code{background:var(--code-bg); padding:.1em .35em; border-radius:4px}
+pre{background:var(--code-bg); border:1px solid var(--line); border-radius:8px;
+    padding:14px 16px; overflow-x:auto; line-height:1.5}
+pre code{background:none; padding:0}
+table{border-collapse:collapse; font-size:.9rem; margin:1em 0; width:100%;
+      font-family:"Source Serif 4",serif}
+.tablewrap{overflow-x:auto}
+th,td{border-bottom:1px solid var(--line); padding:7px 12px; text-align:right;
+      font-variant-numeric:tabular-nums}
+th{font-family:"Bricolage Grotesque",sans-serif; font-size:.8rem; letter-spacing:.04em;
+   text-transform:uppercase; color:var(--muted); font-weight:700}
+th:first-child,td:first-child{text-align:left}
+tr.hl td{font-weight:600}
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin:1.2em 0}
+.ev{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+.ev b{font-family:"Bricolage Grotesque",sans-serif; font-size:.98rem; display:block; margin-bottom:.25em}
+.ev p{font-size:.88rem; color:var(--muted); margin:0}
+.tag{font-family:"JetBrains Mono",monospace; font-size:.7rem; background:var(--chip);
+     border-radius:99px; padding:2px 9px; color:var(--muted); white-space:nowrap}
+.note{border-left:3px solid var(--accent); background:var(--surface); padding:10px 16px;
+      border-radius:0 8px 8px 0; font-size:.94rem; margin:1.2em 0}
+.legend{display:flex; gap:1.4em; font-size:.8rem; color:var(--muted); font-family:"JetBrains Mono",monospace; margin-top:.3em; flex-wrap:wrap}
+.sw{display:inline-block; width:.85em; height:.85em; border-radius:3px; vertical-align:-.1em; margin-right:.4em}
+figure{margin:1.4em 0}
+figcaption{font-size:.83rem; color:var(--muted); margin-top:.4em}
+svg text{font-family:"JetBrains Mono",monospace}
+.pipe{overflow-x:auto}
+ul{padding-left:1.2em}
+li{margin:.3em 0}
+.muted{color:var(--muted)}
+hr{border:0; border-top:1px solid var(--line); margin:3rem 0}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">GHFC · Institut Pasteur — caller de CNV germinaux</p>
+<h1>Vedette</h1>
+<p class="lede">Un caller de variants du nombre de copies (DEL/DUP) pour le WGS Illumina,
+de 1 à 10&nbsp;000 génomes, construit autour d'une conviction&nbsp;: le problème des CNV
+n'est pas de les détecter, c'est de <em>trier les vrais des faux</em>.</p>
+
+<!-- piste de profondeur stylisée : une DEL het, une DUP -->
+<figure>
+<svg viewBox="0 0 760 130" role="img" aria-label="Piste de profondeur avec une délétion et une duplication">
+  <line x1="20" y1="100" x2="740" y2="100" stroke="var(--line)" stroke-width="1"/>
+  <text x="20" y="118" font-size="10" fill="var(--muted)">chr2:50,60 Mb</text>
+  <text x="700" y="118" font-size="10" fill="var(--muted)">51,05 Mb</text>
+  <text x="12" y="52" font-size="10" fill="var(--muted)" text-anchor="start">30×</text>
+  <!-- profondeur : diploïde ~ y=48, DEL het ~ y=74, DUP ~ y=30 -->
+  <path d="M20,48 L200,47 L205,74 L300,75 L305,47 L460,48 L465,30 L580,31 L585,48 L740,47"
+        fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="203" y="20" width="100" height="80" fill="var(--del)" opacity="0.12"/>
+  <rect x="463" y="20" width="120" height="80" fill="var(--dup)" opacity="0.12"/>
+  <text x="253" y="16" font-size="11" fill="var(--del)" text-anchor="middle" font-weight="600">DEL 0/1 · CN=1</text>
+  <text x="523" y="16" font-size="11" fill="var(--dup)" text-anchor="middle" font-weight="600">DUP 0/1 · CN=3</text>
+  <!-- paires discordantes sous la piste -->
+  <g stroke="var(--del)" stroke-width="1.6">
+    <line x1="180" y1="92" x2="320" y2="92"/><line x1="188" y1="96" x2="312" y2="96"/>
+  </g>
+  <g stroke="var(--dup)" stroke-width="1.6">
+    <line x1="470" y1="92" x2="590" y2="92"/><line x1="480" y1="96" x2="575" y2="96"/>
+  </g>
+</svg>
+<figcaption>Le signal de base&nbsp;: la profondeur binée corrigée GC, plus les jonctions
+(paires discordantes, reads clivés). Vedette modélise les deux <em>dans la même vraisemblance</em>.</figcaption>
+</figure>
+
+<h2><span class="n">§</span>En bref</h2>
+<ul>
+<li><b>Entrée</b>&nbsp;: CRAM alignés (bwa-mem2) — et, quand ils existent, les bedgraphs de profondeur 1&nbsp;kb pré-calculés (chemin rapide GHFC).</li>
+<li><b>Sortie</b>&nbsp;: VCF par échantillon puis VCF cohorte multi-échantillons (GT/GQ/SQ/CN), rapport HTML, workspaces par famille.</li>
+<li><b>Différenciateur</b>&nbsp;: un filtrage post-calling à trois étages, dont un score calibré (SQ) appris sur vérité GIAB et trios GHFC — le calling reste volontairement permissif, la spécificité est le travail du filtre.</li>
+<li><b>Échelle</b>&nbsp;: validé sur 2&nbsp;670 génomes (665 trios)&nbsp;; re-génotypage de cohorte sans jamais relire un CRAM&nbsp;; re-filtrage complet d'un génome en ~14&nbsp;s après mise à jour du modèle.</li>
+</ul>
+
+<h2><span class="n">1</span>Les canaux d'évidence</h2>
+<p>Une seule passe sur le CRAM alimente six canaux, stockés une fois pour toutes&nbsp;:</p>
+<div class="grid">
+  <div class="ev"><b>Profondeur (RD)</b><p>binée (100&nbsp;pb ou 1&nbsp;kb), corrigée GC par strates, masques N/exclusion, normalisée à la médiane autosomale diploïde.</p></div>
+  <div class="ev"><b>Paires discordantes (PE)</b><p>orientation +/− à insert long = DEL&nbsp;; paires everted −/+ = DUP en tandem.</p></div>
+  <div class="ev"><b>Reads clivés (SR) + hidden splits</b><p>les clips ≥20&nbsp;pb sont réalignés localement (fit-alignment)&nbsp;: la géométrie du réalignement donne des jonctions au pb près — et récupère les DUP en tandem plus petites que l'insert, l'angle mort classique.</p></div>
+  <div class="ev"><b>Délétions CIGAR</b><p>les opérations D ≥30&nbsp;pb portées par les reads eux-mêmes, fusionnées par read.</p></div>
+  <div class="ev"><b>Décalage d'insert</b><p>piste binée de la taille d'insert des paires concordantes&nbsp;: un run de bins décalés trahit une petite DEL sans jonction propre.</p></div>
+  <div class="ev"><b>BAF</b><p>fréquences alléliques aux SNV hétérozygotes — dans les émissions du HMM <em>et</em> dans la vraisemblance de génotype.</p></div>
+</div>
+<p>S'y ajoute un <b>QC d'échantillon</b> calculé au passage&nbsp;: le <em>score de wave</em>
+(fraction d'énergie spectrale à périodes ≥200&nbsp;kb du ratio corrigé), qui repère les
+librairies à couverture oscillante — 5× plus lentes à traiter et sur-productrices de faux appels.</p>
+
+<h2><span class="n">2</span>L'evidence store</h2>
+<p>Toute l'évidence d'un génome tient dans un store <b>Zarr</b> versionné (~91&nbsp;Mo)&nbsp;:
+c'est le contrat entre les étapes. Le filtre, le re-génotypage de cohorte et les analyses
+de trio relisent ce store — <b>jamais le CRAM</b>. C'est ce qui rend possible le
+re-génotypage de 2&nbsp;670 échantillons sur 500&nbsp;000 sites en quelques heures,
+ou un re-filtrage complet après mise à jour du modèle en une heure de cluster.</p>
+
+<h2><span class="n">3</span>Le pipeline</h2>
+<figure class="pipe">
+<svg viewBox="0 0 900 180" role="img" aria-label="Étapes du pipeline Vedette" style="min-width:720px">
+  <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L8,4 L0,8 z" fill="var(--muted)"/></marker></defs>
+  <!-- boîtes échantillon -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="10"  y="30" width="100" height="44" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="60" y="49" fill="var(--ink)" font-weight="600">call</text>
+    <text x="60" y="64" fill="var(--muted)" font-size="9.5">HMM + jonctions</text>
+    <rect x="150" y="30" width="100" height="44" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="200" y="49" fill="var(--ink)" font-weight="600">filter</text>
+    <text x="200" y="64" fill="var(--muted)" font-size="9.5">3 étages + SQ</text>
+    <rect x="290" y="30" width="100" height="44" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="340" y="49" fill="var(--ink)" font-weight="600">merge</text>
+    <text x="340" y="64" fill="var(--muted)" font-size="9.5">sites cohorte</text>
+    <rect x="430" y="30" width="110" height="44" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="485" y="49" fill="var(--ink)" font-weight="600">genotype</text>
+    <text x="485" y="64" fill="var(--muted)" font-size="9.5">depuis les stores</text>
+    <rect x="580" y="30" width="110" height="44" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="635" y="49" fill="var(--ink)" font-weight="600">cohort-filter</text>
+    <text x="635" y="64" fill="var(--muted)" font-size="9.5">AF · HWE · artefacts</text>
+    <rect x="730" y="6"  width="80" height="36" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="770" y="28" fill="var(--ink)" font-weight="600">ped</text>
+    <rect x="730" y="60" width="80" height="36" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="770" y="82" fill="var(--ink)" font-weight="600">report</text>
+  </g>
+  <g stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ar)" fill="none">
+    <line x1="110" y1="52" x2="146" y2="52"/><line x1="250" y1="52" x2="286" y2="52"/>
+    <line x1="390" y1="52" x2="426" y2="52"/><line x1="540" y1="52" x2="576" y2="52"/>
+    <path d="M690,45 C706,38 712,30 726,26"/><path d="M690,60 C706,66 712,74 726,77"/>
+  </g>
+  <!-- annotations parallélisme -->
+  <text x="130" y="105" font-size="10" fill="var(--muted)">× N échantillons, en parallèle</text>
+  <rect x="8" y="88" width="244" height="2" fill="var(--accent)" opacity=".35"/>
+  <text x="560" y="105" font-size="10" fill="var(--muted)">niveau cohorte</text>
+  <!-- store -->
+  <rect x="10" y="126" width="240" height="34" rx="8" fill="none" stroke="var(--dup)" stroke-dasharray="4 3"/>
+  <text x="130" y="147" font-size="11" fill="var(--dup)" text-anchor="middle">evidence store (.zarr) — relu par filter/genotype</text>
+</svg>
+<figcaption>Chaque flèche est un artefact sur disque&nbsp;; on peut reprendre à n'importe quelle
+étape. Le wrapper Nextflow orchestre le tout sur SLURM (<code>--steps call,…,report</code>),
+y compris le mode <em>re-filtre</em> (<code>--steps filter,… --calls_dir</code>) après une mise à jour de modèle.</figcaption>
+</figure>
+
+<h3>Ce que fait <code>call</code></h3>
+<p>Un HMM à états CN&nbsp;{0…5} segmente le ratio de profondeur (émissions gaussiennes-ratio
++ mélange beta sur la BAF)&nbsp;; en parallèle, les jonctions PE/SR/CIGAR sont clusterisées et
+les clips réalignés. Segments et jonctions sont <em>réconciliés</em>, puis chaque candidat reçoit
+un génotype par la vraisemblance unifiée&nbsp;: profondeur (avec dilution sous-bin), jonctions
+(négative-binomiale sur les comptes de reads) et BAF. C'est la revendication méthodologique
+n°1&nbsp;: <b>une seule vraisemblance pour toutes les évidences</b>, là où les callers existants
+utilisent la BAF (au mieux) en post-hoc.</p>
+
+<h2><span class="n">4</span>Le filtrage à trois étages</h2>
+<ul>
+<li><b>Étage 1 — filtres durs transparents</b>&nbsp;: taille minimale, chevauchement des masques N/exclusion,
+segdup sans support SR, bins informatifs insuffisants. Chaque tag est lisible dans le FILTER du VCF.</li>
+<li><b>Étage 2 — score calibré SQ</b>&nbsp;: deux gradient boostings (DEL et DUP) sur 30 features
+(profondeur, jonctions, BAF, contexte génomique, QC wave), contraintes monotones, validation croisée
+par chromosomes, calibration isotonique — le SQ est un phred de P(vrai). Entraînés sur la vérité
+GIAB HG002 v5.0q, la <em>semi-supervision par transmission</em> HG003/HG004, et depuis v5 des trios
+GHFC wavy étiquetés par transmission parentale. Seuil d'opération courant&nbsp;: <b>SQ ≥ 5</b> ≈ précision 0,95.</li>
+<li><b>Étage 3 — cohorte</b>&nbsp;: AF sans inflation (clustering à centroïde borné, jamais de chaînage
+transitif), HWE exact, artefacts récurrents (<code>CohortArtifact</code>), et le <em>rescue par récurrence</em>&nbsp;:
+un site sous le seuil chez chaque porteur mais récurrent (≥2 porteurs, somme de SQ ≥ 8) est repêché
+et tracé <code>RESCUE=RECURRENT</code> — c'est ce qui a récupéré une délétion familiale de SHANK3
+présente chez 7 apparentés à SQ ~2 chacun.</li>
+</ul>
+<div class="note">Deux garde-fous QC complètent le tri&nbsp;: les échantillons <em>wavy</em>
+(score ≥ 0,145) sont signalés dans le rapport, et un enfant portant plus de 20 candidats
+<em>de novo</em> PASS est marqué outlier technique — un vrai génome en porte moins d'un.</div>
+
+<h2><span class="n">5</span>Utilisation</h2>
+<h3>Un échantillon</h3>
+<pre><code># calling (CRAM + chemin rapide bedgraph) puis filtrage avec le modèle courant
+vedette call --sample S1 --out-dir out/ --config configs/ghfc.toml \
+    --cram S1.cram --depth-bedgraph S1.by1000.bedgraph.gz --vaf-bedgraph S1.vaf.bedgraph.gz
+vedette filter out/S1.vedette.vcf.gz --store out/S1.evidence.zarr \
+    --out out/S1.filtered.vcf.gz --config configs/ghfc.toml --model-dir models/v5</code></pre>
+<h3>Une cohorte (Nextflow + SLURM)</h3>
+<pre><code>./launch_driver.sh --manifest cohorte.manifest.tsv --pedigree cohorte.pedigree.tsv \
+    --outdir runs/cohorte --model_dir models/v5 \
+    --steps call,filter,merge,genotype,cohort,ped,report -with-report -resume</code></pre>
+<p class="muted">Le manifest se génère depuis l'arborescence GHFC avec
+<code>vedette manifest discover</code>&nbsp;; <code>vedette report</code> produit la page HTML
+(KPI, spectres, sweep Mendel, sections familles avec gènes et score d'impact NDD) et les
+workspaces <code>families/&lt;FID&gt;/</code>.</p>
+
+<h2><span class="n">6</span>Ce que ça donne</h2>
+<h3>HG002 vs vérité GIAB v5.0q — délétions</h3>
+<div class="tablewrap"><table>
+<tr><th>callset</th><th>précision</th><th>recall</th><th>F1</th></tr>
+<tr><td>Manta</td><td>0,934</td><td>0,376</td><td>0,536</td></tr>
+<tr><td>DELLY</td><td>0,826</td><td>0,284</td><td>0,423</td></tr>
+<tr class="hl"><td>Vedette SQ≥5 (v5)</td><td>0,951</td><td>0,334</td><td>0,495</td></tr>
+<tr><td>Vedette 1–10 kb (SQ≥7)</td><td>0,980</td><td>0,727</td><td>0,834</td></tr>
+<tr><td>Vedette brut (pré-filtre)</td><td>0,328</td><td>0,413</td><td>—</td></tr>
+</table></div>
+<p class="muted">Le brut montre le réservoir&nbsp;: le meilleur recall du panel, que le filtre
+convertit en précision. Sur la strate 1–10&nbsp;kb, Vedette a le meilleur F1 absolu du panel.</p>
+
+<h3>Duplications, évaluées honnêtement (tandem-only)</h3>
+<div class="tablewrap"><table>
+<tr><th>callset</th><th>précision</th><th>recall</th></tr>
+<tr><td>Manta</td><td>0,601</td><td>0,030</td></tr>
+<tr class="hl"><td>Vedette SQ≥7</td><td>0,913</td><td>0,030</td></tr>
+<tr><td>Vedette brut</td><td>—</td><td>0,148 <span class="muted">(5× Manta)</span></td></tr>
+</table></div>
+
+<h3>Spécificité indépendante de GIAB — 665 trios GHFC (sites PASS)</h3>
+<div class="tablewrap"><table>
+<tr><th>seuil GQ</th><th>taux de violations Mendel</th><th>transmission</th></tr>
+<tr><td>brut</td><td>1,22 %</td><td>0,61</td></tr>
+<tr class="hl"><td>≥ 20</td><td>0,17 %</td><td>0,59</td></tr>
+</table></div>
+<p class="muted">Une transmission proche de 0,5-0,6 est le signe d'un jeu assaini&nbsp;: les
+artefacts partagés se «&nbsp;transmettent&nbsp;» à ~100&nbsp;% et gonflent artificiellement ce chiffre.</p>
+
+<h2><span class="n">7</span>Limites connues &amp; suite</h2>
+<ul>
+<li>Recall des petites DEL (50–300&nbsp;pb) plafonné ~30&nbsp;% en short-read — comme l'état de l'art.</li>
+<li>Les inversions et translocations (v2)&nbsp;: l'évidence PE INV/INTER est déjà stockée, pas encore appelée.</li>
+<li>Le rescue par récurrence est volontairement permissif à grande échelle — filtrable d'un trait sur <code>RESCUE</code>&nbsp;; un critère adaptatif à la taille de cohorte est prévu.</li>
+<li>Publication PyPI/bioconda&nbsp;: préparée (conteneur, CI, CITATION.cff), déclenchée uniquement sur décision de l'équipe.</li>
+</ul>
+
+<hr>
+<p class="muted" style="font-size:.85rem">Vedette — GHFC, Institut Pasteur. Python 3.12 ·
+pysam · numba · Zarr v3 · scikit-learn · Nextflow. Licence MIT. Les chiffres de cette page
+proviennent des benchmarks versionnés dans <code>docs/</code> (HG002 v5.0q, éval tandem-only,
+sweeps trios dataset_paper).</p>
+
+</div>
