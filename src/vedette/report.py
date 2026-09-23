@@ -120,32 +120,144 @@ _INHERIT_FR = {
 }
 
 
-def _event_row(rec, members: list[str], genes_fn, impact_fn, inherit: str = "") -> dict:
-    """Event dict for `_write_events_page` from a family-subset VCF record."""
-    carriers, gts = [], []
-    for m in members:
-        fmt = rec.samples[m]
-        gt = fmt.get("GT")
-        gt_s = "./." if gt is None or gt[0] is None else "/".join(str(a) for a in gt)
-        gq = fmt.get("GQ")
-        sq = fmt.get("SQ")
-        gts.append((gt_s, gq if gq is not None else "", f"{float(sq):.1f}" if sq is not None else ""))
-        if gt_s not in ("0/0", "./."):
-            carriers.append(m)
-    return {
-        "contig": rec.contig,
-        "pos": rec.pos,
-        "end": rec.stop,
-        "svtype": rec.info.get("SVTYPE", "?"),
-        "size": rec.stop - rec.pos,
-        "filter": ";".join(rec.filter.keys()) or "PASS",
-        "rescue": rec.info.get("RESCUE", "") or "",
-        "genes": genes_fn(rec.contig, rec.start, rec.stop),
-        "impact": impact_fn(rec.contig, rec.start, rec.stop)[1],
-        "inherit": inherit,
-        "carriers": carriers,
-        "gt": gts,
+_NALT_GT = {-1: "./.", 0: "0/0", 1: "0/1", 2: "1/1"}
+
+
+class _FamilySpill:
+    """Buffered per-family append-only TSV spill files.
+
+    The events pass is site-major (one sweep over the genotype matrices) but
+    the pages are per family; holding every family's rows in memory scales
+    with families x carried sites (~15M rows on dataset_paper), so rows are
+    spilled to one file per family and re-read family by family at assembly.
+    """
+
+    def __init__(self, root: Path, flush_at: int = 500_000):
+        self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.buf: dict[str, list[str]] = defaultdict(list)
+        self.n = 0
+        self.flush_at = flush_at
+
+    def add(self, fid: str, line: str) -> None:
+        self.buf[fid].append(line)
+        self.n += 1
+        if self.n >= self.flush_at:
+            self.flush()
+
+    def flush(self) -> None:
+        for fid, lines in self.buf.items():
+            with open(self.root / f"{fid}.tsv", "a") as fh:
+                fh.write("\n".join(lines) + "\n")
+        self.buf.clear()
+        self.n = 0
+
+    def read(self, fid: str) -> list[list[str]]:
+        path = self.root / f"{fid}.tsv"
+        if fid in self.buf or not path.exists():
+            self.flush()
+        if not path.exists():
+            return []
+        return [line.split("\t") for line in path.read_text().splitlines()]
+
+    def cleanup(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.root, ignore_errors=True)
+
+
+_EVENTS_MAX_MEMBERS = 20  # no events page for catch-all pseudo-families
+
+
+def _write_all_family_events(
+    run_dir: Path,
+    families: dict[str, list[str]],
+    samples: list[str],
+    sites: list[dict],
+    nalt_m,
+    gq_m,
+    sq_m,
+    genes_fn,
+    impact_fn,
+    inh_spill: _FamilySpill,
+) -> int:
+    """families/<FID>/events.html for every family, in ONE sweep of the
+    genotype matrices (no per-family rescan of the cohort VCF — that was the
+    36 h trap on 1207-family cohorts). Returns the number of pages written."""
+    sample_idx = {s: i for i, s in enumerate(samples)}
+    fam_members: dict[str, list[tuple[str, int]]] = {
+        fid: [(m, sample_idx[m]) for m in members if m in sample_idx]
+        for fid, members in families.items()
+        if 0 < len(members) <= _EVENTS_MAX_MEMBERS
     }
+    # sample column -> family, for the carriers->families hop
+    fam_of_col = np.full(len(samples), -1, np.int32)
+    fids = sorted(fam_members)
+    for k, fid in enumerate(fids):
+        for _, i in fam_members[fid]:
+            fam_of_col[i] = k
+
+    ev_spill = _FamilySpill(run_dir / "families" / ".events_tmp")
+    for site in sites:
+        idx = site["idx"]
+        carrier_cols = np.nonzero(nalt_m[idx] > 0)[0]
+        if not len(carrier_cols):
+            continue
+        fam_ks = np.unique(fam_of_col[carrier_cols])
+        fam_ks = fam_ks[fam_ks >= 0]
+        if not len(fam_ks):
+            continue
+        genes = genes_fn(site["contig"], site["start"], site["end"])
+        impact = impact_fn(site["contig"], site["start"], site["end"])[1]
+        base = "\t".join([
+            site["id"] or "", site["contig"], str(site["start"] + 1), str(site["end"]),
+            site["svtype"], str(site["size"]), site["filter"], site["rescue"],
+            genes, impact,
+        ])
+        for k in fam_ks:
+            fid = fids[int(k)]
+            cells = "\t".join(
+                f"{nalt_m[idx, i]}:{gq_m[idx, i]}:"
+                + ("" if sq_m is None or np.isnan(sq_m[idx, i]) else f"{float(sq_m[idx, i]):.1f}")
+                for _, i in fam_members[fid]
+            )
+            ev_spill.add(fid, base + "\t" + cells)
+    ev_spill.flush()
+
+    n_pages = 0
+    for fid in fids:
+        rows = ev_spill.read(fid)
+        if not rows:
+            continue
+        inherit: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        for site_id, child, inh in inh_spill.read(fid):
+            inherit[site_id].append((child, inh))
+        members = [m for m, _ in fam_members[fid]]
+        events = []
+        for r in rows:
+            site_id = r[0]
+            inh = inherit.get(site_id, [])
+            inh_s = " · ".join(
+                f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
+            ) if len(inh) > 1 else (_INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else "")
+            gts, carriers = [], []
+            for m, cell in zip(members, r[10:]):
+                na, gq, sq = cell.split(":")
+                gt_s = _NALT_GT.get(int(na), "./.")
+                gts.append((gt_s, gq, sq))
+                if gt_s not in ("0/0", "./."):
+                    carriers.append(m)
+            events.append({
+                "contig": r[1], "pos": int(r[2]), "end": int(r[3]), "svtype": r[4],
+                "size": int(r[5]), "filter": r[6], "rescue": r[7], "genes": r[8],
+                "impact": r[9], "inherit": inh_s, "carriers": carriers, "gt": gts,
+            })
+        fam_dir = run_dir / "families" / fid
+        fam_dir.mkdir(parents=True, exist_ok=True)
+        _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
+        n_pages += 1
+    ev_spill.cleanup()
+    return n_pages
 
 
 def _write_events_page(
@@ -334,16 +446,17 @@ def denovo_outliers(
     return {c: n for c, n in counts.items() if n > threshold}
 
 
-def _read_cohort_vcf(path: Path):
+def _read_cohort_vcf(path: Path, with_sq: bool = False):
     """One dict per site + compact genotype matrices.
 
     Dict-of-dicts genotypes cost ~80 bytes/genotype and OOM-killed the report
     on 238k sites x 2670 samples (635M genotypes); nalt/gq live in two numpy
     matrices (int8+int16 = 3 bytes/genotype, ~1.9 GB at that scale) and each
-    site carries its row index.
+    site carries its row index. ``with_sq`` adds a float16 SQ matrix (family
+    events pages need it; ~2 bytes/genotype more).
     """
     sites = []
-    nalt_rows, gq_rows = [], []
+    nalt_rows, gq_rows, sq_rows = [], [], []
     with pysam.VariantFile(str(path)) as vcf:
         samples = list(vcf.header.samples)
         n = len(samples)
@@ -352,12 +465,17 @@ def _read_cohort_vcf(path: Path):
             af = af[0] if isinstance(af, tuple) else af
             nalt = np.full(n, -1, np.int8)   # -1 = missing
             gq = np.zeros(n, np.int16)
+            sq = np.full(n, np.nan, np.float16) if with_sq else None
             for i, s in enumerate(samples):
                 fmt = rec.samples[s]
                 gt = fmt.get("GT")
                 if gt is not None and None not in gt:
                     nalt[i] = sum(gt)
                     gq[i] = int(fmt.get("GQ") or 0)
+                if with_sq:
+                    v = fmt.get("SQ")
+                    if v is not None:
+                        sq[i] = float(v)
             sites.append({
                 "id": rec.id, "contig": rec.contig, "start": rec.start, "end": rec.stop,
                 "svtype": rec.info.get("SVTYPE", "?"), "size": rec.stop - rec.start,
@@ -365,13 +483,19 @@ def _read_cohort_vcf(path: Path):
                 "ncarrier": int(rec.info.get("NCARRIER", 0)),
                 "hwe": float(rec.info.get("HWE_P", 1.0)),
                 "filter": ";".join(rec.filter.keys()) or "PASS",
+                "rescue": rec.info.get("RESCUE", "") or "",
                 "idx": len(sites),
             })
             nalt_rows.append(nalt)
             gq_rows.append(gq)
+            if with_sq:
+                sq_rows.append(sq)
     nalt_m = np.vstack(nalt_rows) if nalt_rows else np.zeros((0, len(samples)), np.int8)
     gq_m = np.vstack(gq_rows) if gq_rows else np.zeros((0, len(samples)), np.int16)
-    return samples, sites, nalt_m, gq_m
+    sq_m = (
+        np.vstack(sq_rows) if sq_rows else np.zeros((0, len(samples)), np.float16)
+    ) if with_sq else None
+    return samples, sites, nalt_m, gq_m, sq_m
 
 
 def _spectra_figures(sites: list[dict]):
@@ -448,7 +572,7 @@ def generate_report(
     def _impact(contig: str, start: int, end: int) -> tuple[int, str]:
         return gene_idx.impact(contig, start, end) if gene_idx else (0, "")
 
-    samples, sites, nalt_m, gq_m = _read_cohort_vcf(vcf_path)
+    samples, sites, nalt_m, gq_m, sq_m = _read_cohort_vcf(vcf_path, with_sq=family_events)
     passing = [s for s in sites if s["filter"] == "PASS"]
     n_artifact = sum(1 for s in sites if "CohortArtifact" in s["filter"])
     # "rare" by carrier count (an AF cutoff is meaningless in small cohorts:
@@ -470,10 +594,9 @@ def generate_report(
     denovo_by_family: dict[str, list[dict]] = defaultdict(list)
     viol_by_family: dict[str, list[dict]] = defaultdict(list)
     viol_counts: dict[str, int] = defaultdict(int)
-    # (family, site) -> [(child, inheritance)] for the events pages — family
-    # runs only (scales with trios x carried sites, unbounded on big cohorts)
-    inherit_by_site: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
-    collect_inherit = family_events and make_family_workspaces
+    # per-family (site, child, inheritance) spill for the events pages —
+    # scales with trios x carried sites, so it goes to disk, not memory
+    inh_spill = _FamilySpill(run_dir / "families" / ".inherit_tmp") if family_events else None
     mendel_fields: list[str] = []
     if (cohort_dir / "mendel_report.tsv").exists():
         # de novo candidacy demands a PASS site: the rescue reservoir and
@@ -484,9 +607,9 @@ def generate_report(
             reader = csv.DictReader(fh, delimiter="\t")
             mendel_fields = list(reader.fieldnames or [])
             for r in reader:
-                if collect_inherit and r.get("inheritance"):
-                    inherit_by_site[(r["family_id"], r["site_id"])].append(
-                        (r["child"], r["inheritance"])
+                if inh_spill is not None and r.get("inheritance"):
+                    inh_spill.add(
+                        r["family_id"], f'{r["site_id"]}\t{r["child"]}\t{r["inheritance"]}'
                     )
                 if r["violation"] == "1":
                     viol_counts[r["family_id"]] += 1
@@ -543,7 +666,6 @@ def generate_report(
             )
             if make_family_workspaces:
                 fam_dir.mkdir(parents=True, exist_ok=True)
-                fam_events: list[dict] = []
                 # family-subset VCF: sites where >=1 member carries
                 with pysam.VariantFile(str(vcf_path)) as vin:
                     vin.subset_samples(members)
@@ -556,21 +678,7 @@ def generate_report(
                                 for m in members
                             ):
                                 vout.write(rec)
-                                if family_events:
-                                    inh = inherit_by_site.get((fid, rec.id or ""), [])
-                                    inh_s = " · ".join(
-                                        f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
-                                    ) if len(inh) > 1 else (
-                                        _INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else ""
-                                    )
-                                    fam_events.append(
-                                        _event_row(rec, members, _genes, _impact, inherit=inh_s)
-                                    )
                 pysam.tabix_index(str(fam_dir / f"{fid}.vcf.gz"), preset="vcf", force=True)
-                if family_events:
-                    _write_events_page(
-                        fam_dir / "events.html", f"Famille {fid}", members, fam_events
-                    )
                 if (fam_viol or denovo) and mendel_fields:
                     with open(fam_dir / "mendel.tsv", "w", newline="") as fh:
                         writer = csv.DictWriter(fh, fieldnames=mendel_fields, delimiter="\t")
@@ -590,11 +698,22 @@ def generate_report(
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
 {len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
-workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{html.escape(fid)}/events.html">tous les événements (filtres chr/type)</a>' if family_events and make_family_workspaces else ""}</p>
+workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{html.escape(fid)}/events.html">tous les événements (filtres chr/type)</a>' if family_events else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {max_denovo_per_child} candidats de novo — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
+
+    # ---- family events pages: one sweep of the matrices, never a per-family
+    # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
+    if family_events and pedigree is not None and inh_spill is not None:
+        inh_spill.flush()
+        n_pages = _write_all_family_events(
+            run_dir, dict(families), samples, sites, nalt_m, gq_m, sq_m,
+            _genes, _impact, inh_spill,
+        )
+        inh_spill.cleanup()
+        logger.info("events: %d pages familles écrites", n_pages)
 
     # ---- per-sample wave QC (evidence-store meta, absent on old stores)
     wave_scores: dict[str, float | None] = {}

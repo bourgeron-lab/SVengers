@@ -498,7 +498,7 @@ def report(
     ),
     family_events: bool = typer.Option(
         False, "--family-events",
-        help="Also write families/<FID>/events.html: every DEL/DUP of the family in one page with chromosome/type filters (requires family workspaces)",
+        help="Also write families/<FID>/events.html: every DEL/DUP of the family in one page with chromosome/type filters and inheritance (works with or without family workspaces)",
     ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
