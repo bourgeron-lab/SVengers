@@ -496,6 +496,10 @@ def report(
     max_denovo_per_child: int = typer.Option(
         20, help="Children above this many de novo candidates are flagged as technical outliers and left out of family tables"
     ),
+    events_by_chr: bool = typer.Option(
+        False, "--events-by-chr",
+        help="Also write families/<FID>/events/<chr>.html: every DEL/DUP of the family, one page per chromosome (requires family workspaces)",
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .ped import parse_ped
@@ -511,6 +515,7 @@ def report(
         genes_gff=genes_gff,
         ndd_tsv=ndd_tsv,
         max_denovo_per_child=max_denovo_per_child,
+        events_by_chr=events_by_chr,
     )
     typer.echo(f"rapport -> {path}")
 

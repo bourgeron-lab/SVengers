@@ -8,7 +8,9 @@ and writes:
   summary, size/AF spectra, per-sample table, MVR/transmission sweep,
   per-family sections with de novo candidates and violations, rare sites;
 - ``families/<FID>/`` — one workspace per family: the family-subset VCF
-  (carriers of at least one member) and its Mendel rows.
+  (carriers of at least one member) and its Mendel rows; with
+  ``events_by_chr``, browsable ``events/<chr>.html`` pages listing every
+  DEL/DUP with genes, NDD impact and per-member GT:GQ:SQ.
 """
 
 from __future__ import annotations
@@ -47,6 +49,118 @@ img{max-width:100%;background:#fff;border:1px solid #ddd;padding:4px}
 .warn{color:#b23}
 details{margin:.6em 0}summary{cursor:pointer;font-weight:600}
 """
+
+
+_EVENTS_CSS = """
+body{font-family:system-ui,sans-serif;font-size:13px;margin:16px;color:#1a1a2e;background:#fafafa}
+h1{font-size:1.3rem} .nav{margin:.6em 0;line-height:2}
+.nav a{margin-right:.55em;text-decoration:none;color:#2a6f97;font-family:monospace}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;background:#fff}
+th,td{border-bottom:1px solid #dde2de;padding:3px 8px;text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:#eef1ee;font-size:11px;text-transform:uppercase}
+td:first-child,th:first-child{text-align:left}
+tr.del td.t{color:#b3362b;font-weight:600} tr.dup td.t{color:#2a6f97;font-weight:600}
+tr.nopass{opacity:.55} .g{text-align:left;max-width:26ch;overflow:hidden;text-overflow:ellipsis}
+.c{text-align:left;font-family:monospace;font-size:11px} .muted{color:#5c6763}
+"""
+
+
+def _event_row(rec, members: list[str], genes_fn, impact_fn) -> dict:
+    """Event dict for `_write_event_pages` from a family-subset VCF record."""
+    carriers, gts = [], []
+    for m in members:
+        fmt = rec.samples[m]
+        gt = fmt.get("GT")
+        gt_s = "./." if gt is None or gt[0] is None else "/".join(str(a) for a in gt)
+        gq = fmt.get("GQ")
+        sq = fmt.get("SQ")
+        gts.append((gt_s, gq if gq is not None else "", f"{float(sq):.1f}" if sq is not None else ""))
+        if gt_s not in ("0/0", "./."):
+            carriers.append(m)
+    return {
+        "contig": rec.contig,
+        "pos": rec.pos,
+        "end": rec.stop,
+        "svtype": rec.info.get("SVTYPE", "?"),
+        "size": rec.stop - rec.pos,
+        "filter": ";".join(rec.filter.keys()) or "PASS",
+        "rescue": rec.info.get("RESCUE", "") or "",
+        "genes": genes_fn(rec.contig, rec.start, rec.stop),
+        "impact": impact_fn(rec.contig, rec.start, rec.stop)[1],
+        "carriers": carriers,
+        "gt": gts,
+    }
+
+
+def _write_event_pages(
+    out_dir: Path, title: str, members: list[str], events: list[dict]
+) -> None:
+    """One browsable HTML page per chromosome (plus an index) listing every
+    DEL/DUP of a family workspace, with genes/impact and per-member GT:GQ:SQ.
+
+    ``events`` rows: contig, pos (1-based), end, svtype, size, filter, rescue,
+    genes, impact, carriers (list), gt (list of (GT, GQ, SQ) per member).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    by_chr: dict[str, list[dict]] = defaultdict(list)
+    for e in events:
+        by_chr[e["contig"]].append(e)
+    contigs = sorted(by_chr, key=lambda c: (len(c), c))
+    nav = " ".join(f'<a href="{html.escape(c)}.html">{html.escape(c)}</a>' for c in contigs)
+    nav = f'<div class="nav"><a href="index.html"><b>index</b></a> {nav}</div>'
+
+    def _page(page_title: str, body: str) -> str:
+        return (
+            f"<!doctype html><title>{html.escape(page_title)}</title>"
+            f"<style>{_EVENTS_CSS}</style><h1>{html.escape(page_title)}</h1>{nav}{body}"
+        )
+
+    index_rows = []
+    for c in contigs:
+        evs = sorted(by_chr[c], key=lambda e: e["pos"])
+        n_pass = sum(1 for e in evs if e["filter"] == "PASS")
+        index_rows.append(
+            f'<tr><td><a href="{html.escape(c)}.html">{html.escape(c)}</a></td>'
+            f'<td>{len(evs)}</td><td>{n_pass}</td>'
+            f'<td>{sum(1 for e in evs if e["svtype"] == "DEL")}</td>'
+            f'<td>{sum(1 for e in evs if e["svtype"] == "DUP")}</td></tr>'
+        )
+        head = (
+            "<tr><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
+            "<th>rescue</th><th>gènes</th><th>impact</th><th>porteurs</th>"
+            + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
+        )
+        rows = []
+        for e in evs:
+            cls = e["svtype"].lower() + ("" if e["filter"] == "PASS" else " nopass")
+            gt_cells = "".join(
+                f'<td class="c">{html.escape(gt)}<span class="muted">:{gq}:{sq}</span></td>'
+                for gt, gq, sq in e["gt"]
+            )
+            rows.append(
+                f'<tr class="{cls}"><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
+                f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
+                f'<td>{html.escape(e["filter"])}</td><td>{html.escape(e["rescue"])}</td>'
+                f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
+                f'<td class="g">{html.escape(e["impact"])}</td>'
+                f'<td class="c">{",".join(m[-3:] for m in e["carriers"]) or "—"}</td>{gt_cells}</tr>'
+            )
+        body = (
+            f'<p class="muted">{len(evs)} événements ({n_pass} PASS) — '
+            f'GT<span class="muted">:GQ:SQ</span> par membre (suffixe du barcode ; '
+            f'ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS.</p>'
+            f'<table>{head}{"".join(rows)}</table>'
+        )
+        (out_dir / f"{c}.html").write_text(_page(f"{title} — {c}", body))
+
+    n_del = sum(1 for e in events if e["svtype"] == "DEL")
+    n_dup = sum(1 for e in events if e["svtype"] == "DUP")
+    idx_body = (
+        f'<p class="muted">{n_del} DEL + {n_dup} DUP sur {len(contigs)} chromosomes.</p>'
+        f'<table><tr><th>chr</th><th>événements</th><th>PASS</th><th>DEL</th><th>DUP</th></tr>'
+        f'{"".join(index_rows)}</table>'
+    )
+    (out_dir / "index.html").write_text(_page(f"{title} — événements par chromosome", idx_body))
 
 
 def _fig_to_b64(fig) -> str:
@@ -268,6 +382,7 @@ def generate_report(
     genes_gff: str | Path | None = None,
     ndd_tsv: str | Path | None = None,
     max_denovo_per_child: int = 20,
+    events_by_chr: bool = False,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -372,6 +487,7 @@ def generate_report(
             )
             if make_family_workspaces:
                 fam_dir.mkdir(parents=True, exist_ok=True)
+                fam_events: list[dict] = []
                 # family-subset VCF: sites where >=1 member carries
                 with pysam.VariantFile(str(vcf_path)) as vin:
                     vin.subset_samples(members)
@@ -384,7 +500,13 @@ def generate_report(
                                 for m in members
                             ):
                                 vout.write(rec)
+                                if events_by_chr:
+                                    fam_events.append(_event_row(rec, members, _genes, _impact))
                 pysam.tabix_index(str(fam_dir / f"{fid}.vcf.gz"), preset="vcf", force=True)
+                if events_by_chr:
+                    _write_event_pages(
+                        fam_dir / "events", f"Famille {fid}", members, fam_events
+                    )
                 if (fam_viol or denovo) and mendel_fields:
                     with open(fam_dir / "mendel.tsv", "w", newline="") as fh:
                         writer = csv.DictWriter(fh, fieldnames=mendel_fields, delimiter="\t")
@@ -404,7 +526,7 @@ def generate_report(
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
 {len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
-workspace : <code>families/{html.escape(fid)}/</code></p>
+workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{html.escape(fid)}/events/index.html">événements par chromosome</a>' if events_by_chr and make_family_workspaces else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {max_denovo_per_child} candidats de novo — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}

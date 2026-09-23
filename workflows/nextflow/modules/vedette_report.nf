@@ -21,6 +21,8 @@ process VEDETTE_REPORT {
     // which is truthy in Groovy — compare the textual value, not truthiness
     def fam_arg = params.family_workspaces.toString().toLowerCase() in ["false", "0", "no"] \
         ? "--no-family-workspaces" : ""
+    def events_arg = params.events_by_chr.toString().toLowerCase() in ["true", "1", "yes"] \
+        ? "--events-by-chr" : ""
     """
     mkdir -p rundir/cohort
     # published per-sample evidence stores: wave-QC column of the sample table
@@ -32,7 +34,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} \\
+    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi

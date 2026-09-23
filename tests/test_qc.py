@@ -107,3 +107,23 @@ def test_denovo_outlier_guard():
     out = denovo_outliers(dn, threshold=20)
     assert out == {"kidB": 30}
     assert denovo_outliers({}, 20) == {}
+
+
+def test_event_pages_by_chr(tmp_path):
+    from vedette.report import _write_event_pages
+
+    members = ["C000EZH", "C000EZI", "C000EZJ"]
+    ev = {
+        "contig": "chr1", "pos": 1000, "end": 2000, "svtype": "DEL", "size": 1000,
+        "filter": "PASS", "rescue": "", "genes": "GENE1", "impact": "3 — exonique, NDD-candidat",
+        "carriers": ["C000EZJ"], "gt": [("0/0", 99, "9.0"), ("0/0", 99, ""), ("0/1", 45, "7.2")],
+    }
+    ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[], rescue="RECURRENT")
+    _write_event_pages(tmp_path / "events", "Famille test", members, [ev, ev2])
+
+    idx = (tmp_path / "events" / "index.html").read_text()
+    assert "1 DEL + 1 DUP" in idx and 'href="chr1.html"' in idx and 'href="chr2.html"' in idx
+    chr1 = (tmp_path / "events" / "chr1.html").read_text()
+    assert "GENE1" in chr1 and "0/1" in chr1 and "NDD-candidat" in chr1
+    chr2 = (tmp_path / "events" / "chr2.html").read_text()
+    assert "nopass" in chr2 and "RECURRENT" in chr2
