@@ -17,7 +17,10 @@ process VEDETTE_REPORT {
     def ped_arg = params.pedigree ? "--pedigree '${params.pedigree}'" : ""
     def genes_arg = params.genes_gff ? "--genes-gff '${params.genes_gff}'" : ""
     def ndd_arg = params.ndd_tsv ? "--ndd-tsv '${params.ndd_tsv}'" : ""
-    def fam_arg = params.family_workspaces ? "" : "--no-family-workspaces"
+    // CLI `--family_workspaces false` reaches here as the STRING "false",
+    // which is truthy in Groovy — compare the textual value, not truthiness
+    def fam_arg = params.family_workspaces.toString().toLowerCase() in ["false", "0", "no"] \
+        ? "--no-family-workspaces" : ""
     """
     mkdir -p rundir/cohort
     # published per-sample evidence stores: wave-QC column of the sample table
