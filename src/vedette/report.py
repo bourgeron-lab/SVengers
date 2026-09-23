@@ -204,7 +204,9 @@ def _write_events_page(
         f'<span class="muted"><b id="count"></b> lignes</span></div>'
         f'<p class="muted">GT<span class="muted">:GQ:SQ</span> par membre (suffixe du '
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS.</p>'
-        f'<table>{head}<tbody>{"".join(rows)}</tbody></table>'
+        # the header must live in <thead>: a loose <tr> lands in an implicit
+        # tbody and the filter JS (tbody tr) hides/sorts it like a data row
+        f'<table><thead>{head}</thead><tbody>{"".join(rows)}</tbody></table>'
         f"<script>{_EVENTS_JS}</script>"
     )
 

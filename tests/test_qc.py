@@ -133,3 +133,5 @@ def test_family_events_page(tmp_path):
     # inheritance column + clickable-header sorting
     assert "<th>héritage</th>" in page and "de novo" in page and "maternel" in page
     assert "th.onclick" in page and "localeCompare" in page
+    # header outside tbody: the filter JS must never hide or sort it
+    assert "<thead>" in page and "</thead><tbody>" in page
