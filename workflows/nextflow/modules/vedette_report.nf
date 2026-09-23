@@ -21,8 +21,8 @@ process VEDETTE_REPORT {
     // which is truthy in Groovy — compare the textual value, not truthiness
     def fam_arg = params.family_workspaces.toString().toLowerCase() in ["false", "0", "no"] \
         ? "--no-family-workspaces" : ""
-    def events_arg = params.events_by_chr.toString().toLowerCase() in ["true", "1", "yes"] \
-        ? "--events-by-chr" : ""
+    def events_arg = params.family_events.toString().toLowerCase() in ["true", "1", "yes"] \
+        ? "--family-events" : ""
     """
     mkdir -p rundir/cohort
     # published per-sample evidence stores: wave-QC column of the sample table

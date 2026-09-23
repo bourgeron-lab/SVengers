@@ -109,8 +109,8 @@ def test_denovo_outlier_guard():
     assert denovo_outliers({}, 20) == {}
 
 
-def test_event_pages_by_chr(tmp_path):
-    from vedette.report import _write_event_pages
+def test_family_events_page(tmp_path):
+    from vedette.report import _write_events_page
 
     members = ["C000EZH", "C000EZI", "C000EZJ"]
     ev = {
@@ -119,11 +119,12 @@ def test_event_pages_by_chr(tmp_path):
         "carriers": ["C000EZJ"], "gt": [("0/0", 99, "9.0"), ("0/0", 99, ""), ("0/1", 45, "7.2")],
     }
     ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[], rescue="RECURRENT")
-    _write_event_pages(tmp_path / "events", "Famille test", members, [ev, ev2])
+    _write_events_page(tmp_path / "events.html", "Famille test", members, [ev, ev2])
 
-    idx = (tmp_path / "events" / "index.html").read_text()
-    assert "1 DEL + 1 DUP" in idx and 'href="chr1.html"' in idx and 'href="chr2.html"' in idx
-    chr1 = (tmp_path / "events" / "chr1.html").read_text()
-    assert "GENE1" in chr1 and "0/1" in chr1 and "NDD-candidat" in chr1
-    chr2 = (tmp_path / "events" / "chr2.html").read_text()
-    assert "nopass" in chr2 and "RECURRENT" in chr2
+    page = (tmp_path / "events.html").read_text()
+    assert "1 DEL + 1 DUP" in page
+    # the chr/type selectors and the rows' filter attributes drive the JS
+    assert '<select id="chr">' in page and '<select id="type">' in page
+    assert '<option value="chr1">chr1 (1)</option>' in page
+    assert 'data-chr="chr2" data-type="DUP" data-pass="0"' in page
+    assert "GENE1" in page and "NDD-candidat" in page and "RECURRENT" in page and "nopass" in page
