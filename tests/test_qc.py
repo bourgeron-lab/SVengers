@@ -116,9 +116,11 @@ def test_family_events_page(tmp_path):
     ev = {
         "contig": "chr1", "pos": 1000, "end": 2000, "svtype": "DEL", "size": 1000,
         "filter": "PASS", "rescue": "", "genes": "GENE1", "impact": "3 — exonique, NDD-candidat",
-        "carriers": ["C000EZJ"], "gt": [("0/0", 99, "9.0"), ("0/0", 99, ""), ("0/1", 45, "7.2")],
+        "inherit": "de novo", "carriers": ["C000EZJ"],
+        "gt": [("0/0", 99, "9.0"), ("0/0", 99, ""), ("0/1", 45, "7.2")],
     }
-    ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[], rescue="RECURRENT")
+    ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[],
+               rescue="RECURRENT", inherit="maternel")
     _write_events_page(tmp_path / "events.html", "Famille test", members, [ev, ev2])
 
     page = (tmp_path / "events.html").read_text()
@@ -128,3 +130,6 @@ def test_family_events_page(tmp_path):
     assert '<option value="chr1">chr1 (1)</option>' in page
     assert 'data-chr="chr2" data-type="DUP" data-pass="0"' in page
     assert "GENE1" in page and "NDD-candidat" in page and "RECURRENT" in page and "nopass" in page
+    # inheritance column + clickable-header sorting
+    assert "<th>héritage</th>" in page and "de novo" in page and "maternel" in page
+    assert "th.onclick" in page and "localeCompare" in page

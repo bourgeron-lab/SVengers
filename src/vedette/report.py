@@ -59,7 +59,8 @@ h1{font-size:1.3rem}
 .bar select{font-size:13px;padding:2px 6px}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;background:#fff}
 th,td{border-bottom:1px solid #dde2de;padding:3px 8px;text-align:right;white-space:nowrap}
-th{position:sticky;top:44px;background:#eef1ee;font-size:11px;text-transform:uppercase}
+th{position:sticky;top:44px;background:#eef1ee;font-size:11px;text-transform:uppercase;cursor:pointer;user-select:none}
+th.sorted::after{content:" \\25b4"} th.sorted.desc::after{content:" \\25be"}
 td:first-child,th:first-child{text-align:left}
 tr.del td.t{color:#b3362b;font-weight:600} tr.dup td.t{color:#2a6f97;font-weight:600}
 tr.nopass{opacity:.55} .g{text-align:left;max-width:26ch;overflow:hidden;text-overflow:ellipsis}
@@ -84,11 +85,43 @@ function apply(){
 }
 chrSel.onchange = typeSel.onchange = passCb.onchange = apply;
 apply();
+
+// column sorting: click a header to sort, click again to reverse
+const tbody = document.querySelector("tbody");
+const NUM = /^-?[0-9]+([.][0-9]+)?$/;
+function cellKey(r, i){
+  const t = r.children[i].textContent.trim().replace(/[\\s,\\u202f]/g, "");
+  return NUM.test(t) ? parseFloat(t) : r.children[i].textContent.trim().toLowerCase();
+}
+document.querySelectorAll("th").forEach((th, i) => {
+  th.onclick = () => {
+    const desc = th.classList.contains("sorted") && !th.classList.contains("desc");
+    document.querySelectorAll("th").forEach(h => h.classList.remove("sorted", "desc"));
+    th.classList.add("sorted");
+    if (desc) th.classList.add("desc");
+    const sorted = rows.slice().sort((a, b) => {
+      const ka = cellKey(a, i), kb = cellKey(b, i);
+      const c = (typeof ka === "number" && typeof kb === "number")
+        ? ka - kb : String(ka).localeCompare(String(kb), "fr");
+      return desc ? -c : c;
+    });
+    tbody.append(...sorted);
+  };
+});
 """
 
+_INHERIT_FR = {
+    "denovo": "de novo",
+    "denovo_lowconf": "de novo (GQ faible)",
+    "maternal": "maternel",
+    "paternal": "paternel",
+    "biparental": "biparental",
+    "none": "aucun parent",
+}
 
-def _event_row(rec, members: list[str], genes_fn, impact_fn) -> dict:
-    """Event dict for `_write_event_pages` from a family-subset VCF record."""
+
+def _event_row(rec, members: list[str], genes_fn, impact_fn, inherit: str = "") -> dict:
+    """Event dict for `_write_events_page` from a family-subset VCF record."""
     carriers, gts = [], []
     for m in members:
         fmt = rec.samples[m]
@@ -109,6 +142,7 @@ def _event_row(rec, members: list[str], genes_fn, impact_fn) -> dict:
         "rescue": rec.info.get("RESCUE", "") or "",
         "genes": genes_fn(rec.contig, rec.start, rec.stop),
         "impact": impact_fn(rec.contig, rec.start, rec.stop)[1],
+        "inherit": inherit,
         "carriers": carriers,
         "gt": gts,
     }
@@ -136,7 +170,7 @@ def _write_events_page(
     )
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
-        "<th>rescue</th><th>gènes</th><th>impact</th><th>porteurs</th>"
+        "<th>rescue</th><th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
     )
     rows = []
@@ -155,6 +189,7 @@ def _write_events_page(
             f'<td>{html.escape(e["filter"])}</td><td>{html.escape(e["rescue"])}</td>'
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
+            f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
             f'<td class="c">{",".join(m[-3:] for m in e["carriers"]) or "—"}</td>{gt_cells}</tr>'
         )
     out_file.write_text(
@@ -433,6 +468,10 @@ def generate_report(
     denovo_by_family: dict[str, list[dict]] = defaultdict(list)
     viol_by_family: dict[str, list[dict]] = defaultdict(list)
     viol_counts: dict[str, int] = defaultdict(int)
+    # (family, site) -> [(child, inheritance)] for the events pages — family
+    # runs only (scales with trios x carried sites, unbounded on big cohorts)
+    inherit_by_site: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    collect_inherit = family_events and make_family_workspaces
     mendel_fields: list[str] = []
     if (cohort_dir / "mendel_report.tsv").exists():
         # de novo candidacy demands a PASS site: the rescue reservoir and
@@ -443,6 +482,10 @@ def generate_report(
             reader = csv.DictReader(fh, delimiter="\t")
             mendel_fields = list(reader.fieldnames or [])
             for r in reader:
+                if collect_inherit and r.get("inheritance"):
+                    inherit_by_site[(r["family_id"], r["site_id"])].append(
+                        (r["child"], r["inheritance"])
+                    )
                 if r["violation"] == "1":
                     viol_counts[r["family_id"]] += 1
                     if make_family_workspaces:
@@ -512,7 +555,15 @@ def generate_report(
                             ):
                                 vout.write(rec)
                                 if family_events:
-                                    fam_events.append(_event_row(rec, members, _genes, _impact))
+                                    inh = inherit_by_site.get((fid, rec.id or ""), [])
+                                    inh_s = " · ".join(
+                                        f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
+                                    ) if len(inh) > 1 else (
+                                        _INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else ""
+                                    )
+                                    fam_events.append(
+                                        _event_row(rec, members, _genes, _impact, inherit=inh_s)
+                                    )
                 pysam.tabix_index(str(fam_dir / f"{fid}.vcf.gz"), preset="vcf", force=True)
                 if family_events:
                     _write_events_page(
