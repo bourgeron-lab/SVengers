@@ -116,8 +116,8 @@ def test_family_events_page(tmp_path):
     ev = {
         "contig": "chr1", "pos": 1000, "end": 2000, "svtype": "DEL", "size": 1000,
         "filter": "PASS", "rescue": "", "genes": "GENE1", "impact": "3 — exonique, NDD-candidat",
-        "inherit": "de novo", "carriers": ["C000EZJ"],
-        "gt": [("0/0", 99, "9.0"), ("0/0", 99, ""), ("0/1", 45, "7.2")],
+        "inherit": "de novo", "carriers": ["C000EZJ"], "sqmax": "12.3", "cfrac": "0.333",
+        "refcf": "0.004", "gt": [("0/0", 99, "2"), ("0/0", 99, "2"), ("0/1", 45, "1")],
     }
     ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[],
                rescue="RECURRENT", inherit="maternel")
@@ -138,3 +138,6 @@ def test_family_events_page(tmp_path):
     # manual validation + IGV: per-row controls, export/import in the bar
     assert 'class="v-true"' in page and 'class="v-false"' in page and 'class="igv"' in page
     assert 'id="export"' in page and 'id="import"' in page and 'data-site="chr1:1000-2000"' in page
+    # cohort-level context columns (merge SQ, run carrier fraction, reference-cohort frequency)
+    assert "<th>SQmax</th>" in page and "<th>% port.</th>" in page and "<th>fréq. réf.</th>" in page
+    assert "<td>12.3</td><td>0.333</td><td>0.004</td>" in page and "GT<span" in page

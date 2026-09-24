@@ -223,6 +223,8 @@ def run_merge(
     header.info.add("NSAMPLES", "1", "Integer", "Number of distinct carrier samples")
     header.info.add("SPREAD", "1", "Integer", "Breakpoint spread among members (bp)")
     header.info.add("PRECISE_FRAC", "1", "Float", "Fraction of members with precise breakpoints")
+    header.info.add("SQMAX", "1", "Float", "Highest per-sample SQ among the clustered calls")
+    header.info.add("SQMEAN", "1", "Float", "Mean of the per-sample best SQ among carriers")
     header.info.add(
         "RESCUE", "1", "String",
         "Site discovery mode when no member passed the single-sample filter "
@@ -248,15 +250,17 @@ def run_merge(
             merged.sort(key=lambda t: t[0])
             for _pos, cl in merged:
                 rescued = not any(m.passing for m in cl.members)
-                if rescued:
-                    best_sq: dict[str, float] = {}
-                    for m in cl.members:
-                        best_sq[m.sample] = max(best_sq.get(m.sample, 0.0), m.sq)
-                    if (
-                        len(best_sq) < rescue_min_samples
-                        or sum(best_sq.values()) < rescue_total_sq
-                    ):
-                        continue
+                # best SQ per carrier: rescue criterion, and SQMAX/SQMEAN
+                # carried to the cohort VCF (the per-sample SQ is otherwise
+                # lost past the merge)
+                best_sq: dict[str, float] = {}
+                for m in cl.members:
+                    best_sq[m.sample] = max(best_sq.get(m.sample, 0.0), m.sq)
+                if rescued and (
+                    len(best_sq) < rescue_min_samples
+                    or sum(best_sq.values()) < rescue_total_sq
+                ):
+                    continue
                 n_sites += 1
                 start, end = cl.start, cl.end
                 if end <= start:
@@ -280,6 +284,8 @@ def run_merge(
                 rec.info["PRECISE_FRAC"] = round(
                     sum(1 for m in cl.members if m.precise) / len(cl.members), 3
                 )
+                rec.info["SQMAX"] = round(max(best_sq.values()), 2)
+                rec.info["SQMEAN"] = round(sum(best_sq.values()) / len(best_sq), 2)
                 if rescued:
                     rec.info["RESCUE"] = "RECURRENT"
                 out.write(rec)

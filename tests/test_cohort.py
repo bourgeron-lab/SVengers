@@ -158,3 +158,119 @@ def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     assert (10_000_000, 10_030_000) not in sites
     assert (30_000_000, 30_030_000) not in sites
     assert n == 2
+    # per-sample best SQ survives the merge (SQMAX/SQMEAN)
+    assert sites[(20_000_000, 20_030_000)].info["SQMAX"] == 20.0
+    assert abs(sites[(50_654_000, 50_684_001)].info["SQMAX"] - 2.1) < 1e-6
+    assert abs(sites[(50_654_000, 50_684_001)].info["SQMEAN"] - 2.1) < 1e-6
+
+
+def _write_sites_vcf(path, records):
+    """records: (site_id, contig, start, end, svtype, nsamples)"""
+    import pysam
+
+    header = pysam.VariantHeader()
+    header.contigs.add("chr22", length=50_818_468)
+    header.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    header.add_line('##ALT=<ID=DUP,Description="Duplication">')
+    header.info.add("SVTYPE", "1", "String", "SV type")
+    header.info.add("END", "1", "Integer", "End")
+    header.info.add("NSAMPLES", "1", "Integer", "carriers")
+    with pysam.VariantFile(str(path), "wz", header=header) as out:
+        for sid, contig, start, end, svtype, ns in records:
+            rec = out.new_record(contig=contig, start=start, stop=end,
+                                 alleles=("N", f"<{svtype}>"), id=sid)
+            rec.info["SVTYPE"] = svtype
+            rec.info["NSAMPLES"] = ns
+            out.write(rec)
+    pysam.tabix_index(str(path), preset="vcf", force=True)
+
+
+def _write_reference_cohort(path, records):
+    """records: (contig, start, end, svtype, af, ns, ncarrier, filters)"""
+    import pysam
+
+    header = pysam.VariantHeader()
+    header.contigs.add("chr22", length=50_818_468)
+    header.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    header.add_line('##ALT=<ID=DUP,Description="Duplication">')
+    header.info.add("SVTYPE", "1", "String", "SV type")
+    header.info.add("END", "1", "Integer", "End")
+    header.info.add("AF", "A", "Float", "AF")
+    header.info.add("NS", "1", "Integer", "NS")
+    header.info.add("NCARRIER", "1", "Integer", "carriers")
+    header.filters.add("CohortArtifact", None, None, "artifact")
+    with pysam.VariantFile(str(path), "wz", header=header) as out:
+        for contig, start, end, svtype, af, ns, ncar, filters in records:
+            rec = out.new_record(contig=contig, start=start, stop=end,
+                                 alleles=("N", f"<{svtype}>"))
+            rec.info["SVTYPE"] = svtype
+            rec.info["AF"] = (af,)
+            rec.info["NS"] = ns
+            rec.info["NCARRIER"] = ncar
+            for f in filters:
+                rec.filter.add(f)
+            out.write(rec)
+    pysam.tabix_index(str(path), preset="vcf", force=True)
+
+
+def test_cohort_filter_post_processing_flags(tmp_path):
+    import csv
+
+    import pysam
+
+    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
+    from vedette.cohort.metrics import run_cohort_filter
+
+    # A: DEL carried 1/1 by all 6 samples (reference artifact, HWE-blind)
+    # B: DUP carried by 4/6, every carrier at CN=1 (type/depth discordant)
+    # C: DEL carried by 1/6, matches a reference-cohort site carried by 92 %
+    # D: DEL carried by 2/6 with consistent CN, unknown to the reference (clean)
+    sites = [("A", "chr22", 1_000_000, 1_001_000, "DEL", 6),
+             ("B", "chr22", 2_000_000, 2_000_300, "DUP", 4),
+             ("C", "chr22", 3_000_000, 3_010_000, "DEL", 1),
+             ("D", "chr22", 4_000_000, 4_020_000, "DEL", 2)]
+    _write_sites_vcf(tmp_path / "sites.vcf.gz", sites)
+    _write_reference_cohort(tmp_path / "ref.vcf.gz", [
+        ("chr22", 3_000_050, 3_009_900, "DEL", 0.48, 2000, 1840, ["CohortArtifact"]),
+        ("chr22", 4_000_000, 4_020_000, "DUP", 0.9, 2000, 1900, []),  # wrong type: no match
+    ])
+    gt_paths = []
+    for k in range(6):
+        smp = f"S{k}"
+        rows = []
+        for sid, contig, start, end, svtype, _ in sites:
+            if sid == "A":
+                gt, cn = "1/1", 0
+            elif sid == "B":
+                gt, cn = ("0/1", 1) if k < 4 else ("0/0", 2)
+            elif sid == "C":
+                gt, cn = ("0/1", 1) if k == 0 else ("0/0", 2)
+            else:
+                gt, cn = ("0/1", 1) if k < 2 else ("0/0", 2)
+            rows.append(dict(zip(GENOTYPE_COLUMNS, [
+                sid, contig, start, end, svtype, smp, gt, 40, cn, 0.99, "", 0, 0, 0, 0, "",
+            ])))
+        path = tmp_path / f"{smp}.gt.tsv"
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
+            w.writeheader()
+            w.writerows(rows)
+        gt_paths.append(path)
+
+    counts = run_cohort_filter(
+        tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "cohort.vcf.gz",
+        known_sites=tmp_path / "ref.vcf.gz",
+    )
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "cohort.vcf.gz"))}
+    assert "HighCarrierFrac" in out["A"].filter.keys()
+    assert out["A"].info["CARRIER_FRAC"] == 1.0
+    assert "CNDiscordant" in out["B"].filter.keys()
+    assert out["B"].info["CN_DISC"] == 1.0
+    assert "HighCarrierFrac" not in out["B"].filter.keys()
+    assert "CommonRef" in out["C"].filter.keys()
+    assert abs(out["C"].info["REF_CARRIER_FRAC"] - 0.92) < 1e-6
+    assert out["C"].info["REF_FILTER"] == "CohortArtifact"
+    assert list(out["D"].filter.keys()) == ["PASS"]
+    assert "REF_AF" not in out["D"].info
+    assert counts["high_carrier"] == 1 and counts["cn_discordant"] == 1
+    assert counts["common_ref"] == 1 and counts["pass"] == 1

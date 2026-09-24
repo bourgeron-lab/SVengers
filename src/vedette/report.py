@@ -118,13 +118,14 @@ for (const r of rows){
   };
 }
 document.getElementById("export").onclick = () => {
-  const head = ["site_id","chr","pos","end","type","taille","filter","heritage","porteurs","validation"];
+  const head = ["site_id","chr","pos","end","type","taille","filter","sqmax","carrier_frac","ref_carrier_frac","heritage","porteurs","validation"];
   const lines = [head.join("\\t")];
   for (const r of rows){
     if (!r.dataset.val) continue;
     const td = r.children;
     lines.push([r.dataset.site, r.dataset.chr, r.dataset.pos, r.dataset.end, r.dataset.type,
-                r.dataset.size, td[5].textContent, td[9].textContent, td[10].textContent,
+                r.dataset.size, td[5].textContent, td[7].textContent, td[8].textContent,
+                td[9].textContent, td[12].textContent, td[13].textContent,
                 r.dataset.val === "true" ? "vrai" : "faux"].join("\\t"));
   }
   const a = document.createElement("a");
@@ -135,13 +136,36 @@ document.getElementById("export").onclick = () => {
 document.getElementById("import").onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   f.text().then(txt => {
-    const bySite = {}; for (const r of rows) bySite[r.dataset.site] = r;
+    // site ids are positional (vedette_site_N) and renumber when the cohort is
+    // re-merged: match by id, then by exact locus, then by RO >= 0.9 same type
+    const bySite = {}, byLocus = {};
+    for (const r of rows){
+      bySite[r.dataset.site] = r;
+      byLocus[r.dataset.chr + ":" + r.dataset.pos + "-" + r.dataset.end + ":" + r.dataset.type] = r;
+    }
     const L = txt.split(/\\r?\\n/); const h = L[0].split("\\t");
-    const iS = h.indexOf("site_id"), iV = h.indexOf("validation");
+    const iS = h.indexOf("site_id"), iV = h.indexOf("validation"),
+          iC = h.indexOf("chr"), iP = h.indexOf("pos"), iE = h.indexOf("end"), iT = h.indexOf("type");
     if (iS < 0 || iV < 0) { alert("TSV attendu avec colonnes site_id et validation"); return; }
+    function findRow(c){
+      let r = bySite[c[iS]];
+      if (r || iC < 0 || iP < 0 || iE < 0 || iT < 0) return r;
+      r = byLocus[c[iC] + ":" + c[iP] + "-" + c[iE] + ":" + c[iT]];
+      if (r) return r;
+      const p = parseInt(c[iP]), e = parseInt(c[iE]); let best = null, bestRo = 0;
+      for (const q of rows){
+        if (q.dataset.chr !== c[iC] || q.dataset.type !== c[iT]) continue;
+        const qp = parseInt(q.dataset.pos), qe = parseInt(q.dataset.end);
+        const ov = Math.min(e, qe) - Math.max(p, qp);
+        if (ov <= 0) continue;
+        const ro = ov / Math.max(e - p, qe - qp);
+        if (ro >= 0.9 && ro > bestRo) { best = q; bestRo = ro; }
+      }
+      return best;
+    }
     let n = 0;
     for (const line of L.slice(1)){
-      const c = line.split("\\t"); const r = bySite[c[iS]]; if (!r) continue;
+      const c = line.split("\\t"); const r = findRow(c); if (!r) continue;
       const v = (c[iV] || "").trim().toLowerCase();
       setVal(r, v === "vrai" || v === "true" ? "true" : (v === "faux" || v === "false" ? "false" : ""));
       n++;
@@ -244,7 +268,7 @@ def _write_all_family_events(
     sites: list[dict],
     nalt_m,
     gq_m,
-    sq_m,
+    cn_m,
     genes_fn,
     impact_fn,
     inh_spill: _FamilySpill,
@@ -280,16 +304,20 @@ def _write_all_family_events(
             continue
         genes = genes_fn(site["contig"], site["start"], site["end"])
         impact = impact_fn(site["contig"], site["start"], site["end"])[1]
+        def _num(v, fmt):
+            return "" if v is None else format(float(v), fmt)
         base = "\t".join([
             site["id"] or "", site["contig"], str(site["start"] + 1), str(site["end"]),
             site["svtype"], str(site["size"]), site["filter"], site["rescue"],
             genes, impact,
+            _num(site.get("sqmax"), ".1f"), _num(site.get("carrier_frac"), ".3f"),
+            _num(site.get("ref_carrier_frac"), ".3f"),
         ])
         for k in fam_ks:
             fid = fids[int(k)]
             cells = "\t".join(
                 f"{nalt_m[idx, i]}:{gq_m[idx, i]}:"
-                + ("" if sq_m is None or np.isnan(sq_m[idx, i]) else f"{float(sq_m[idx, i]):.1f}")
+                + ("" if cn_m is None or cn_m[idx, i] < 0 else str(int(cn_m[idx, i])))
                 for _, i in fam_members[fid]
             )
             ev_spill.add(fid, base + "\t" + cells)
@@ -312,17 +340,18 @@ def _write_all_family_events(
                 f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
             ) if len(inh) > 1 else (_INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else "")
             gts, carriers = [], []
-            for m, cell in zip(members, r[10:]):
-                na, gq, sq = cell.split(":")
+            for m, cell in zip(members, r[13:]):
+                na, gq, cn = cell.split(":")
                 gt_s = _NALT_GT.get(int(na), "./.")
-                gts.append((gt_s, gq, sq))
+                gts.append((gt_s, gq, cn))
                 if gt_s not in ("0/0", "./."):
                     carriers.append(m)
             events.append({
                 "id": site_id,
                 "contig": r[1], "pos": int(r[2]), "end": int(r[3]), "svtype": r[4],
                 "size": int(r[5]), "filter": r[6], "rescue": r[7], "genes": r[8],
-                "impact": r[9], "inherit": inh_s, "carriers": carriers, "gt": gts,
+                "impact": r[9], "sqmax": r[10], "cfrac": r[11], "refcf": r[12],
+                "inherit": inh_s, "carriers": carriers, "gt": gts,
             })
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
@@ -357,7 +386,8 @@ def _write_events_page(
     )
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
-        "<th>rescue</th><th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
+        "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
+        "<th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
     )
@@ -378,6 +408,9 @@ def _write_events_page(
             f'<td>{html.escape(e["contig"])}</td><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
             f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
             f'<td>{html.escape(e["filter"])}</td><td>{html.escape(e["rescue"])}</td>'
+            f'<td>{html.escape(str(e.get("sqmax") or ""))}</td>'
+            f'<td>{html.escape(str(e.get("cfrac") or ""))}</td>'
+            f'<td>{html.escape(str(e.get("refcf") or ""))}</td>'
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
@@ -402,8 +435,10 @@ def _write_events_page(
         f'<span class="muted"><b id="count"></b> lignes</span>'
         f'<button id="export" type="button">Exporter validations (TSV)</button>'
         f'<label class="muted">Importer <input type="file" id="import" accept=".tsv,.txt"></label></div>'
-        f'<p class="muted">GT<span class="muted">:GQ:SQ</span> par membre (suffixe du '
+        f'<p class="muted">GT<span class="muted">:GQ:CN</span> par membre (suffixe du '
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
+        f'SQmax = meilleur SQ par échantillon au merge ; % port. = fraction de porteurs dans ce run ; '
+        f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites). '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux sont '
@@ -538,17 +573,17 @@ def denovo_outliers(
     return {c: n for c, n in counts.items() if n > threshold}
 
 
-def _read_cohort_vcf(path: Path, with_sq: bool = False):
+def _read_cohort_vcf(path: Path, with_cn: bool = False):
     """One dict per site + compact genotype matrices.
 
     Dict-of-dicts genotypes cost ~80 bytes/genotype and OOM-killed the report
     on 238k sites x 2670 samples (635M genotypes); nalt/gq live in two numpy
     matrices (int8+int16 = 3 bytes/genotype, ~1.9 GB at that scale) and each
-    site carries its row index. ``with_sq`` adds a float16 SQ matrix (family
-    events pages need it; ~2 bytes/genotype more).
+    site carries its row index. ``with_cn`` adds an int8 copy-number matrix
+    (family events pages show GT:GQ:CN; 1 byte/genotype more).
     """
     sites = []
-    nalt_rows, gq_rows, sq_rows = [], [], []
+    nalt_rows, gq_rows, cn_rows = [], [], []
     with pysam.VariantFile(str(path)) as vcf:
         samples = list(vcf.header.samples)
         n = len(samples)
@@ -557,17 +592,17 @@ def _read_cohort_vcf(path: Path, with_sq: bool = False):
             af = af[0] if isinstance(af, tuple) else af
             nalt = np.full(n, -1, np.int8)   # -1 = missing
             gq = np.zeros(n, np.int16)
-            sq = np.full(n, np.nan, np.float16) if with_sq else None
+            cn = np.full(n, -1, np.int8) if with_cn else None
             for i, s in enumerate(samples):
                 fmt = rec.samples[s]
                 gt = fmt.get("GT")
                 if gt is not None and None not in gt:
                     nalt[i] = sum(gt)
                     gq[i] = int(fmt.get("GQ") or 0)
-                if with_sq:
-                    v = fmt.get("SQ")
+                if with_cn:
+                    v = fmt.get("CN")
                     if v is not None:
-                        sq[i] = float(v)
+                        cn[i] = min(int(v), 127)
             sites.append({
                 "id": rec.id, "contig": rec.contig, "start": rec.start, "end": rec.stop,
                 "svtype": rec.info.get("SVTYPE", "?"), "size": rec.stop - rec.start,
@@ -576,18 +611,21 @@ def _read_cohort_vcf(path: Path, with_sq: bool = False):
                 "hwe": float(rec.info.get("HWE_P", 1.0)),
                 "filter": ";".join(rec.filter.keys()) or "PASS",
                 "rescue": rec.info.get("RESCUE", "") or "",
+                "sqmax": rec.info.get("SQMAX"),
+                "carrier_frac": rec.info.get("CARRIER_FRAC"),
+                "ref_carrier_frac": rec.info.get("REF_CARRIER_FRAC"),
                 "idx": len(sites),
             })
             nalt_rows.append(nalt)
             gq_rows.append(gq)
-            if with_sq:
-                sq_rows.append(sq)
+            if with_cn:
+                cn_rows.append(cn)
     nalt_m = np.vstack(nalt_rows) if nalt_rows else np.zeros((0, len(samples)), np.int8)
     gq_m = np.vstack(gq_rows) if gq_rows else np.zeros((0, len(samples)), np.int16)
-    sq_m = (
-        np.vstack(sq_rows) if sq_rows else np.zeros((0, len(samples)), np.float16)
-    ) if with_sq else None
-    return samples, sites, nalt_m, gq_m, sq_m
+    cn_m = (
+        np.vstack(cn_rows) if cn_rows else np.zeros((0, len(samples)), np.int8)
+    ) if with_cn else None
+    return samples, sites, nalt_m, gq_m, cn_m
 
 
 def _spectra_figures(sites: list[dict]):
@@ -665,7 +703,7 @@ def generate_report(
     def _impact(contig: str, start: int, end: int) -> tuple[int, str]:
         return gene_idx.impact(contig, start, end) if gene_idx else (0, "")
 
-    samples, sites, nalt_m, gq_m, sq_m = _read_cohort_vcf(vcf_path, with_sq=family_events)
+    samples, sites, nalt_m, gq_m, cn_m = _read_cohort_vcf(vcf_path, with_cn=family_events)
     passing = [s for s in sites if s["filter"] == "PASS"]
     n_artifact = sum(1 for s in sites if "CohortArtifact" in s["filter"])
     # "rare" by carrier count (an AF cutoff is meaningless in small cohorts:
@@ -802,7 +840,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
     if family_events and pedigree is not None and inh_spill is not None:
         inh_spill.flush()
         n_pages = _write_all_family_events(
-            run_dir, dict(families), samples, sites, nalt_m, gq_m, sq_m,
+            run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
         )
         inh_spill.cleanup()

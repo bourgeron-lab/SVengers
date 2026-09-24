@@ -12,11 +12,12 @@ process VEDETTE_COHORT_FILTER {
 
     script:
     def ped_arg = params.pedigree ? "--pedigree '${params.pedigree}'" : ""
+    def known_arg = params.known_sites ? "--known-sites '${params.known_sites}'" : ""
     """
     ls -1 ${genotype_tables} > gt_list.txt
     ${params.vedette_bin} cohort-filter ${sites} \\
         --genotypes @gt_list.txt \\
         --out cohort.vcf.gz \\
-        ${ped_arg}
+        ${ped_arg} ${known_arg}
     """
 }

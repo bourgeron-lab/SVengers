@@ -256,6 +256,18 @@ def cohort_filter(
         None, help="Pedigree TSV (founder-based HWE)"
     ),
     artifact_af: float = typer.Option(0.02, help="AF above which HWE failures are flagged"),
+    carrier_frac_max: float = typer.Option(
+        0.85, help="HighCarrierFrac: carrier fraction at or above which a site is flagged (needs >=4 genotyped samples)"
+    ),
+    cn_discordant_frac: float = typer.Option(
+        0.5, help="CNDiscordant: fraction of carriers whose re-genotyped CN contradicts the SV type"
+    ),
+    known_sites: Optional[Path] = typer.Option(
+        None, help="Reference cohort VCF (e.g. a large `cohort-filter` output): annotates REF_AF/REF_CARRIER_FRAC and flags CommonRef"
+    ),
+    known_common_frac: float = typer.Option(
+        0.5, help="CommonRef: reference-cohort carrier fraction at or above which the site is flagged"
+    ),
 ) -> None:
     """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics."""
     from .cohort.metrics import run_cohort_filter
@@ -271,9 +283,15 @@ def cohort_filter(
         sites, paths, out,
         pedigree=parse_ped(pedigree) if pedigree else None,
         artifact_af=artifact_af,
+        carrier_frac_max=carrier_frac_max,
+        cn_discordant_frac=cn_discordant_frac,
+        known_sites=known_sites,
+        known_common_frac=known_common_frac,
     )
     typer.echo(
-        f"{counts['sites']} sites, {counts['artifact']} CohortArtifact -> {out}"
+        f"{counts['sites']} sites, {counts['pass']} PASS, {counts['artifact']} CohortArtifact, "
+        f"{counts['high_carrier']} HighCarrierFrac, {counts['cn_discordant']} CNDiscordant, "
+        f"{counts['common_ref']} CommonRef -> {out}"
     )
 
 

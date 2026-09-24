@@ -49,6 +49,34 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1ter. v6 — nettoyer les labels par transmission (constat du 2026-09-24)
+
+Validation IGV d'Alexandre sur la famille FAM-04 (v5, sites PASS) :
+10 faux / 3 vrais sur les 13 premiers. Les 10 faux sont portés par 8-9
+membres sur 9 et sont tous `CohortArtifact` dans dataset_paper (46-100 % de
+porteurs sur 2670) ; les DUP fausses ont CN=1 chez 98 % des porteurs.
+
+Conséquence pour l'entraînement : un artefact partagé parent→enfant est
+étiqueté **TP par transmission**. Test sur les 16 trios wavy : la règle « DUP
+avec dhffc<0,7 » retire 22,6 % des "TP" et 26 % des FP — indiscernables, alors
+que sur GIAB elle ne touche presque rien. Les labels wavy v5 sont donc
+contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
+
+À faire pour v6 :
+- `vedette label-trio --known-sites <cohort.vcf.gz>` : exclure des labels (ou
+  passer en FP) les appels dont le site de référence a REF_CARRIER_FRAC ≥ 0,5,
+  et ceux flagués HighCarrierFrac / CNDiscordant dans le run ;
+- réentraîner, comparer sur HG002 (non-régression) et sur les validations IGV
+  (TSV `validation` exportés des pages events — les croiser par site_id ou
+  par locus) ;
+- côté post-traitement (fait, 2026-09-24) : `cohort-filter` pose
+  HighCarrierFrac / CNDiscordant / CommonRef (`--known-sites`) et le merge
+  propage SQMAX/SQMEAN ; le run famille doit pointer `--known_sites` sur la
+  dernière grande cohorte.
+- nommage : `CohortArtifact` (HWE) attrape aussi de vrais CNV communs
+  (site_199 DEL 10,5 kb à 32 % de porteurs, validé vrai) — envisager
+  `CommonCNV` distinct pour les sites en déséquilibre HWE mais CN-cohérents.
+
 ### 1bis. Détail du plan d'entraînement initial (référence)
 - Télécharger (proxy configuré) dans `resources/giab/` :
   - CRAM HG002/HG003/HG004 ~35x GRCh38 (GIAB FTP, PCR-free ILMN)
