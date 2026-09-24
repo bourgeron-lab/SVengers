@@ -186,7 +186,7 @@ un génotype par la vraisemblance unifiée&nbsp;: profondeur (avec dilution sous
 n°1&nbsp;: <b>une seule vraisemblance pour toutes les évidences</b>, là où les callers existants
 utilisent la BAF (au mieux) en post-hoc.</p>
 
-<h2><span class="n">4</span>Le filtrage à trois étages</h2>
+<h2><span class="n">4</span>Le filtrage à quatre étages</h2>
 <ul>
 <li><b>Étage 1 — filtres durs transparents</b>&nbsp;: taille minimale, chevauchement des masques N/exclusion,
 segdup sans support SR, bins informatifs insuffisants. Chaque tag est lisible dans le FILTER du VCF.</li>
@@ -200,12 +200,39 @@ transitif), HWE exact, artefacts récurrents (<code>CohortArtifact</code>), et l
 un site sous le seuil chez chaque porteur mais récurrent (≥2 porteurs, somme de SQ ≥ 8) est repêché
 et tracé <code>RESCUE=RECURRENT</code> — c'est ce qui a récupéré une délétion familiale de SHANK3
 présente chez 7 apparentés à SQ ~2 chacun.</li>
+<li><b>Étage 4 — signaux inter-cohorte de variants communs</b> (<code>vedette cohort-filter</code>)&nbsp;:
+<code>HighCarrierFrac</code> (porté par ≥85&nbsp;% des échantillons génotypés — artefacts de
+référence/mappabilité invisibles à HWE, puisque « tout le monde en 1/1 » est en équilibre de
+Hardy-Weinberg), <code>CNDiscordant</code> (le CN re-génotypé de la plupart des porteurs contredit
+le type de SV — une « DUP » assise sur un CN=1), et, avec
+<code>--known-sites &lt;cohort.vcf.gz de référence&gt;</code>, <code>CommonRef</code> (correspond à un
+site porté par ≥50&nbsp;% d'une cohorte de référence plus large). Ajouté le 24/09/2026 après
+relecture manuelle sous IGV d'un run familial de 9 membres&nbsp;: 10 des 13 appels PASS relus
+étaient faux, tous partageant exactement cette signature (8-9/9 porteurs locaux, fréquence
+46-100&nbsp;% dans une cohorte de référence de 2670 génomes) — un run familial seul n'a aucune
+fréquence propre pour la repérer.</li>
 </ul>
 <div class="note">Deux garde-fous QC complètent le tri&nbsp;: les échantillons <em>wavy</em>
 (score ≥ 0,145) sont signalés dans le rapport, et un enfant portant plus de 20 candidats
 <em>de novo</em> PASS est marqué outlier technique — un vrai génome en porte moins d'un.</div>
 
-<h2><span class="n">5</span>Utilisation</h2>
+<h2><span class="n">5</span>Boucle de validation manuelle (IGV)</h2>
+<p><code>vedette report --family-events</code> écrit une page interactive par workspace famille
+(<code>families/&lt;FID&gt;/events.html</code>)&nbsp;: tous les DEL/DUP portés par la famille, avec
+filtres chromosome/type/validation, colonnes triables au clic, une colonne héritage (de novo /
+maternel / paternel / biparental, croisée depuis le rapport Mendel), les colonnes de contexte de
+l'étage&nbsp;4 ci-dessus (SQmax, fraction de porteurs du run, fréquence dans la cohorte de référence)
+et le GT:GQ:CN par membre.</p>
+<p>Chaque ligne porte un lien <b>IGV</b> — positionne un IGV desktop ouvert sur le locus (±20&nbsp;%
+de marge) via son port de commande — et trois cases exclusives, <b>vrai / faux / incertain</b>,
+pour un verdict manuel (un choix vrai/faux forcé pollue les labels sur des appels réellement
+ambigus&nbsp;: couverture limite, breakpoint flou, zone répétée). Les verdicts vivent dans le
+stockage local du navigateur et s'exportent en TSV, ré-importable et rapproché par identifiant de
+site, puis par locus, puis par recouvrement réciproque ≥90&nbsp;% — pour que les sites renumérotés
+d'une cohorte re-fusionnée restent alignés. Cette boucle a produit les signaux de l'étage 4
+ci-dessus et alimente les labels d'entraînement du prochain modèle de filtre.</p>
+
+<h2><span class="n">6</span>Utilisation</h2>
 <h3>Un échantillon</h3>
 <pre><code># calling (CRAM + chemin rapide bedgraph) puis filtrage avec le modèle courant
 vedette call --sample S1 --out-dir out/ --config configs/ghfc.toml \
@@ -221,7 +248,7 @@ vedette filter out/S1.vedette.vcf.gz --store out/S1.evidence.zarr \
 (KPI, spectres, sweep Mendel, sections familles avec gènes et score d'impact NDD) et les
 workspaces <code>families/&lt;FID&gt;/</code>.</p>
 
-<h2><span class="n">6</span>Ce que ça donne</h2>
+<h2><span class="n">7</span>Ce que ça donne</h2>
 <h3>HG002 vs vérité GIAB v5.0q — délétions</h3>
 <div class="tablewrap"><table>
 <tr><th>callset</th><th>précision</th><th>recall</th><th>F1</th></tr>
@@ -251,12 +278,15 @@ convertit en précision. Sur la strate 1–10&nbsp;kb, Vedette a le meilleur F1 
 <p class="muted">Une transmission proche de 0,5-0,6 est le signe d'un jeu assaini&nbsp;: les
 artefacts partagés se «&nbsp;transmettent&nbsp;» à ~100&nbsp;% et gonflent artificiellement ce chiffre.</p>
 
-<h2><span class="n">7</span>Limites connues &amp; suite</h2>
+<h2><span class="n">8</span>Limites connues &amp; suite</h2>
 <ul>
 <li>Recall des petites DEL (50–300&nbsp;pb) plafonné ~30&nbsp;% en short-read — comme l'état de l'art.</li>
 <li>Les inversions et translocations (v2)&nbsp;: l'évidence PE INV/INTER est déjà stockée, pas encore appelée.</li>
 <li>Le rescue par récurrence est volontairement permissif à grande échelle — filtrable d'un trait sur <code>RESCUE</code>&nbsp;; un critère adaptatif à la taille de cohorte est prévu.</li>
 <li>Publication PyPI/bioconda&nbsp;: préparée (conteneur, CI, CITATION.cff), déclenchée uniquement sur décision de l'équipe.</li>
+<li>Les labels par semi-supervision de transmission (v5, trios wavy GHFC) se révèlent contaminés
+par des artefacts familiaux partagés — le vrai correctif est de les nettoyer avec la fréquence de
+référence de l'étage&nbsp;4 avant le prochain entraînement (v6).</li>
 </ul>
 
 <hr>

@@ -186,7 +186,7 @@ genotyped by the unified likelihood: depth (with sub-bin dilution), junctions
 #1: <b>one likelihood for all evidence types</b>, where existing callers
 use BAF (at best) post hoc.</p>
 
-<h2><span class="n">4</span>The three-tier filter</h2>
+<h2><span class="n">4</span>The four-tier filter</h2>
 <ul>
 <li><b>Tier 1 — transparent hard filters</b>: minimum size, N/exclusion mask overlap,
 segdup without SR support, insufficient informative bins. Every tag is readable in the VCF FILTER column.</li>
@@ -200,12 +200,35 @@ chaining), exact HWE, recurrent artifacts (<code>CohortArtifact</code>), and <em
 a site below threshold in every carrier but recurrent (≥2 carriers, SQ sum ≥ 8) is rescued
 and traced <code>RESCUE=RECURRENT</code> — this is what recovered a familial SHANK3 deletion
 present in 7 relatives at SQ ~2 each.</li>
+<li><b>Tier 4 — cross-cohort common-variant flags</b> (<code>vedette cohort-filter</code>):
+<code>HighCarrierFrac</code> (carried by ≥85% of genotyped samples — reference/mappability
+artifacts HWE cannot see, since "everyone 1/1" is in Hardy-Weinberg equilibrium),
+<code>CNDiscordant</code> (the re-genotyped copy number of most carriers contradicts the SV
+type — a "DUP" sitting at CN=1), and, with <code>--known-sites &lt;reference cohort.vcf.gz&gt;</code>,
+<code>CommonRef</code> (matches a site carried by ≥50% of a larger reference cohort). Added
+2026-09-24 after manual IGV review of a 9-member family run: 10 of 13 reviewed PASS calls
+were false, every one sharing this exact signature (8–9/9 local carriers, 46–100% frequency
+in a 2,670-genome reference) — a small family run has no frequency of its own to catch it.</li>
 </ul>
 <div class="note">Two QC guardrails complete the triage: <em>wavy</em> samples
 (score ≥ 0.145) are flagged in the report, and a child carrying more than 20 PASS
 <em>de novo</em> candidates is marked as a technical outlier — a real genome carries fewer than one.</div>
 
-<h2><span class="n">5</span>Usage</h2>
+<h2><span class="n">5</span>Manual validation loop (IGV)</h2>
+<p><code>vedette report --family-events</code> writes one interactive page per family workspace
+(<code>families/&lt;FID&gt;/events.html</code>): every DEL/DUP the family carries, with
+chromosome/type/validation filters, click-to-sort columns, an inheritance column (de novo /
+maternal / paternal / biparental, crossed from the Mendel report), the Tier-4 context columns
+above (SQmax, run carrier fraction, reference-cohort frequency) and per-member GT:GQ:CN.</p>
+<p>Each row carries an <b>IGV</b> link — jumps a running IGV desktop to the locus (±20% flanks)
+via its batch-command port — and three exclusive checkboxes, <b>vrai / faux / incertain</b>,
+for a manual verdict (a forced true/false choice pollutes labels on genuinely ambiguous calls:
+borderline coverage, a fuzzy breakpoint, a repeat region). Verdicts live in the browser's local
+storage and export as a TSV, re-importable and matched by site id, then locus, then ≥90%
+reciprocal overlap — so a re-merged cohort's renumbered sites still line up. This loop produced
+the Tier 4 flags above and feeds the next filter model's training labels.</p>
+
+<h2><span class="n">6</span>Usage</h2>
 <h3>One sample</h3>
 <pre><code># calling (CRAM + bedgraph fast path) then filtering with the current model
 vedette call --sample S1 --out-dir out/ --config configs/ghfc.toml \
@@ -221,7 +244,7 @@ vedette filter out/S1.vedette.vcf.gz --store out/S1.evidence.zarr \
 (KPIs, size spectra, Mendel sweep, family sections with genes and NDD impact score) and the
 <code>families/&lt;FID&gt;/</code> workspaces.</p>
 
-<h2><span class="n">6</span>How it performs</h2>
+<h2><span class="n">7</span>How it performs</h2>
 <h3>HG002 vs GIAB v5.0q truth — deletions</h3>
 <div class="tablewrap"><table>
 <tr><th>callset</th><th>precision</th><th>recall</th><th>F1</th></tr>
@@ -251,12 +274,15 @@ filter converts into precision. On the 1–10&nbsp;kb stratum, Vedette has the b
 <p class="muted">A transmission rate close to 0.5–0.6 is the mark of a clean callset: shared
 artifacts are "transmitted" at ~100% and artificially inflate this figure.</p>
 
-<h2><span class="n">7</span>Known limits &amp; next steps</h2>
+<h2><span class="n">8</span>Known limits &amp; next steps</h2>
 <ul>
 <li>Small-DEL recall (50–300&nbsp;bp) plateaus at ~30% in short-read — like the state of the art.</li>
 <li>Inversions and translocations (v2): the INV/INTER PE evidence is already stored, not yet called.</li>
 <li>Recurrence rescue is deliberately permissive at scale — filterable in one stroke on <code>RESCUE</code>; a cohort-size-adaptive criterion is planned.</li>
 <li>PyPI/bioconda release: prepared (container, CI, CITATION.cff), triggered only on the team's decision.</li>
+<li>The transmission-based semi-supervision labels (v5, wavy GHFC trios) turn out to be
+contaminated by shared familial artifacts — a real fix is cleaning them with the Tier-4
+reference frequency before the next training round (v6).</li>
 </ul>
 
 <hr>
