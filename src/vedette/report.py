@@ -66,7 +66,7 @@ tr.del td.t{color:#b3362b;font-weight:600} tr.dup td.t{color:#2a6f97;font-weight
 tr.nopass{opacity:.55} .g{text-align:left;max-width:26ch;overflow:hidden;text-overflow:ellipsis}
 .c{text-align:left;font-family:monospace;font-size:11px} .muted{color:#5c6763}
 td.val{text-align:left;white-space:nowrap} td.val label{margin-right:.4em}
-button.igv{font-size:11px;padding:1px 6px;cursor:pointer}
+a.igv{font-size:11px;padding:1px 6px;border:1px solid #9ab;border-radius:4px;text-decoration:none;color:#2a6f97}
 .bar button{font-size:12px;padding:2px 8px;cursor:pointer}
 """
 
@@ -107,11 +107,14 @@ for (const r of rows){
   if (v) setVal(r, v);
   r.querySelector(".v-true").onchange = e => { setVal(r, e.target.checked ? "true" : ""); apply(); };
   r.querySelector(".v-false").onchange = e => { setVal(r, e.target.checked ? "false" : ""); apply(); };
-  // send the locus (with 20% flanks) to a running IGV desktop (batch port)
-  r.querySelector(".igv").onclick = () => {
-    const pad = Math.max(500, Math.round(parseInt(r.dataset.size) * 0.2));
-    const locus = r.dataset.chr + ":" + Math.max(1, parseInt(r.dataset.pos) - pad) + "-" + (parseInt(r.dataset.end) + pad);
-    fetch("http://localhost:60151/goto?locus=" + locus, {mode: "no-cors"}).catch(() => {});
+  // send the locus (with 20% flanks) to a running IGV desktop (batch port).
+  // A background fetch from a file:// page to localhost is blocked by some
+  // browsers (private-network access): try it, and fall back to a real
+  // navigation in a dedicated tab, which is never blocked (IGV answers "OK").
+  r.querySelector(".igv").onclick = e => {
+    e.preventDefault();
+    const url = e.currentTarget.href;
+    fetch(url, {mode: "no-cors"}).catch(() => window.open(url, "igv"));
   };
 }
 document.getElementById("export").onclick = () => {
@@ -363,6 +366,7 @@ def _write_events_page(
         is_pass = e["filter"] == "PASS"
         cls = e["svtype"].lower() + ("" if is_pass else " nopass")
         site = str(e.get("id") or f"{e['contig']}:{e['pos']}-{e['end']}")
+        pad = max(500, round(e["size"] * 0.2))
         gt_cells = "".join(
             f'<td class="c">{html.escape(gt)}<span class="muted">:{gq}:{sq}</span></td>'
             for gt, gq, sq in e["gt"]
@@ -378,7 +382,8 @@ def _write_events_page(
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
             f'<td class="c">{",".join(m[-3:] for m in e["carriers"]) or "—"}</td>'
-            f'<td><button class="igv" type="button" title="Ouvrir dans IGV (port 60151)">IGV</button></td>'
+            f'<td><a class="igv" target="igv" title="Ouvrir dans IGV desktop (port 60151, ±20 %)" '
+            f'href="http://localhost:60151/goto?locus={html.escape(e["contig"])}:{max(1, e["pos"] - pad)}-{e["end"] + pad}">IGV</a></td>'
             f'<td class="val"><label><input type="checkbox" class="v-true"> vrai</label> '
             f'<label><input type="checkbox" class="v-false"> faux</label></td>{gt_cells}</tr>'
         )
@@ -399,7 +404,9 @@ def _write_events_page(
         f'<label class="muted">Importer <input type="file" id="import" accept=".tsv,.txt"></label></div>'
         f'<p class="muted">GT<span class="muted">:GQ:SQ</span> par membre (suffixe du '
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
-        f'Le bouton IGV envoie le locus (±20 %) à un IGV desktop ouvert ; les cases vrai/faux sont '
+        f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
+        f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
+        f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux sont '
         f'mémorisées dans ce navigateur et exportables en TSV (colonne <code>validation</code>).</p>'
         # the header must live in <thead>: a loose <tr> lands in an implicit
         # tbody and the filter JS (tbody tr) hides/sorts it like a data row
