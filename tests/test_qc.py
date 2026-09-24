@@ -135,8 +135,9 @@ def test_family_events_page(tmp_path):
     assert "th.onclick" in page and "localeCompare" in page
     # header outside tbody: the filter JS must never hide or sort it
     assert "<thead>" in page and "</thead><tbody>" in page
-    # manual validation + IGV: per-row controls, export/import in the bar
-    assert 'class="v-true"' in page and 'class="v-false"' in page and 'class="igv"' in page
+    # manual validation + IGV: per-row controls (vrai/faux/incertain), export/import in the bar
+    assert 'class="v-true"' in page and 'class="v-false"' in page and 'class="v-unsure"' in page
+    assert 'class="igv"' in page and 'option value="unsure"' in page
     assert 'id="export"' in page and 'id="import"' in page and 'data-site="chr1:1000-2000"' in page
     # cohort-level context columns (merge SQ, run carrier fraction, reference-cohort frequency)
     assert "<th>SQmax</th>" in page and "<th>% port.</th>" in page and "<th>fréq. réf.</th>" in page

@@ -90,14 +90,16 @@ function apply(){
 }
 chrSel.onchange = typeSel.onchange = valSel.onchange = passCb.onchange = apply;
 
-// manual validation (IGV check): two exclusive boxes per row, remembered in
-// this browser (localStorage) and exportable as TSV for the model feedback
+// manual validation (IGV check): three exclusive radio buttons per row
+// (vrai/faux/incertain — a forced binary choice pollutes labels on genuinely
+// ambiguous calls: borderline coverage, fuzzy breakpoint, repeat region),
+// remembered in this browser (localStorage) and exportable as TSV
 const PAGE = "vedette-val:" + document.title + ":";
+const VAL_LABEL = {true: "vrai", false: "faux", unsure: "incertain"};
 function store(){ try { return window.localStorage; } catch (e) { return null; } }
 function setVal(r, v){
   r.dataset.val = v || "";
-  r.querySelector(".v-true").checked = v === "true";
-  r.querySelector(".v-false").checked = v === "false";
+  for (const opt of ["true", "false", "unsure"]) r.querySelector(".v-" + opt).checked = v === opt;
   const s = store();
   if (s) { try { v ? s.setItem(PAGE + r.dataset.site, v) : s.removeItem(PAGE + r.dataset.site); } catch (e) {} }
 }
@@ -105,8 +107,8 @@ for (const r of rows){
   const s = store(); let v = "";
   if (s) { try { v = s.getItem(PAGE + r.dataset.site) || ""; } catch (e) {} }
   if (v) setVal(r, v);
-  r.querySelector(".v-true").onchange = e => { setVal(r, e.target.checked ? "true" : ""); apply(); };
-  r.querySelector(".v-false").onchange = e => { setVal(r, e.target.checked ? "false" : ""); apply(); };
+  for (const opt of ["true", "false", "unsure"])
+    r.querySelector(".v-" + opt).onchange = e => { setVal(r, e.target.checked ? opt : ""); apply(); };
   // send the locus (with 20% flanks) to a running IGV desktop (batch port).
   // A background fetch from a file:// page to localhost is blocked by some
   // browsers (private-network access): try it, and fall back to a real
@@ -126,7 +128,7 @@ document.getElementById("export").onclick = () => {
     lines.push([r.dataset.site, r.dataset.chr, r.dataset.pos, r.dataset.end, r.dataset.type,
                 r.dataset.size, td[5].textContent, td[7].textContent, td[8].textContent,
                 td[9].textContent, td[12].textContent, td[13].textContent,
-                r.dataset.val === "true" ? "vrai" : "faux"].join("\\t"));
+                VAL_LABEL[r.dataset.val] || r.dataset.val].join("\\t"));
   }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([lines.join("\\n") + "\\n"], {type: "text/tab-separated-values"}));
@@ -167,7 +169,9 @@ document.getElementById("import").onchange = e => {
     for (const line of L.slice(1)){
       const c = line.split("\\t"); const r = findRow(c); if (!r) continue;
       const v = (c[iV] || "").trim().toLowerCase();
-      setVal(r, v === "vrai" || v === "true" ? "true" : (v === "faux" || v === "false" ? "false" : ""));
+      const norm = v === "vrai" ? "true" : v === "faux" ? "false"
+        : v === "incertain" ? "unsure" : ["true", "false", "unsure"].includes(v) ? v : "";
+      setVal(r, norm);
       n++;
     }
     apply(); alert(n + " validations importées");
@@ -372,7 +376,7 @@ def _write_events_page(
     ``events`` rows: id, contig, pos (1-based), end, svtype, size, filter,
     rescue, genes, impact, inherit, carriers (list), gt (list of (GT, GQ, SQ)
     per member). Each row also carries an IGV button (locus sent to a running
-    IGV desktop on its batch port) and a manual vrai/faux validation pair,
+    IGV desktop on its batch port) and a manual vrai/faux/incertain choice,
     remembered in the browser and exportable as TSV.
     """
     by_chr: dict[str, int] = Counter(e["contig"] for e in events)
@@ -418,7 +422,8 @@ def _write_events_page(
             f'<td><a class="igv" target="igv" title="Ouvrir dans IGV desktop (port 60151, ±20 %)" '
             f'href="http://localhost:60151/goto?locus={html.escape(e["contig"])}:{max(1, e["pos"] - pad)}-{e["end"] + pad}">IGV</a></td>'
             f'<td class="val"><label><input type="checkbox" class="v-true"> vrai</label> '
-            f'<label><input type="checkbox" class="v-false"> faux</label></td>{gt_cells}</tr>'
+            f'<label><input type="checkbox" class="v-false"> faux</label> '
+            f'<label><input type="checkbox" class="v-unsure"> incertain</label></td>{gt_cells}</tr>'
         )
     out_file.write_text(
         f"<!doctype html><title>{html.escape(title)} — événements</title>"
@@ -430,7 +435,7 @@ def _write_events_page(
         f'<option>DEL</option><option>DUP</option></select></label>'
         f'<label>validation <select id="val"><option value="all">toutes</option>'
         f'<option value="none">non validé</option><option value="true">vrai</option>'
-        f'<option value="false">faux</option></select></label>'
+        f'<option value="false">faux</option><option value="unsure">incertain</option></select></label>'
         f'<label><input type="checkbox" id="pass" checked> PASS uniquement</label>'
         f'<span class="muted"><b id="count"></b> lignes</span>'
         f'<button id="export" type="button">Exporter validations (TSV)</button>'
@@ -441,7 +446,7 @@ def _write_events_page(
         f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites). '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
-        f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux sont '
+        f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
         f'mémorisées dans ce navigateur et exportables en TSV (colonne <code>validation</code>).</p>'
         # the header must live in <thead>: a loose <tr> lands in an implicit
         # tbody and the filter JS (tbody tr) hides/sorts it like a data row
