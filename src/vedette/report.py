@@ -65,31 +65,96 @@ td:first-child,th:first-child{text-align:left}
 tr.del td.t{color:#b3362b;font-weight:600} tr.dup td.t{color:#2a6f97;font-weight:600}
 tr.nopass{opacity:.55} .g{text-align:left;max-width:26ch;overflow:hidden;text-overflow:ellipsis}
 .c{text-align:left;font-family:monospace;font-size:11px} .muted{color:#5c6763}
+td.val{text-align:left;white-space:nowrap} td.val label{margin-right:.4em}
+button.igv{font-size:11px;padding:1px 6px;cursor:pointer}
+.bar button{font-size:12px;padding:2px 8px;cursor:pointer}
 """
 
 _EVENTS_JS = """
 const rows = Array.from(document.querySelectorAll("tbody tr"));
 const chrSel = document.getElementById("chr"), typeSel = document.getElementById("type"),
-      passCb = document.getElementById("pass"), count = document.getElementById("count");
+      valSel = document.getElementById("val"), passCb = document.getElementById("pass"),
+      count = document.getElementById("count");
 function apply(){
-  const c = chrSel.value, t = typeSel.value, p = passCb.checked;
+  const c = chrSel.value, t = typeSel.value, v = valSel.value, p = passCb.checked;
   let n = 0;
   for (const r of rows){
     const ok = (c === "all" || r.dataset.chr === c)
             && (t === "all" || r.dataset.type === t)
+            && (v === "all" || (r.dataset.val || "none") === v)
             && (!p || r.dataset.pass === "1");
     r.hidden = !ok;
     if (ok) n++;
   }
   count.textContent = n.toLocaleString("fr-FR") + " / " + rows.length.toLocaleString("fr-FR");
 }
-chrSel.onchange = typeSel.onchange = passCb.onchange = apply;
+chrSel.onchange = typeSel.onchange = valSel.onchange = passCb.onchange = apply;
+
+// manual validation (IGV check): two exclusive boxes per row, remembered in
+// this browser (localStorage) and exportable as TSV for the model feedback
+const PAGE = "vedette-val:" + document.title + ":";
+function store(){ try { return window.localStorage; } catch (e) { return null; } }
+function setVal(r, v){
+  r.dataset.val = v || "";
+  r.querySelector(".v-true").checked = v === "true";
+  r.querySelector(".v-false").checked = v === "false";
+  const s = store();
+  if (s) { try { v ? s.setItem(PAGE + r.dataset.site, v) : s.removeItem(PAGE + r.dataset.site); } catch (e) {} }
+}
+for (const r of rows){
+  const s = store(); let v = "";
+  if (s) { try { v = s.getItem(PAGE + r.dataset.site) || ""; } catch (e) {} }
+  if (v) setVal(r, v);
+  r.querySelector(".v-true").onchange = e => { setVal(r, e.target.checked ? "true" : ""); apply(); };
+  r.querySelector(".v-false").onchange = e => { setVal(r, e.target.checked ? "false" : ""); apply(); };
+  // send the locus (with 20% flanks) to a running IGV desktop (batch port)
+  r.querySelector(".igv").onclick = () => {
+    const pad = Math.max(500, Math.round(parseInt(r.dataset.size) * 0.2));
+    const locus = r.dataset.chr + ":" + Math.max(1, parseInt(r.dataset.pos) - pad) + "-" + (parseInt(r.dataset.end) + pad);
+    fetch("http://localhost:60151/goto?locus=" + locus, {mode: "no-cors"}).catch(() => {});
+  };
+}
+document.getElementById("export").onclick = () => {
+  const head = ["site_id","chr","pos","end","type","taille","filter","heritage","porteurs","validation"];
+  const lines = [head.join("\\t")];
+  for (const r of rows){
+    if (!r.dataset.val) continue;
+    const td = r.children;
+    lines.push([r.dataset.site, r.dataset.chr, r.dataset.pos, r.dataset.end, r.dataset.type,
+                r.dataset.size, td[5].textContent, td[9].textContent, td[10].textContent,
+                r.dataset.val === "true" ? "vrai" : "faux"].join("\\t"));
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\\n") + "\\n"], {type: "text/tab-separated-values"}));
+  a.download = document.title.replace(/[^\\w.-]+/g, "_") + ".validation.tsv";
+  a.click();
+};
+document.getElementById("import").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(txt => {
+    const bySite = {}; for (const r of rows) bySite[r.dataset.site] = r;
+    const L = txt.split(/\\r?\\n/); const h = L[0].split("\\t");
+    const iS = h.indexOf("site_id"), iV = h.indexOf("validation");
+    if (iS < 0 || iV < 0) { alert("TSV attendu avec colonnes site_id et validation"); return; }
+    let n = 0;
+    for (const line of L.slice(1)){
+      const c = line.split("\\t"); const r = bySite[c[iS]]; if (!r) continue;
+      const v = (c[iV] || "").trim().toLowerCase();
+      setVal(r, v === "vrai" || v === "true" ? "true" : (v === "faux" || v === "false" ? "false" : ""));
+      n++;
+    }
+    apply(); alert(n + " validations importées");
+  });
+};
 apply();
 
 // column sorting: click a header to sort, click again to reverse
 const tbody = document.querySelector("tbody");
+const ths = Array.from(document.querySelectorAll("th"));
 const NUM = /^-?[0-9]+([.][0-9]+)?$/;
 function cellKey(r, i){
+  const k = ths[i].dataset.key;
+  if (k) return r.dataset[k] || "";
   const t = r.children[i].textContent.trim().replace(/[\\s,\\u202f]/g, "");
   return NUM.test(t) ? parseFloat(t) : r.children[i].textContent.trim().toLowerCase();
 }
@@ -180,6 +245,7 @@ def _write_all_family_events(
     genes_fn,
     impact_fn,
     inh_spill: _FamilySpill,
+    pass_only: bool = False,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -199,6 +265,8 @@ def _write_all_family_events(
 
     ev_spill = _FamilySpill(run_dir / "families" / ".events_tmp")
     for site in sites:
+        if pass_only and site["filter"] != "PASS":
+            continue
         idx = site["idx"]
         carrier_cols = np.nonzero(nalt_m[idx] > 0)[0]
         if not len(carrier_cols):
@@ -248,6 +316,7 @@ def _write_all_family_events(
                 if gt_s not in ("0/0", "./."):
                     carriers.append(m)
             events.append({
+                "id": site_id,
                 "contig": r[1], "pos": int(r[2]), "end": int(r[3]), "svtype": r[4],
                 "size": int(r[5]), "filter": r[6], "rescue": r[7], "genes": r[8],
                 "impact": r[9], "inherit": inh_s, "carriers": carriers, "gt": gts,
@@ -268,8 +337,11 @@ def _write_events_page(
     client-side (no server, opens from disk). Genes/impact and per-member
     GT:GQ:SQ on each row.
 
-    ``events`` rows: contig, pos (1-based), end, svtype, size, filter, rescue,
-    genes, impact, carriers (list), gt (list of (GT, GQ, SQ) per member).
+    ``events`` rows: id, contig, pos (1-based), end, svtype, size, filter,
+    rescue, genes, impact, inherit, carriers (list), gt (list of (GT, GQ, SQ)
+    per member). Each row also carries an IGV button (locus sent to a running
+    IGV desktop on its batch port) and a manual vrai/faux validation pair,
+    remembered in the browser and exportable as TSV.
     """
     by_chr: dict[str, int] = Counter(e["contig"] for e in events)
     contigs = sorted(by_chr, key=lambda c: (len(c), c))
@@ -283,18 +355,21 @@ def _write_events_page(
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
         "<th>rescue</th><th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
+        '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
     )
     rows = []
     for e in sorted(events, key=lambda e: (contigs.index(e["contig"]), e["pos"])):
         is_pass = e["filter"] == "PASS"
         cls = e["svtype"].lower() + ("" if is_pass else " nopass")
+        site = str(e.get("id") or f"{e['contig']}:{e['pos']}-{e['end']}")
         gt_cells = "".join(
             f'<td class="c">{html.escape(gt)}<span class="muted">:{gq}:{sq}</span></td>'
             for gt, gq, sq in e["gt"]
         )
         rows.append(
-            f'<tr class="{cls}" data-chr="{html.escape(e["contig"])}" '
+            f'<tr class="{cls}" data-chr="{html.escape(e["contig"])}" data-pos="{e["pos"]}" '
+            f'data-end="{e["end"]}" data-size="{e["size"]}" data-site="{html.escape(site)}" '
             f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}">'
             f'<td>{html.escape(e["contig"])}</td><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
             f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
@@ -302,7 +377,10 @@ def _write_events_page(
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
-            f'<td class="c">{",".join(m[-3:] for m in e["carriers"]) or "—"}</td>{gt_cells}</tr>'
+            f'<td class="c">{",".join(m[-3:] for m in e["carriers"]) or "—"}</td>'
+            f'<td><button class="igv" type="button" title="Ouvrir dans IGV (port 60151)">IGV</button></td>'
+            f'<td class="val"><label><input type="checkbox" class="v-true"> vrai</label> '
+            f'<label><input type="checkbox" class="v-false"> faux</label></td>{gt_cells}</tr>'
         )
     out_file.write_text(
         f"<!doctype html><title>{html.escape(title)} — événements</title>"
@@ -312,10 +390,17 @@ def _write_events_page(
         f'<label>chromosome <select id="chr">{chr_opts}</select></label>'
         f'<label>type <select id="type"><option value="all">tous</option>'
         f'<option>DEL</option><option>DUP</option></select></label>'
+        f'<label>validation <select id="val"><option value="all">toutes</option>'
+        f'<option value="none">non validé</option><option value="true">vrai</option>'
+        f'<option value="false">faux</option></select></label>'
         f'<label><input type="checkbox" id="pass" checked> PASS uniquement</label>'
-        f'<span class="muted"><b id="count"></b> lignes</span></div>'
+        f'<span class="muted"><b id="count"></b> lignes</span>'
+        f'<button id="export" type="button">Exporter validations (TSV)</button>'
+        f'<label class="muted">Importer <input type="file" id="import" accept=".tsv,.txt"></label></div>'
         f'<p class="muted">GT<span class="muted">:GQ:SQ</span> par membre (suffixe du '
-        f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS.</p>'
+        f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
+        f'Le bouton IGV envoie le locus (±20 %) à un IGV desktop ouvert ; les cases vrai/faux sont '
+        f'mémorisées dans ce navigateur et exportables en TSV (colonne <code>validation</code>).</p>'
         # the header must live in <thead>: a loose <tr> lands in an implicit
         # tbody and the filter JS (tbody tr) hides/sorts it like a data row
         f'<table><thead>{head}</thead><tbody>{"".join(rows)}</tbody></table>'
@@ -555,6 +640,7 @@ def generate_report(
     ndd_tsv: str | Path | None = None,
     max_denovo_per_child: int = 20,
     family_events: bool = False,
+    events_pass_only: bool = False,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -710,7 +796,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         inh_spill.flush()
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, sq_m,
-            _genes, _impact, inh_spill,
+            _genes, _impact, inh_spill, pass_only=events_pass_only,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

@@ -500,6 +500,10 @@ def report(
         False, "--family-events",
         help="Also write families/<FID>/events.html: every DEL/DUP of the family in one page with chromosome/type filters and inheritance (works with or without family workspaces)",
     ),
+    events_pass_only: bool = typer.Option(
+        False, "--events-pass-only",
+        help="Restrict the family events pages to PASS sites (cohort scale: non-PASS artifacts are carried by nearly every family and make the pages unusable)",
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .ped import parse_ped
@@ -516,6 +520,7 @@ def report(
         ndd_tsv=ndd_tsv,
         max_denovo_per_child=max_denovo_per_child,
         family_events=family_events,
+        events_pass_only=events_pass_only,
     )
     typer.echo(f"rapport -> {path}")
 

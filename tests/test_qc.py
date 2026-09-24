@@ -128,10 +128,13 @@ def test_family_events_page(tmp_path):
     # the chr/type selectors and the rows' filter attributes drive the JS
     assert '<select id="chr">' in page and '<select id="type">' in page
     assert '<option value="chr1">chr1 (1)</option>' in page
-    assert 'data-chr="chr2" data-type="DUP" data-pass="0"' in page
+    assert 'data-chr="chr2"' in page and 'data-type="DUP" data-pass="0"' in page
     assert "GENE1" in page and "NDD-candidat" in page and "RECURRENT" in page and "nopass" in page
     # inheritance column + clickable-header sorting
     assert "<th>héritage</th>" in page and "de novo" in page and "maternel" in page
     assert "th.onclick" in page and "localeCompare" in page
     # header outside tbody: the filter JS must never hide or sort it
     assert "<thead>" in page and "</thead><tbody>" in page
+    # manual validation + IGV: per-row controls, export/import in the bar
+    assert 'class="v-true"' in page and 'class="v-false"' in page and 'class="igv"' in page
+    assert 'id="export"' in page and 'id="import"' in page and 'data-site="chr1:1000-2000"' in page

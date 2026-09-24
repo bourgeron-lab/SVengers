@@ -23,6 +23,8 @@ process VEDETTE_REPORT {
         ? "--no-family-workspaces" : ""
     def events_arg = params.family_events.toString().toLowerCase() in ["true", "1", "yes"] \
         ? "--family-events" : ""
+    def events_pass_arg = params.events_pass_only.toString().toLowerCase() in ["true", "1", "yes"] \
+        ? "--events-pass-only" : ""
     """
     mkdir -p rundir/cohort
     # published per-sample evidence stores: wave-QC column of the sample table
@@ -34,7 +36,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} \\
+    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi
