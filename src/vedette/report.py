@@ -592,6 +592,15 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False):
     with pysam.VariantFile(str(path)) as vcf:
         samples = list(vcf.header.samples)
         n = len(samples)
+        # pysam raises on rec.info.get(key) when key is undeclared in the
+        # header (rather than returning the default) — these three are only
+        # present on cohorts that went through the current merge/cohort-filter
+        # (SQMAX/SQMEAN from merge, CARRIER_FRAC/REF_CARRIER_FRAC from
+        # cohort-filter); older cohorts re-filtered without a full re-merge
+        # lack SQMAX entirely.
+        has_sqmax = "SQMAX" in vcf.header.info
+        has_carrier_frac = "CARRIER_FRAC" in vcf.header.info
+        has_ref_carrier_frac = "REF_CARRIER_FRAC" in vcf.header.info
         for rec in vcf:
             af = rec.info.get("AF", (0.0,))
             af = af[0] if isinstance(af, tuple) else af
@@ -616,9 +625,9 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False):
                 "hwe": float(rec.info.get("HWE_P", 1.0)),
                 "filter": ";".join(rec.filter.keys()) or "PASS",
                 "rescue": rec.info.get("RESCUE", "") or "",
-                "sqmax": rec.info.get("SQMAX"),
-                "carrier_frac": rec.info.get("CARRIER_FRAC"),
-                "ref_carrier_frac": rec.info.get("REF_CARRIER_FRAC"),
+                "sqmax": rec.info.get("SQMAX") if has_sqmax else None,
+                "carrier_frac": rec.info.get("CARRIER_FRAC") if has_carrier_frac else None,
+                "ref_carrier_frac": rec.info.get("REF_CARRIER_FRAC") if has_ref_carrier_frac else None,
                 "idx": len(sites),
             })
             nalt_rows.append(nalt)
