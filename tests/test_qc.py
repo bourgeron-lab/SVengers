@@ -154,10 +154,11 @@ def test_carrier_excess_guard():
 
     from vedette.report import carrier_excess
 
-    n_carrier = np.array([300, 310, 305, 480, 295])   # one sample at ~1.57x
+    n_carrier = np.array([300, 310, 305, 1830, 295])   # one sample at 6x
     exc = carrier_excess(n_carrier)
     assert exc[0] == pytest.approx(300 / 305)
-    assert exc[3] == pytest.approx(480 / 305)
+    assert exc[3] == pytest.approx(1830 / 305)
+    assert (exc >= 5.0).sum() == 1        # production threshold
     assert (exc >= 1.3).sum() == 1
 
     # degenerate cohort (no carriers at all) -> all NaN, never a flag

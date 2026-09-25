@@ -92,11 +92,21 @@ médiane 10-13) — un problème d'échantillon, pas de site.
 Deux garde-fous ajoutés :
 - `qc.WAVE_WARN` abaissé de 0,145 à 0,128 (Youden) — capture SMP-06/X (0,139/
   0,140), sous l'ancien seuil.
-- Nouveau (corrigé le 2026-09-25 après calibration) : **charge de porteurs**
-  `report.carrier_excess` = nb de sites PASS portés / médiane cohorte, seuil
-  1,3x, appliqué seulement à partir de 20 échantillons (critère relatif).
-  Sur dataset_paper : 87/2670 flagués (3,3 %), dont 13 des 20 pires outliers
-  de novo ; Spearman 0,69 entre nb de porteurs et nb de de novo.
+- Nouveau (corrigé deux fois le 2026-09-25) : **charge de porteurs**
+  `report.carrier_excess` = nb de sites **PASS** portés / médiane cohorte,
+  seuil **5x**, appliqué seulement à partir de 20 échantillons (critère
+  relatif). Distribution dataset_paper : médiane 1,00, p90 4,4x, p95 6,4x,
+  p99 9,6x, max 23,5x. Le seuil 5x flague 212/2670 (7,9 %) et capture 18 des
+  20 pires outliers de novo (charge médiane des outliers 1,41x contre 0,91x
+  pour les autres).
+
+  **Deuxième erreur de calibration** (même classe que la première) : le seuil
+  1,3x avait été calibré sur le nombre de porteurs **tous sites** (médiane
+  308 177) alors que le garde-fou mesure les porteurs **PASS** (médiane
+  3 284) — deux distributions sans rapport, d'où 1037/2670 flagués au premier
+  essai. Règle à tenir : calibrer sur *exactement* la quantité que le code
+  calcule, en lisant la colonne produite par le code, jamais une quantité
+  voisine.
 
   **Première version erronée** : la fraction de porteurs PASS à GQ&lt;20,
   seuil 0,40 — calibration à l'échelle réelle : 2670/2670 flagués. La

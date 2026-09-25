@@ -842,11 +842,17 @@ def generate_report(
         }
         for i, s in enumerate(samples)
     }
-    # median x1.3 flags 3.3% of dataset_paper (87/2670) and catches 13 of the
-    # 20 worst de novo offenders. A cohort-relative criterion needs a real
-    # cohort behind the median: on a handful of related samples everyone
-    # carries the same sites, so the guard stays silent.
-    CARRIER_EXCESS_WARN = 1.3
+    # Calibrated on dataset_paper (2670 samples). PASS-carrier load is wildly
+    # dispersed — median 1.00 by construction, p90 4.4x, p95 6.4x, p99 9.6x,
+    # max 23.5x — so a "slightly above median" threshold is meaningless here:
+    #   1.3x -> 1037 flagged (38.8%), 3x -> 409 (15.3%),
+    #   5x   ->  212 flagged  (7.9%), 8x ->  57  (2.1%)
+    # 5x keeps 18 of the 20 worst de novo offenders while flagging under 8%
+    # of the cohort (outliers' median load 1.41x vs 0.91x for the rest).
+    # A cohort-relative criterion needs a real cohort behind the median: on a
+    # handful of related samples everyone carries the same sites, so the
+    # guard stays silent below CARRIER_EXCESS_MIN_SAMPLES.
+    CARRIER_EXCESS_WARN = 5.0
     CARRIER_EXCESS_MIN_SAMPLES = 20
     overloaded = {}
     if len(samples) >= CARRIER_EXCESS_MIN_SAMPLES:
