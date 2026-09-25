@@ -118,7 +118,8 @@ def test_family_events_page(tmp_path):
         "contig": "chr1", "pos": 1000, "end": 2000, "svtype": "DEL", "size": 1000,
         "filter": "PASS", "rescue": "", "genes": "GENE1", "impact": "3 — exonique, NDD-candidat",
         "inherit": "de novo", "carriers": ["C000EZJ"], "sqmax": "12.3", "cfrac": "0.333",
-        "refcf": "0.004", "gt": [("0/0", 99, "2"), ("0/0", 99, "2"), ("0/1", 45, "1")],
+        "refcf": "0.004", "lcr": "0.00", "segdup": "1.00",
+        "gt": [("0/0", 99, "2"), ("0/0", 99, "2"), ("0/1", 45, "1")],
     }
     ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[],
                rescue="RECURRENT", inherit="maternel")
@@ -142,7 +143,11 @@ def test_family_events_page(tmp_path):
     assert 'id="export"' in page and 'id="import"' in page and 'data-site="chr1:1000-2000"' in page
     # cohort-level context columns (merge SQ, run carrier fraction, reference-cohort frequency)
     assert "<th>SQmax</th>" in page and "<th>% port.</th>" in page and "<th>fréq. réf.</th>" in page
-    assert "<td>12.3</td><td>0.333</td><td>0.004</td>" in page and "GT<span" in page
+    assert "<th>LCR</th>" in page and "<th>segdup</th>" in page
+    assert "<td>12.3</td><td>0.333</td><td>0.004</td><td>0.00</td><td>1.00</td>" in page
+    assert "GT<span" in page
+    # the TSV export resolves columns by header text, not by cell index
+    assert 'COL[th.textContent.trim()]' in page and '["lcr", "LCR"]' in page
 
 
 def test_carrier_excess_guard():

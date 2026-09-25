@@ -120,14 +120,22 @@ for (const r of rows){
   };
 }
 document.getElementById("export").onclick = () => {
-  const head = ["site_id","chr","pos","end","type","taille","filter","sqmax","carrier_frac","ref_carrier_frac","heritage","porteurs","validation"];
+  // resolve columns by header text: hardcoded cell indices break silently
+  // every time a column is inserted
+  const COL = {};
+  document.querySelectorAll("thead th").forEach((th, i) => { COL[th.textContent.trim()] = i; });
+  const EXPORT = [["filter", "FILTER"], ["sqmax", "SQmax"], ["carrier_frac", "% port."],
+                  ["ref_carrier_frac", "fréq. réf."], ["lcr", "LCR"], ["segdup", "segdup"],
+                  ["heritage", "héritage"], ["porteurs", "porteurs"]];
+  const head = ["site_id", "chr", "pos", "end", "type", "taille",
+                ...EXPORT.map(c => c[0]), "validation"];
   const lines = [head.join("\\t")];
   for (const r of rows){
     if (!r.dataset.val) continue;
     const td = r.children;
     lines.push([r.dataset.site, r.dataset.chr, r.dataset.pos, r.dataset.end, r.dataset.type,
-                r.dataset.size, td[5].textContent, td[7].textContent, td[8].textContent,
-                td[9].textContent, td[12].textContent, td[13].textContent,
+                r.dataset.size,
+                ...EXPORT.map(c => (td[COL[c[1]]] || {textContent: ""}).textContent),
                 VAL_LABEL[r.dataset.val] || r.dataset.val].join("\\t"));
   }
   const a = document.createElement("a");
@@ -277,6 +285,8 @@ def _write_all_family_events(
     impact_fn,
     inh_spill: _FamilySpill,
     pass_only: bool = False,
+    segdup_iv=None,
+    lcr_iv=None,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -310,12 +320,15 @@ def _write_all_family_events(
         impact = impact_fn(site["contig"], site["start"], site["end"])[1]
         def _num(v, fmt):
             return "" if v is None else format(float(v), fmt)
+        def _ovl(iv):
+            return "" if iv is None else f"{iv.overlap_fraction(site['contig'], site['start'], site['end']):.2f}"
         base = "\t".join([
             site["id"] or "", site["contig"], str(site["start"] + 1), str(site["end"]),
             site["svtype"], str(site["size"]), site["filter"], site["rescue"],
             genes, impact,
             _num(site.get("sqmax"), ".1f"), _num(site.get("carrier_frac"), ".3f"),
             _num(site.get("ref_carrier_frac"), ".3f"),
+            _ovl(lcr_iv), _ovl(segdup_iv),
         ])
         for k in fam_ks:
             fid = fids[int(k)]
@@ -344,7 +357,7 @@ def _write_all_family_events(
                 f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
             ) if len(inh) > 1 else (_INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else "")
             gts, carriers = [], []
-            for m, cell in zip(members, r[13:]):
+            for m, cell in zip(members, r[15:]):
                 na, gq, cn = cell.split(":")
                 gt_s = _NALT_GT.get(int(na), "./.")
                 gts.append((gt_s, gq, cn))
@@ -355,6 +368,7 @@ def _write_all_family_events(
                 "contig": r[1], "pos": int(r[2]), "end": int(r[3]), "svtype": r[4],
                 "size": int(r[5]), "filter": r[6], "rescue": r[7], "genes": r[8],
                 "impact": r[9], "sqmax": r[10], "cfrac": r[11], "refcf": r[12],
+                "lcr": r[13], "segdup": r[14],
                 "inherit": inh_s, "carriers": carriers, "gt": gts,
             })
         fam_dir = run_dir / "families" / fid
@@ -391,6 +405,7 @@ def _write_events_page(
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
         "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
+        "<th>LCR</th><th>segdup</th>"
         "<th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
@@ -415,6 +430,8 @@ def _write_events_page(
             f'<td>{html.escape(str(e.get("sqmax") or ""))}</td>'
             f'<td>{html.escape(str(e.get("cfrac") or ""))}</td>'
             f'<td>{html.escape(str(e.get("refcf") or ""))}</td>'
+            f'<td>{html.escape(str(e.get("lcr") or ""))}</td>'
+            f'<td>{html.escape(str(e.get("segdup") or ""))}</td>'
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
@@ -443,7 +460,8 @@ def _write_events_page(
         f'<p class="muted">GT<span class="muted">:GQ:CN</span> par membre (suffixe du '
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
         f'SQmax = meilleur SQ par échantillon au merge ; % port. = fraction de porteurs dans ce run ; '
-        f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites). '
+        f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites) ; '
+        f'LCR / segdup = fraction du site chevauchant ces masques. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -737,6 +755,8 @@ def generate_report(
     min_denovo_gq: int = 20,
     genes_gff: str | Path | None = None,
     ndd_tsv: str | Path | None = None,
+    segdup_bed: str | Path | None = None,
+    lcr_bed: str | Path | None = None,
     max_denovo_per_child: int = 20,
     family_events: bool = False,
     events_pass_only: bool = False,
@@ -750,6 +770,15 @@ def generate_report(
     cohort_name = cohort_name or run_dir.name
 
     gene_idx = _GeneIndex(genes_gff, ndd_tsv) if genes_gff else None
+    # segdup/LCR are properties of the locus, so they are annotated here from
+    # the site span rather than carried through the merge: that keeps them
+    # available on already-merged cohorts. lcr_ovl was dead in the model up
+    # to v5 (contig-naming bug), which is exactly why seeing it per event
+    # matters for manual review.
+    from .filter.annotate import IntervalSet
+
+    segdup_iv = IntervalSet.from_bed(segdup_bed) if segdup_bed else None
+    lcr_iv = IntervalSet.from_bed(lcr_bed) if lcr_bed else None
 
     def _genes(contig: str, start: int, end: int) -> str:
         return gene_idx.genes(contig, start, end) if gene_idx else ""
@@ -936,6 +965,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
+            segdup_iv=segdup_iv, lcr_iv=lcr_iv,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

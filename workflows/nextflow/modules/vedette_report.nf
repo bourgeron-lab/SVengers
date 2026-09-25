@@ -17,6 +17,8 @@ process VEDETTE_REPORT {
     def ped_arg = params.pedigree ? "--pedigree '${params.pedigree}'" : ""
     def genes_arg = params.genes_gff ? "--genes-gff '${params.genes_gff}'" : ""
     def ndd_arg = params.ndd_tsv ? "--ndd-tsv '${params.ndd_tsv}'" : ""
+    def segdup_arg = params.segdup_bed ? "--segdup-bed '${params.segdup_bed}'" : ""
+    def lcr_arg = params.lcr_bed ? "--lcr-bed '${params.lcr_bed}'" : ""
     // CLI `--family_workspaces false` reaches here as the STRING "false",
     // which is truthy in Groovy — compare the textual value, not truthiness
     def fam_arg = params.family_workspaces.toString().toLowerCase() in ["false", "0", "no"] \
@@ -36,7 +38,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} \\
+    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi

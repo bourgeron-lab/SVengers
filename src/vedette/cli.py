@@ -511,6 +511,12 @@ def report(
     ndd_tsv: Optional[Path] = typer.Option(
         None, help="GeneTrek TSV: NDD tiers feed the impact score of site tables"
     ),
+    segdup_bed: Optional[Path] = typer.Option(
+        None, help="Segmental-duplication BED: adds a segdup overlap column to the family events pages"
+    ),
+    lcr_bed: Optional[Path] = typer.Option(
+        None, help="LCR/self-chain BED: adds an LCR overlap column to the family events pages"
+    ),
     max_denovo_per_child: int = typer.Option(
         20, help="Children above this many de novo candidates are flagged as technical outliers and left out of family tables"
     ),
@@ -536,6 +542,8 @@ def report(
         min_denovo_gq=min_denovo_gq,
         genes_gff=genes_gff,
         ndd_tsv=ndd_tsv,
+        segdup_bed=segdup_bed,
+        lcr_bed=lcr_bed,
         max_denovo_per_child=max_denovo_per_child,
         family_events=family_events,
         events_pass_only=events_pass_only,
