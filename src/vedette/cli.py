@@ -599,11 +599,18 @@ def train(
     out: Path = typer.Option(..., help="Output model directory"),
     model_version: str = typer.Option("v1", help="Version tag written to the manifest"),
     training_data: str = typer.Option("", help="Free-text provenance for the manifest"),
+    allow_constant_features: bool = typer.Option(
+        False, "--allow-constant-features",
+        help="Train even if a feature has no variance (default: refuse — a constant feature usually means broken extraction, as lcr_ovl was through v5)",
+    ),
 ) -> None:
     """Train the calibrated DEL/DUP filter models (HistGB + isotonic, chrom-CV)."""
     from .train.train import train_models
 
-    manifest = train_models(labeled, out, model_version, training_data)
+    manifest = train_models(
+        labeled, out, model_version, training_data,
+        allow_constant_features=allow_constant_features,
+    )
     for svtype, metrics in manifest["metrics"].items():
         typer.echo(f"{svtype}: PR-AUC(OOF) {metrics['pr_auc_oof']}, n={metrics['n']}")
     typer.echo(f"models -> {out}")

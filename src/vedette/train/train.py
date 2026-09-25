@@ -82,6 +82,58 @@ def load_labeled(paths: list[str | Path]) -> dict[str, dict[str, np.ndarray]]:
     return out
 
 
+# Features that are legitimately constant within one SV type's training set:
+# `is_dup` because DEL and DUP get their own model, and the DEL-specific
+# evidence channels, which are structurally zero on duplications.
+_EXPECTED_CONSTANT: dict[str, set[str]] = {
+    "DEL": {"is_dup"},
+    "DUP": {"is_dup", "cig", "ins_z", "ins_pairs"},
+}
+
+
+def constant_features(X: np.ndarray, svtype: str) -> dict[str, str]:
+    """Unexpectedly constant (or all-missing) feature columns -> why.
+
+    A feature with no variance carries no information: the trees never split
+    on it and it silently contributes nothing. `lcr_ovl` sat dead like this
+    through every model up to v5 — the GHFC LCR track is Ensembl-named while
+    calls are UCSC, so the overlap was always 0 (see docs/ROADMAP.md) — and
+    nothing in the pipeline complained. This guard makes that fail loudly.
+    """
+    expected = _EXPECTED_CONSTANT.get(svtype, {"is_dup"})
+    dead: dict[str, str] = {}
+    for i, name in enumerate(FEATURES):
+        if name in expected:
+            continue
+        col = X[:, i]
+        finite = col[np.isfinite(col)]
+        if len(finite) == 0:
+            dead[name] = "aucune valeur finie"
+        elif len(np.unique(finite)) == 1:
+            dead[name] = f"constante = {finite[0]:g}"
+    return dead
+
+
+def check_feature_variance(
+    X: np.ndarray, svtype: str, allow_constant: bool = False
+) -> dict[str, str]:
+    """Raise on unexpectedly constant features unless explicitly allowed."""
+    dead = constant_features(X, svtype)
+    if not dead:
+        return dead
+    detail = ", ".join(f"{k} ({v})" for k, v in sorted(dead.items()))
+    if allow_constant:
+        logger.warning("%s: feature(s) sans variance, entraînement forcé: %s", svtype, detail)
+        return dead
+    raise ValueError(
+        f"{svtype}: {len(dead)} feature(s) sans variance dans le jeu d'entraînement: "
+        f"{detail}. Une feature constante n'apporte rien au modèle et trahit "
+        f"en général une extraction cassée (piste: convention de nommage des "
+        f"contigs du track, chemin de ressource absent). Corrigez l'extraction, "
+        f"ou passez --allow-constant-features si c'est intentionnel."
+    )
+
+
 def chromosome_folds(contigs: np.ndarray, n_folds: int = 5) -> np.ndarray:
     """Assign whole chromosomes to folds, balancing call counts (greedy)."""
     uniq, counts = np.unique(contigs, return_counts=True)
@@ -164,6 +216,7 @@ def train_models(
     out_dir: str | Path,
     model_version: str = "v1",
     training_data_desc: str = "",
+    allow_constant_features: bool = False,
 ) -> dict:
     import joblib
 
@@ -179,6 +232,13 @@ def train_models(
         "training_data": training_data_desc,
         "metrics": {},
     }
+    # fail before any expensive fitting if a feature carries no signal
+    for svtype in ("DEL", "DUP"):
+        dead = check_feature_variance(
+            data[svtype]["X"], svtype, allow_constant=allow_constant_features
+        )
+        if dead:
+            manifest.setdefault("constant_features", {})[svtype] = sorted(dead)
     for svtype, fname in (("DEL", "model_del.joblib"), ("DUP", "model_dup.joblib")):
         d = data[svtype]
         model, metrics = train_one(d["X"], d["y"], d["contig"], svtype)

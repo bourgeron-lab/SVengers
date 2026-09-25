@@ -65,8 +65,14 @@ Conséquences :
   5000 appels avec `lcr_ovl` aléatoire (écart max 0,0).
 - **Pour v6** : la feature devient réellement informative ; à réentraîner
   pour qu'elle serve. C'est aussi une leçon de contrat : une feature
-  constante devrait échouer bruyamment (cf. garde-fou à ajouter côté
-  `train/` : refuser une feature de variance nulle sur le jeu d'entraînement).
+  constante devrait échouer bruyamment — **garde-fou ajouté** le 2026-09-25 :
+  `train.check_feature_variance` refuse d'entraîner sur une feature de
+  variance nulle (ou entièrement NaN), avec `--allow-constant-features` pour
+  forcer. Exemptions par type : `is_dup` (un modèle par type) et, sur DUP,
+  les canaux propres aux DEL (`cig`, `ins_z`, `ins_pairs`). Vérifié sur les
+  données v5 : le garde-fou aurait refusé l'entraînement en nommant
+  `lcr_ovl`. Les features constantes détectées sont aussi tracées dans le
+  manifeste du modèle.
 
 Hypothèse LCR × DUP elle-même : **non confirmée** sur les 45 validations
 IGV disponibles une fois la feature réparée — DUP faux `lcr>0` 3/8

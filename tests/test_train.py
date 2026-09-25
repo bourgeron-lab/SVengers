@@ -21,7 +21,9 @@ def _synthetic_labeled_tsv(tmp_path, seed=0):
         for i in range(2 * N_PER_TYPE):
             svtype = "DEL" if i < N_PER_TYPE else "DUP"
             label = int(rng.random() < 0.4)
-            feats = {name: 0.0 for name in FEATURES}
+            # every feature gets noise: a flat-zero fixture would trip the
+            # zero-variance guard, which is exactly what it is there for
+            feats = {name: float(rng.random()) for name in FEATURES}
             if svtype == "DEL":
                 feats["dhffc"] = rng.normal(0.55 if label else 0.95, 0.1)
             else:
@@ -30,7 +32,8 @@ def _synthetic_labeled_tsv(tmp_path, seed=0):
             feats["sr"] = float(rng.poisson(8 if label else 0.4))
             feats["pe"] = float(rng.poisson(6 if label else 0.5))
             feats["size_log10"] = rng.uniform(2, 6)
-            feats["baf_dev"] = -1.0
+            # -1 is the "no het SNV here" sentinel; real cohorts mix both
+            feats["baf_dev"] = -1.0 if rng.random() < 0.3 else float(rng.random() * 0.5)
             if rng.random() < 0.05:
                 feats["depth_cv"] = float("nan")  # NaN robustness
             row = [
@@ -100,3 +103,44 @@ def test_prefix_schema_model_still_loads_and_scores(tmp_path):
     assert model.features == FEATURES  # trained on today's full list
     feats = {name: 0.0 for name in FEATURES}
     assert model.score(feats, "DEL") >= 0.0
+
+
+def test_constant_feature_guard():
+    """A feature with no variance must fail the training loudly: lcr_ovl sat
+    dead (Ensembl-vs-UCSC contig naming) through every model up to v5 and
+    nothing complained."""
+    import numpy as np
+    import pytest
+
+    from vedette.filter.schema import FEATURES
+    from vedette.train.train import check_feature_variance, constant_features
+
+    rng = np.random.default_rng(0)
+    X = rng.random((200, len(FEATURES)))
+    i_is_dup = FEATURES.index("is_dup")
+    i_lcr = FEATURES.index("lcr_ovl")
+    i_cig = FEATURES.index("cig")
+
+    # is_dup is constant by design (one model per SV type) -> not reported
+    X[:, i_is_dup] = 0.0
+    assert constant_features(X, "DEL") == {}
+    assert check_feature_variance(X, "DEL") == {}
+
+    # a genuinely dead feature is reported and raises
+    X[:, i_lcr] = 0.0
+    assert set(constant_features(X, "DEL")) == {"lcr_ovl"}
+    with pytest.raises(ValueError, match="lcr_ovl"):
+        check_feature_variance(X, "DEL")
+    # ... unless explicitly allowed
+    assert set(check_feature_variance(X, "DEL", allow_constant=True)) == {"lcr_ovl"}
+
+    # DEL-only evidence channels are exempt on DUP but not on DEL
+    X[:, i_cig] = 0.0
+    X[:, i_is_dup] = 1.0
+    assert set(constant_features(X, "DUP")) == {"lcr_ovl"}
+    assert set(constant_features(X, "DEL")) == {"lcr_ovl", "cig"}
+
+    # an all-NaN column counts as dead too
+    X[:, i_lcr] = rng.random(200)
+    X[:, i_cig] = np.nan
+    assert constant_features(X, "DEL")["cig"] == "aucune valeur finie"
