@@ -41,3 +41,24 @@ def test_contig_kind():
     assert _contig_kind("chrM") == "MT"
     assert _contig_kind("chr1_KI270706v1_random") == "other"
     assert _contig_kind("HLA-A*01:01:01:01") == "other"
+
+
+def test_interval_set_matches_across_contig_naming(tmp_path):
+    """BED tracks mix UCSC and Ensembl naming; a 'chr'-less track must still
+    answer for 'chr'-prefixed calls (the GHFC selfchain-LCR track is Ensembl-
+    named, which silently zeroed every lcr_ovl until 2026-09-25)."""
+    from vedette.filter.annotate import IntervalSet
+
+    ensembl = tmp_path / "ensembl.bed"
+    ensembl.write_text("1\t100\t200\n2\t0\t50\n")
+    iv = IntervalSet.from_bed(ensembl)
+    assert iv.overlap_fraction("chr1", 100, 200) == 1.0
+    assert iv.overlap_fraction("1", 100, 200) == 1.0
+    assert iv.overlap_fraction("chr1", 150, 250) == 0.5
+    assert iv.overlap_fraction("chr3", 100, 200) == 0.0   # genuinely absent
+
+    ucsc = tmp_path / "ucsc.bed"
+    ucsc.write_text("chr1\t100\t200\n")
+    iv2 = IntervalSet.from_bed(ucsc)
+    assert iv2.overlap_fraction("1", 100, 200) == 1.0     # and the other way round
+    assert iv2.overlap_fraction("chr1", 100, 200) == 1.0

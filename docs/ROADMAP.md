@@ -49,6 +49,31 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1quinquies. `lcr_ovl` était morte depuis le début (2026-09-25)
+
+Alexandre : « les évènements dans un LCR sont parfois plus faux, surtout les
+DUP ». Vérification : `lcr_ovl > 0` pour **0 appel sur 38 094** (génome
+entier) et **0 sur 29 056** (HG002, données d'entraînement). Cause : le track
+`selfchain-LCR.hg38.bed` est nommé à l'Ensembl (`1`, `2`…) alors que les
+appels sont en UCSC (`chr1`) — aucun chevauchement ne pouvait matcher.
+`IntervalSet` résout désormais les deux conventions (test dans
+test_reference.py).
+
+Conséquences :
+- **Aucun impact sur v5** : la feature étant constante à 0 à l'entraînement,
+  aucun arbre ne splitte dessus — vérifié, SQ strictement identiques sur
+  5000 appels avec `lcr_ovl` aléatoire (écart max 0,0).
+- **Pour v6** : la feature devient réellement informative ; à réentraîner
+  pour qu'elle serve. C'est aussi une leçon de contrat : une feature
+  constante devrait échouer bruyamment (cf. garde-fou à ajouter côté
+  `train/` : refuser une feature de variance nulle sur le jeu d'entraînement).
+
+Hypothèse LCR × DUP elle-même : **non confirmée** sur les 45 validations
+IGV disponibles une fois la feature réparée — DUP faux `lcr>0` 3/8
+(médiane 0,000) contre DUP vrais 5/10 (médiane 0,008). Ce qui sépare
+vraiment, sur ce petit échantillon : le type (DEL 26 vrai/1 faux = 96 % vs
+DUP 10/8 = 56 %) et `segdup_ovl` (3/8 des DUP faux à 1,00, 0/10 des vrais).
+
 ### 1quater. Garde-fou de génotypage par échantillon (2026-09-25)
 
 Suite du 1ter : le recalcul du garde-fou de novo en excluant `HighCarrierFrac`/

@@ -19,6 +19,11 @@ class IntervalSet:
     def __init__(self, bed: dict[str, np.ndarray]):
         self.starts: dict[str, np.ndarray] = {}
         self.ends: dict[str, np.ndarray] = {}
+        # BED tracks mix UCSC ("chr1") and Ensembl ("1") contig naming: the
+        # GHFC selfchain-LCR track is Ensembl-named while calls are UCSC, so
+        # every lcr_ovl silently came back 0 (0/38094 calls on a whole genome,
+        # 0/29056 on the HG002 training set) until 2026-09-25.
+        self._alias: dict[str, str | None] = {}
         for contig, ivs in bed.items():
             if len(ivs) == 0:
                 continue
@@ -41,8 +46,23 @@ class IntervalSet:
     def from_bed(cls, path: str | Path) -> "IntervalSet":
         return cls(read_bed(path))
 
+    def _resolve(self, contig: str) -> str | None:
+        """Stored key for a contig, trying both naming conventions."""
+        if contig in self._alias:
+            return self._alias[contig]
+        key: str | None = None
+        for cand in (contig, contig.removeprefix("chr"), f"chr{contig}"):
+            if cand in self.starts:
+                key = cand
+                break
+        self._alias[contig] = key
+        return key
+
     def overlap_fraction(self, contig: str, start: int, end: int) -> float:
-        if end <= start or contig not in self.starts:
+        if end <= start:
+            return 0.0
+        contig = self._resolve(contig)
+        if contig is None:
             return 0.0
         starts, ends = self.starts[contig], self.ends[contig]
         i = int(np.searchsorted(ends, start, side="right"))
