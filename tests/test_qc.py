@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from vedette.qc import WAVE_MAX_K, contig_wave_score, sample_wave_score
 
@@ -144,10 +145,29 @@ def test_family_events_page(tmp_path):
     assert "<td>12.3</td><td>0.333</td><td>0.004</td>" in page and "GT<span" in page
 
 
+def test_carrier_excess_guard():
+    """The guard must key on carrier LOAD, not on the low-GQ fraction: on
+    dataset_paper the fraction's cohort median is 0.75 and the three real
+    offenders sit at 0.61-0.69 (percentiles 2-6), so a fraction threshold
+    flagged 2670/2670 samples."""
+    import numpy as np
+
+    from vedette.report import carrier_excess
+
+    n_carrier = np.array([300, 310, 305, 480, 295])   # one sample at ~1.57x
+    exc = carrier_excess(n_carrier)
+    assert exc[0] == pytest.approx(300 / 305)
+    assert exc[3] == pytest.approx(480 / 305)
+    assert (exc >= 1.3).sum() == 1
+
+    # degenerate cohort (no carriers at all) -> all NaN, never a flag
+    assert np.isnan(carrier_excess(np.array([0, 0]))).all()
+
+
 def test_low_gq_carrier_fraction():
     import numpy as np
 
-    from vedette.report import low_gq_carrier_fraction
+    from vedette.report import pass_carrier_stats
 
     # 4 sites x 3 samples; site 2 is non-PASS (must be excluded from the calc)
     nalt = np.array([
@@ -164,7 +184,8 @@ def test_low_gq_carrier_fraction():
     ], dtype=np.int16)
     pass_mask = np.array([True, True, False, True])
 
-    frac = low_gq_carrier_fraction(nalt, gq, pass_mask)
+    n_carrier, frac = pass_carrier_stats(nalt, gq, pass_mask)
+    assert list(n_carrier) == [2, 2, 1]
     # S0 PASS carriers: site0(GQ5<20), site1(GQ10<20) -> 2/2 = 1.0
     assert frac[0] == 1.0
     # S1 PASS carriers: site1(GQ40 ok), site3(GQ15<20) -> 1/2 = 0.5
@@ -175,5 +196,5 @@ def test_low_gq_carrier_fraction():
     # a sample with zero PASS carriers is NaN, not zero (nothing to judge)
     nalt_none = np.array([[0], [0]], dtype=np.int8)
     gq_none = np.array([[10], [10]], dtype=np.int16)
-    frac_none = low_gq_carrier_fraction(nalt_none, gq_none, np.array([True, True]))
+    _, frac_none = pass_carrier_stats(nalt_none, gq_none, np.array([True, True]))
     assert np.isnan(frac_none[0])

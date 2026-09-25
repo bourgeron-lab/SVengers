@@ -92,18 +92,27 @@ médiane 10-13) — un problème d'échantillon, pas de site.
 Deux garde-fous ajoutés :
 - `qc.WAVE_WARN` abaissé de 0,145 à 0,128 (Youden) — capture SMP-06/X (0,139/
   0,140), sous l'ancien seuil.
-- Nouveau : fraction de porteurs PASS à GQ&lt;20 par échantillon
-  (`report.low_gq_carrier_fraction`, seuil initial 0,40, calibré sur les 3 cas
-  connus). Colonne « % porteurs GQ&lt;20 » + KPI dans le rapport.
+- Nouveau (corrigé le 2026-09-25 après calibration) : **charge de porteurs**
+  `report.carrier_excess` = nb de sites PASS portés / médiane cohorte, seuil
+  1,3x, appliqué seulement à partir de 20 échantillons (critère relatif).
+  Sur dataset_paper : 87/2670 flagués (3,3 %), dont 13 des 20 pires outliers
+  de novo ; Spearman 0,69 entre nb de porteurs et nb de de novo.
 
-**Limite constatée à chaud** : sur le run famille FAM-04 (`--known-sites`
-pointé sur dataset_paper), les 9 membres sont TOUS flagués (0,59-0,67) malgré
-des scores wave normaux (0,10-0,13) et une profondeur normale — `CommonRef`
-retire les sites communs faciles du PASS local et ne laisse que des appels
-rares/durs, ce qui gonfle mécaniquement la métrique pour tout le monde. Le
-seuil 0,40 n'est donc calibré que pour la grande cohorte de référence (sans
-`--known-sites`) ; à valider sur le prochain run complet dataset_paper avec
-ce garde-fou avant de s'y fier sur des runs familiaux.
+  **Première version erronée** : la fraction de porteurs PASS à GQ&lt;20,
+  seuil 0,40 — calibration à l'échelle réelle : 2670/2670 flagués. La
+  médiane cohorte de cette fraction est 0,75 (p5 0,68, max 0,89) et les trois
+  vrais coupables (SMP-05/U/X) sont à 0,61-0,69, soit les percentiles 2-6 :
+  *parmi les plus propres*. Ce qui les sépare, c'est la charge (487-497k
+  porteurs contre 308k en médiane, percentile 100). Leçon : ne pas calibrer
+  un seuil sur 3 cas sans la distribution de fond. La fraction GQ reste
+  affichée (elle décrit le callset : 75 % des génotypes porteurs PASS sont
+  sous GQ 20) mais ne sert plus de critère.
+
+Note : l'hypothèse « c'est `CommonRef` qui gonflait la métrique sur la
+famille FAM-04 » était fausse — la fraction est haute partout, y compris sur la
+cohorte de référence sans `--known-sites`. Le critère relatif actuel reste en
+revanche inapplicable aux petits runs familiaux (tout le monde porte les mêmes
+sites), d'où le minimum de 20 échantillons.
 
 ### 1ter. v6 — nettoyer les labels par transmission (constat du 2026-09-24)
 
