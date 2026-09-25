@@ -39,3 +39,13 @@ les échantillons WAVES ont une durée de `vedette call` médiane 5× supérieur
 
 Reproduire : `scratch validate_wave.py` (session), stores dataset_paper +
 `final_results/merged_summary.csv` du pipeline Wave.
+
+## Mise à jour 2026-09-25 : seuil abaissé à 0,128 (Youden)
+
+Le garde-fou de novo (report.py) a laissé passer deux échantillons wavy à
+0,139 et 0,140 (SMP-06/X), sous le seuil p95 de 0,145, avec le même profil
+qu'un cas confirmé (SMP-05, 0,178) — génotypage globalement peu fiable,
+des milliers de faux « de novo » chez leur enfant malgré tous les filtres de
+site. Le seuil `qc.WAVE_WARN` passe au point de Youden déjà documenté plus
+haut (0,128 ; sensibilité 0,93, spécificité 0,87), au prix d'un peu plus de
+faux positifs sur les échantillons réellement normaux.

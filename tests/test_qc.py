@@ -142,3 +142,38 @@ def test_family_events_page(tmp_path):
     # cohort-level context columns (merge SQ, run carrier fraction, reference-cohort frequency)
     assert "<th>SQmax</th>" in page and "<th>% port.</th>" in page and "<th>fréq. réf.</th>" in page
     assert "<td>12.3</td><td>0.333</td><td>0.004</td>" in page and "GT<span" in page
+
+
+def test_low_gq_carrier_fraction():
+    import numpy as np
+
+    from vedette.report import low_gq_carrier_fraction
+
+    # 4 sites x 3 samples; site 2 is non-PASS (must be excluded from the calc)
+    nalt = np.array([
+        [1, 0, -1],   # site0 PASS: S0 het carrier, S1 ref, S2 missing
+        [2, 1, 0],    # site1 PASS: all carriers except S2
+        [2, 2, 2],    # site2 NOT PASS: would look terrible if counted
+        [0, 1, 1],    # site3 PASS: S1/S2 carriers
+    ], dtype=np.int8)
+    gq = np.array([
+        [5, 30, 0],
+        [10, 40, 30],
+        [1, 1, 1],
+        [30, 15, 45],
+    ], dtype=np.int16)
+    pass_mask = np.array([True, True, False, True])
+
+    frac = low_gq_carrier_fraction(nalt, gq, pass_mask)
+    # S0 PASS carriers: site0(GQ5<20), site1(GQ10<20) -> 2/2 = 1.0
+    assert frac[0] == 1.0
+    # S1 PASS carriers: site1(GQ40 ok), site3(GQ15<20) -> 1/2 = 0.5
+    assert frac[1] == 0.5
+    # S2 PASS carriers: site3(GQ45 ok) only (site0/site1 not a carrier) -> 0/1 = 0.0
+    assert frac[2] == 0.0
+
+    # a sample with zero PASS carriers is NaN, not zero (nothing to judge)
+    nalt_none = np.array([[0], [0]], dtype=np.int8)
+    gq_none = np.array([[10], [10]], dtype=np.int16)
+    frac_none = low_gq_carrier_fraction(nalt_none, gq_none, np.array([True, True]))
+    assert np.isnan(frac_none[0])

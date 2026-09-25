@@ -688,6 +688,23 @@ def _sweep_figure(sweep_rows: list[dict]):
     return fig
 
 
+def low_gq_carrier_fraction(nalt_m: np.ndarray, gq_m: np.ndarray, pass_mask: np.ndarray) -> np.ndarray:
+    """Per-sample fraction of PASS carrier genotypes with GQ < 20.
+
+    NaN for a sample with zero PASS carriers (nothing to flag). Vectorized
+    over the genotype matrices already held in memory for the report — no
+    extra cohort-VCF pass.
+    """
+    pass_nalt, pass_gq = nalt_m[pass_mask], gq_m[pass_mask]
+    carrier_mask = pass_nalt > 0
+    n_carrier = carrier_mask.sum(axis=0)
+    n_low_gq = ((pass_gq < 20) & carrier_mask).sum(axis=0)
+    return np.divide(
+        n_low_gq.astype(np.float64), n_carrier,
+        out=np.full(nalt_m.shape[1], np.nan), where=n_carrier > 0,
+    )
+
+
 def generate_report(
     run_dir: str | Path,
     pedigree: Pedigree | None,
@@ -782,14 +799,48 @@ def generate_report(
     carrier_per_sample = (nalt_m > 0).sum(axis=0)
     masked_gq = np.ma.masked_array(gq_m, mask=(nalt_m < 0))
     median_gq_per_sample = np.ma.median(masked_gq, axis=0).filled(0)
+    # per-sample genotyping-quality guard: fraction of PASS carrier genotypes
+    # below GQ 20. Flags poorly-genotyped samples that the wave score misses
+    # (e.g. dataset_paper SMP-05/U/X: 60-69% of PASS carriers at GQ<20,
+    # median 10-13 — three unrelated trios, each flooding its child's de novo
+    # count regardless of the site-level cohort filters, since the sheer
+    # carrier count makes even a small GQ>=20 fraction produce thousands of
+    # spurious candidates). PASS-restricted: a non-PASS carrier's GQ says
+    # nothing about the genotyper, only about that site's cohort frequency.
+    #
+    # Caveat (family runs with --known-sites): CommonRef strips the easy,
+    # high-confidence shared sites from PASS, leaving mostly rare/hard calls
+    # — this shifts the metric up for EVERY member, not just poorly-genotyped
+    # ones (seen on family FAM-04: all 9 members at 0.59-0.67 despite
+    # normal wave scores 0.10-0.13 and normal depth). Calibrated on the large
+    # reference cohort (no CommonRef); read family-run flags with that in mind.
+    pass_mask = np.array([site["filter"] == "PASS" for site in sites], dtype=bool)
+    low_gq_carrier_frac = low_gq_carrier_fraction(nalt_m, gq_m, pass_mask)
     sample_stats = {
         s: {
             "genotyped": int(genotyped_per_sample[i]),
             "carrier": int(carrier_per_sample[i]),
             "median_gq": float(median_gq_per_sample[i]),
+            "low_gq_carrier_frac": (
+                float(low_gq_carrier_frac[i]) if not np.isnan(low_gq_carrier_frac[i]) else None
+            ),
         }
         for i, s in enumerate(samples)
     }
+    # first-pass threshold: the three known offenders sit at 0.61-0.69, a
+    # clean sample should be well under — revisit once the guard has run on
+    # more cohorts (see docs/wave_qc_validation.md-style calibration note)
+    LOW_GQ_WARN = 0.40
+    poorly_genotyped = {
+        s: v["low_gq_carrier_frac"] for s, v in sample_stats.items()
+        if v["low_gq_carrier_frac"] is not None and v["low_gq_carrier_frac"] >= LOW_GQ_WARN
+    }
+    if poorly_genotyped:
+        logger.warning(
+            "garde-fou génotypage: %d échantillon(s) avec >= %.0f%% des porteurs PASS à GQ<20: %s",
+            len(poorly_genotyped), LOW_GQ_WARN * 100,
+            ", ".join(f"{s} ({v:.2f})" for s, v in sorted(poorly_genotyped.items(), key=lambda kv: -kv[1])),
+        )
 
     # ---- family workspaces
     family_sections = []
@@ -880,6 +931,9 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         (
             [s, st["genotyped"], st["carrier"],
              round(st["median_gq"], 1),
+             ("—" if st["low_gq_carrier_frac"] is None else
+              f"{st['low_gq_carrier_frac']:.2f} ⚠" if st["low_gq_carrier_frac"] >= LOW_GQ_WARN
+              else f"{st['low_gq_carrier_frac']:.2f}"),
              ("—" if wave_scores[s] is None else
               f"{wave_scores[s]:.3f} ⚠" if wave_scores[s] >= WAVE_WARN
               else f"{wave_scores[s]:.3f}")]
@@ -929,6 +983,7 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 <span class=kpi><b>{n_artifact}</b>artefacts cohorte</span>
 <span class=kpi><b>{len(rare)}</b>sites rares (≤2 porteurs)</span>
 <span class=kpi><b>{n_wavy}</b>échantillons wavy (score ≥ {WAVE_WARN})</span>
+<span class=kpi><b>{len(poorly_genotyped)}</b>échantillons mal génotypés (≥{LOW_GQ_WARN:.0%} porteurs PASS à GQ&lt;20)</span>
 <span class=kpi><b>{len(dn_outliers)}</b>enfants outliers de novo (&gt;{max_denovo_per_child})</span>
 </div>
 
@@ -958,7 +1013,7 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 <p>Le score de wave mesure les oscillations mégabase de couverture survivant à la
 correction GC (artefact de librairie) ; au-delà de {WAVE_WARN}, les calls depth-only
 de l'échantillon sont à considérer avec prudence.</p>
-{_table(["échantillon", "génotypés", "porteur", "GQ médian", "wave"], sample_rows)}
+{_table(["échantillon", "génotypés", "porteur", "GQ médian", "% porteurs GQ<20", "wave"], sample_rows)}
 
 </body></html>"""
 

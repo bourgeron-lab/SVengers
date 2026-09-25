@@ -49,6 +49,31 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1quater. Garde-fou de génotypage par échantillon (2026-09-25)
+
+Suite du 1ter : le recalcul du garde-fou de novo en excluant `HighCarrierFrac`/
+`CNDiscordant` ne changeait rien (déjà mutuellement exclusifs de PASS — 0
+site cumule les deux). La vraie cause des plus gros outliers (SMP-05/U/X,
+12k-14k candidats chacun) : trois trios **non apparentés** avec un
+génotypage globalement peu fiable (60-69&nbsp;% des porteurs PASS à GQ&lt;20,
+médiane 10-13) — un problème d'échantillon, pas de site.
+
+Deux garde-fous ajoutés :
+- `qc.WAVE_WARN` abaissé de 0,145 à 0,128 (Youden) — capture SMP-06/X (0,139/
+  0,140), sous l'ancien seuil.
+- Nouveau : fraction de porteurs PASS à GQ&lt;20 par échantillon
+  (`report.low_gq_carrier_fraction`, seuil initial 0,40, calibré sur les 3 cas
+  connus). Colonne « % porteurs GQ&lt;20 » + KPI dans le rapport.
+
+**Limite constatée à chaud** : sur le run famille FAM-04 (`--known-sites`
+pointé sur dataset_paper), les 9 membres sont TOUS flagués (0,59-0,67) malgré
+des scores wave normaux (0,10-0,13) et une profondeur normale — `CommonRef`
+retire les sites communs faciles du PASS local et ne laisse que des appels
+rares/durs, ce qui gonfle mécaniquement la métrique pour tout le monde. Le
+seuil 0,40 n'est donc calibré que pour la grande cohorte de référence (sans
+`--known-sites`) ; à valider sur le prochain run complet dataset_paper avec
+ce garde-fou avant de s'y fier sur des runs familiaux.
+
 ### 1ter. v6 — nettoyer les labels par transmission (constat du 2026-09-24)
 
 Validation IGV d'Alexandre sur la famille FAM-04 (v5, sites PASS) :

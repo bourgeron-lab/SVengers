@@ -22,12 +22,17 @@ import numpy as np
 
 WINDOW_BP = 10_000_000   # spectral window
 # Report/QC warning threshold. Calibrated on 592 GHFC genomes against the GHFC
-# wave-detector labels (AUC 0.946): 0.145 = p95 of normal samples — mirrors the
-# detector's own 95th-percentile calibration — sensitivity 0.80 on labeled
-# waves. On the CORRECTED ratio the dynamic range is compressed (GC correction
-# absorbs part of the artifact), hence thresholds well below the raw-coverage
-# scores. See docs/wave_qc_validation.md.
-WAVE_WARN = 0.145
+# wave-detector labels (AUC 0.946). Two candidates from that calibration:
+# 0.145 = p95 of normal samples (sensitivity 0.80, specificity 0.95) and
+# 0.128 = Youden-optimal (sensitivity 0.93, specificity 0.87). Switched to
+# 0.128 on 2026-09-25: dataset_paper's top de novo outliers included two
+# samples (SMP-06/X, score 0.139/0.140) that were poorly genotyped in the
+# same way as a confirmed wavy sibling case (SMP-05, 0.178) but sat just
+# under 0.145 — the extra false-positive rate is an acceptable trade for
+# catching them. On the CORRECTED ratio the dynamic range is compressed (GC
+# correction absorbs part of the artifact), hence thresholds well below the
+# raw-coverage scores. See docs/wave_qc_validation.md.
+WAVE_WARN = 0.128
 WAVE_MAX_K = 50          # FFT bins 1..50 = periods >= WINDOW_BP/50 = 200 kb
 MIN_VALID_FRAC = 0.5     # a window needs this fraction of unmasked bins
 
