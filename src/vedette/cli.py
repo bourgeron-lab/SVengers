@@ -524,6 +524,9 @@ def report(
         False, "--family-events",
         help="Also write families/<FID>/events.html: every DEL/DUP of the family in one page with chromosome/type filters and inheritance (works with or without family workspaces)",
     ),
+    min_carrier_gq: int = typer.Option(
+        20, help="Minimum GQ for a genotype to count as a carrier on the events pages (re-genotyping emits low-GQ carriers readily: apparent de novo rate 14-17% below GQ 20 vs 1-2% above)",
+    ),
     no_collapse_events: bool = typer.Option(
         False, "--no-collapse-events",
         help="Keep every cohort site as its own row on the events pages (default: merge overlapping same-type events carried by exactly the same members)",
@@ -552,6 +555,7 @@ def report(
         family_events=family_events,
         events_pass_only=events_pass_only,
         collapse_family_events=not no_collapse_events,
+        min_carrier_gq=min_carrier_gq,
     )
     typer.echo(f"rapport -> {path}")
 

@@ -391,6 +391,7 @@ def _write_all_family_events(
     segdup_iv=None,
     lcr_iv=None,
     collapse: bool = True,
+    min_carrier_gq: int = 20,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -413,7 +414,11 @@ def _write_all_family_events(
         if pass_only and site["filter"] != "PASS":
             continue
         idx = site["idx"]
-        carrier_cols = np.nonzero(nalt_m[idx] > 0)[0]
+        # a carrier is a confident carrier: re-genotyping emits GT>0 with a
+        # low GQ far too readily, and the trio signal says so plainly —
+        # apparent de novo rate (a genotype-error proxy) on PMS is 16.7% for
+        # DEL carriers at GQ<20 against 0.8% at GQ>=20, 13.9% vs 1.9% for DUP.
+        carrier_cols = np.nonzero((nalt_m[idx] > 0) & (gq_m[idx] >= min_carrier_gq))[0]
         if not len(carrier_cols):
             continue
         fam_ks = np.unique(fam_of_col[carrier_cols])
@@ -465,7 +470,7 @@ def _write_all_family_events(
                 na, gq, cn = cell.split(":")
                 gt_s = _NALT_GT.get(int(na), "./.")
                 gts.append((gt_s, gq, cn))
-                if gt_s not in ("0/0", "./."):
+                if gt_s not in ("0/0", "./.") and int(gq or 0) >= min_carrier_gq:
                     carriers.append(m)
             events.append({
                 "id": site_id,
@@ -575,6 +580,8 @@ def _write_events_page(
         f'<label class="muted">Importer <input type="file" id="import" accept=".tsv,.txt"></label></div>'
         f'<p class="muted">GT<span class="muted">:GQ:CN</span> par membre (suffixe du '
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
+        f'Porteur = génotype alternatif avec GQ suffisant (les génotypes moins sûrs restent '
+        f'affichés mais ne comptent pas comme porteurs). '
         f'SQmax = meilleur SQ par échantillon au merge ; % port. = fraction de porteurs dans ce run ; '
         f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites) ; '
         f'LCR / segdup = fraction du site chevauchant ces masques ; sites = nombre de sites cohorte '
@@ -881,6 +888,7 @@ def generate_report(
     family_events: bool = False,
     events_pass_only: bool = False,
     collapse_family_events: bool = True,
+    min_carrier_gq: int = 20,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -1087,6 +1095,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
             segdup_iv=segdup_iv, lcr_iv=lcr_iv, collapse=collapse_family_events,
+            min_carrier_gq=min_carrier_gq,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

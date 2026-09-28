@@ -256,3 +256,41 @@ def test_own_call_status():
     # reciprocal overlap below 0.5 does not count as backing
     assert own_call_status(idx, "chr22", 59_000, 120_000, "DEL") == ""
     assert own_call_status(idx, "chr1", 50_100, 59_900, "DEL") == ""
+
+
+def test_carrier_requires_sufficient_gq():
+    """Re-genotyping emits GT>0 with a low GQ far too readily: on PMS the
+    apparent de novo rate — a genotype-error proxy — is 16.7% for DEL
+    carriers below GQ 20 against 0.8% above (13.9% vs 1.9% for DUP), so a
+    low-GQ alternative genotype must not make the sample a carrier."""
+    import numpy as np
+
+    from vedette.report import _write_all_family_events, _FamilySpill
+
+    samples = ["kid", "dad", "mum"]
+    sites = [{"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL",
+              "size": 1001, "filter": "PASS", "rescue": "", "idx": 0,
+              "sqmax": None, "carrier_frac": None, "ref_carrier_frac": None}]
+    #                kid carrier GQ 45, dad carrier GQ 3 (noise), mum ref
+    nalt = np.array([[1, 1, 0]], dtype=np.int8)
+    gq = np.array([[45, 3, 99]], dtype=np.int16)
+    cn = np.array([[1, 1, 2]], dtype=np.int8)
+
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        run = Path(tmp)
+        spill = _FamilySpill(run / "inh")
+        n = _write_all_family_events(
+            run, {"F1": samples}, samples, sites, nalt, gq, cn,
+            lambda *a: "", lambda *a: (0, ""), spill,
+        )
+        assert n == 1
+        page = (run / "families" / "F1" / "events.html").read_text()
+    # dad's low-GQ genotype is shown but he is not listed as a carrier
+    assert "0/1<span" in page          # genotypes still displayed
+    assert ">kid<" in page or "kid" in page
+    import re
+    carriers = re.search(r'<td class="c">([^<]*)</td><td><a class="igv"', page)
+    assert carriers and "dad" not in carriers.group(1)

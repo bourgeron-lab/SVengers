@@ -49,6 +49,46 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1octies. Spécificité du génotypeur de cohorte : plancher GQ (2026-09-28)
+
+Mesure à grande échelle sur PMS (77 trios, 32 386 sites échantillonnés) du
+**taux de de novo apparent** chez l'enfant porteur quand les deux parents sont
+0/0 confiants — un proxy direct du taux d'erreur de génotypage :
+
+| type | sous-groupe | porteurs | de novo apparent |
+|---|---|---|---|
+| DEL | GQ < 20 | 20 832 | **16,7 %** |
+| DEL | GQ >= 20 | 251 294 | **0,8 %** |
+| DUP | GQ < 20 | 71 508 | **13,9 %** |
+| DUP | GQ >= 20 | 253 823 | **1,9 %** |
+| DEL | profondeur incohérente | 27 069 | 10,1 % |
+| DUP | profondeur incohérente | 254 989 | 5,3 % |
+
+Le GQ domine tous les autres critères testés (cohérence de profondeur, taille,
+support de jonction — ce dernier ne discrimine rien, tous les faux en ont,
+signe que le comptage de reads clivés est trop permissif : il compte les clips
+proches du point de cassure sans vérifier qu'ils soutiennent *cette* jonction).
+
+Fait : sur les pages events, « porteur » = génotype alternatif **et**
+`GQ >= --min-carrier-gq` (défaut 20). Les génotypes moins sûrs restent
+affichés dans les colonnes par membre mais ne comptent plus comme portage.
+
+Vérification contre les 42 sites relus sous IGV (famille FAM-04) :
+
+| critère | vrais | faux | précision |
+|---|---|---|---|
+| brut | 3/3 | 39/39 | 7 % |
+| GQ>=20 | 3/3 | 18/39 | 14 % |
+| adossé à un appel propre | 3/3 | 18/39 | 14 % |
+| **GQ>=20 ET adossé** | **3/3** | **10/39** | **23 %** |
+
+Aucun vrai perdu, 29 faux sur 39 écartés. Reste à traiter :
+- la spécificité du comptage SR/PE dans `_junction_support` (apparier les
+  clips à la jonction, pas seulement à la position) ;
+- les statistiques de cohorte (NCARRIER/AF/CARRIER_FRAC) comptent toujours
+  tous les génotypes alternatifs, sans plancher GQ — à trancher, car y
+  toucher déplace AF, HWE et les tags dérivés.
+
 ### 1septies. Le portage par re-génotypage seul est quasi toujours faux (2026-09-28)
 
 Validation IGV **en aveugle** d'Alexandre sur 60 événements de la famille
