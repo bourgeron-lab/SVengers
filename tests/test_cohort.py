@@ -213,6 +213,50 @@ def _write_reference_cohort(path, records):
     pysam.tabix_index(str(path), preset="vcf", force=True)
 
 
+def test_gtr_discordance_is_directional(tmp_path):
+    """Re-genotyping finding MORE carriers than the callers nominated is the
+    point of genotyping from the stores (it recovered the causal SHANK3
+    deletion on the PMS cohort: 6 nominators, 64 carriers). Only the other
+    direction — nominations that re-genotyping fails to reproduce — is a
+    red flag."""
+    import csv
+
+    import pysam
+
+    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
+    from vedette.cohort.metrics import run_cohort_filter
+
+    # UP: 3 nominators, 6 of 8 samples carry after re-genotyping (sensitivity)
+    # DOWN: 8 nominators, only 1 carrier reproduced (irreproducible calls)
+    sites = [("UP", "chr22", 1_000_000, 1_030_000, "DEL", 3),
+             ("DOWN", "chr22", 2_000_000, 2_030_000, "DEL", 8)]
+    _write_sites_vcf(tmp_path / "sites.vcf.gz", sites)
+    gt_paths = []
+    for k in range(8):
+        rows = []
+        for sid, contig, start, end, svtype, _ in sites:
+            if sid == "UP":
+                gt, cn = ("0/1", 1) if k < 6 else ("0/0", 2)
+            else:
+                gt, cn = ("0/1", 1) if k == 0 else ("0/0", 2)
+            rows.append(dict(zip(GENOTYPE_COLUMNS, [
+                sid, contig, start, end, svtype, f"S{k}", gt, 40, cn, 0.99, "", 0, 0, 0, 0, "",
+            ])))
+        path = tmp_path / f"S{k}.gt.tsv"
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
+            w.writeheader()
+            w.writerows(rows)
+        gt_paths.append(path)
+
+    run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "cohort.vcf.gz")
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "cohort.vcf.gz"))}
+    assert "CohortArtifact" not in out["UP"].filter.keys()
+    assert "CohortArtifact" in out["DOWN"].filter.keys()
+    # the absolute discordance is still reported for both
+    assert out["UP"].info["GTR_DISC"] == pytest.approx(1.0)
+
+
 def test_cohort_filter_post_processing_flags(tmp_path):
     import csv
 

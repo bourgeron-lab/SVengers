@@ -185,7 +185,8 @@ def run_cohort_filter(
             ("NS", "1", "Integer", "Samples with a genotype"),
             ("NCARRIER", "1", "Integer", "Samples carrying the variant after re-genotyping"),
             ("GTR_DISC", "1", "Float",
-             "Discordance between nominating-sample count and re-genotyped carriers"),
+             "Absolute discordance between nominating-sample count and re-genotyped carriers "
+             "(only the 'fewer carriers than nominations' direction is flagged)"),
             ("HWE_P", "1", "Float", "Founder Hardy-Weinberg exact p-value"),
             ("CARRIER_FRAC", "1", "Float", "Fraction of genotyped samples carrying the variant"),
             ("CN_DISC", "1", "Float",
@@ -271,6 +272,16 @@ def run_cohort_filter(
                 disc = (
                     abs(nominators - ncar) / max(nominators, 1) if nominators else 0.0
                 )
+                # Directional: only "re-genotyping reproduces FEWER carriers
+                # than the callers nominated" is suspicious. The other
+                # direction is re-genotyping being more sensitive than
+                # per-sample calling, which is the whole point of genotyping
+                # from the stores — on the PMS cohort it filtered the causal
+                # SHANK3 deletion (6 nominators, 64 carriers) and 36328 sites
+                # in that direction vs 425 in the other. The artifact case it
+                # used to cover ("the genotyper calls everyone") is now
+                # HighCarrierFrac's job.
+                disc_down = (nominators - ncar) / nominators if nominators else 0.0
                 new.info["GTR_DISC"] = round(disc, 4)
                 hwe_p = hwe_exact(het, hom_alt, hom_ref)
                 new.info["HWE_P"] = round(hwe_p, 6)
@@ -278,7 +289,7 @@ def run_cohort_filter(
                 af = ac / an if an else 0.0
                 tags = []
                 if (af > artifact_af and hwe_p < 1e-6) or (
-                    nominators >= 3 and disc > artifact_gtr_discordance
+                    nominators >= 3 and disc_down > artifact_gtr_discordance
                 ):
                     tags.append("CohortArtifact")
 

@@ -49,6 +49,39 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1sexies. Discordance de génotypage rendue directionnelle (2026-09-28)
+
+Sur la cohorte PMS (Phelan-McDermid, 319 génomes), la délétion SHANK3 causale
+— chr22:50 654 001, 33 kb, celle de la famille FAM-04 — sortait `CohortArtifact`.
+Ni la fréquence ni HWE (p=1,0) : c'est `GTR_DISC`. 6 échantillons seulement
+l'avaient nominée au calling (SQ faible, rescue), le re-génotypage y trouve
+64 porteurs sur 319, écart relatif 9,7 > seuil 0,5.
+
+Or c'est le fonctionnement voulu du pipeline : le re-génotypage depuis les
+stores est *fait* pour être plus sensible que le calling par échantillon. Le
+critère punissait ce gain. Asymétrie mesurée sur PMS : 36 328 sites filtrés
+dans le sens « le re-génotypage en trouve plus » contre 425 dans l'autre.
+
+Critère désormais **directionnel** : on ne flague que
+`(nominations - porteurs) / nominations > seuil`, c'est-à-dire des appels que
+le re-génotypage ne reproduit pas. Le cas artefact inverse (« le génotypeur
+appelle tout le monde ») est couvert depuis le 2026-09-24 par
+`HighCarrierFrac`, qui n'existait pas quand `GTR_DISC` a été écrit.
+
+Effet sur PMS : 7 486 sites deviennent PASS (+16 %). Comparaison Mendel
+(conditionnelle au fait que l'enfant porte, cf. ci-dessous) : MVR 22,9 % pour
+les libérés contre 22,9 % pour les PASS actuels et 3,0 % pour les autres
+artefacts — ils se comportent comme le jeu accepté, pas comme la classe
+artefact (dont 92 % sont portés par tout le monde). Réserve : leur taux de
+de novo apparent est plus haut (14,5 % contre 9,7 %). Validation IGV en
+aveugle en cours pour trancher.
+
+**Piège de lecture de `mendel_report.tsv`** : le fichier ne contient que les
+lignes « informatives » (`mendel.py`, « only report informative rows »), donc
+les enfants non-porteurs en sont absents. Tout taux de transmission calculé
+directement depuis ce TSV vaut ~1,0 par construction — utiliser les colonnes
+du résumé ou `bench trios`, qui comptent sur l'ensemble des sites génotypés.
+
 ### 1quinquies. `lcr_ovl` était morte depuis le début (2026-09-25)
 
 Alexandre : « les évènements dans un LCR sont parfois plus faux, surtout les
