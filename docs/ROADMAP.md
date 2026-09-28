@@ -49,6 +49,76 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 2bis. Score d'impact plus discriminant (demande Alexandre, 2026-09-28)
+
+Le score actuel est grossier : 0 intergénique / 1 intronique / 2 exonique,
++1 si `candidate_ndd_v5` (7316 gènes), +2 si `hc_ndd_v7` (2200) — soit 4
+valeurs possibles et 2 colonnes lues sur les **71** de
+`genetrek-data-2026-09-15.tsv`. À ce grain, la moitié du génome code se
+retrouve au même niveau.
+
+Colonnes disponibles et directement exploitables (remplissage mesuré sur les
+45 045 gènes du fichier) :
+
+- **contrainte / dosage** : `loeuf` (17 961), `shet_mean` (16 486),
+  `is_shet_constrained` (3946), `constraint` (4475), `moeuf`, `soeuf`.
+  C'est le bon a priori pour une **DEL** (intolérance à la perte de fonction).
+  Attention : LOEUF/s_het ne disent rien de la **triplosensibilité** — une DUP
+  ne doit pas être notée avec la même échelle (piste : ClinGen triplosensitivity,
+  absent du fichier, à ajouter).
+- **panels par phénotype** : `panelapp_eng_id_*` (1514), `panelapp_aus_autism_*`,
+  `*_epilepsy_*`, `sysndd_definitive_*`, `spark_*`, `sfari_1_*` (244),
+  `autism_combined_v7`, `acmg_sf_v3_3` (findings secondaires à signaler).
+  Permet une priorisation **selon la cohorte** au lieu d'un score unique.
+- **mécanisme** : `chromatin_remodeling`, `epifactors_v2_1`, `syngo_v1_3`,
+  `trrust_v2_tf` / `rummagene_tf`, `chrom_epi_tf_combined`.
+- **mode de transmission** : `inheritance`, `inheritance_panelapp_*`,
+  `inheritance_sysndd_*` — un gène AD touché par une DEL hétérozygote ne pèse
+  pas comme un gène AR.
+- **évidence quantitative autisme** : `37365347_autism_or`, `_p_value`,
+  `_number_of_carriers_among_autistic_individuals`.
+- `mane_select` (19 314) pour décider proprement de l'atteinte exonique, et
+  `omim_id` pour le lien clinique.
+
+Proposition : score continu séparé par type (DEL/DUP), combinant
+(a) la fraction du transcrit MANE touchée, (b) la contrainte du gène le plus
+contraint chevauché, (c) l'appartenance au panel du phénotype de la cohorte,
+(d) le mode de transmission — plutôt qu'un entier de 0 à 4. Garder un libellé
+lisible à côté du nombre, comme aujourd'hui. À caler sur les listes de de novo
+déjà validées.
+
+### 2ter. Vérification duphold-like au niveau du génotype (demande Alexandre, 2026-09-28)
+
+Ce que fait duphold (brentp) : pour chaque appel, un fold-change de profondeur
+contre les flancs (DHFFC), contre la médiane du génome (DHFC) et contre des bins
+de GC comparable (DHBFC), plus le support de jonction.
+
+**On le fait déjà, mais au mauvais endroit.** `filter/features.py` calcule
+`dhffc` (exactement DHFFC), `fc_chrom` (~DHFC), `fc_residual`, `depth_cv`,
+`frac_consistent`, et le modèle s'en sert — mais **uniquement sur l'appel par
+échantillon**. Le re-génotypage de cohorte, lui, ne fait aucune vérification de
+ce type : c'est précisément là que les erreurs trouvées le 2026-09-28 se
+produisent (96 % des porteurs DUP jugés faux sous IGV ont RD = 1,00, profondeur
+strictement normale).
+
+À faire :
+- porter le contrôle dans `cohort/genotyper.py` : refuser un génotype porteur
+  dont la profondeur contredit le type quand la taille rend la profondeur
+  informative (mesuré : de novo apparent 10,1 % pour les DEL à profondeur
+  incohérente contre 1,1 % pour les cohérentes, 5,3 % vs 2,1 % pour les DUP) ;
+- ajouter le **DHBFC** (comparaison à des bins de GC comparable), le seul des
+  trois de duphold qui nous manque — utile là où la correction GC laisse un
+  biais résiduel ;
+- exposer ces valeurs par génotype dans le VCF cohorte (FORMAT) et dans les
+  pages events, pour qu'elles soient lisibles pendant la relecture IGV ;
+- corriger en même temps `_junction_support`, qui compte les clips proches du
+  point de cassure sans vérifier qu'ils soutiennent *cette* jonction : dans la
+  validation, tous les faux porteurs avaient du support de jonction, donc ce
+  canal ne discrimine rien en l'état.
+
+Le plancher GQ posé le 2026-09-28 (`--min-carrier-gq`) traite le symptôme le
+plus visible ; ces trois points traitent la cause.
+
 ### 1octies. Spécificité du génotypeur de cohorte : plancher GQ (2026-09-28)
 
 Mesure à grande échelle sur PMS (77 trios, 32 386 sites échantillonnés) du
