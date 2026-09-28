@@ -118,7 +118,7 @@ def test_family_events_page(tmp_path):
         "contig": "chr1", "pos": 1000, "end": 2000, "svtype": "DEL", "size": 1000,
         "filter": "PASS", "rescue": "", "genes": "GENE1", "impact": "3 — exonique, NDD-candidat",
         "inherit": "de novo", "carriers": ["C000EZJ"], "sqmax": "12.3", "cfrac": "0.333",
-        "refcf": "0.004", "lcr": "0.00", "segdup": "1.00",
+        "refcf": "0.004", "lcr": "0.00", "segdup": "1.00", "own": "PASS",
         "gt": [("0/0", 99, "2"), ("0/0", 99, "2"), ("0/1", 45, "1")],
     }
     ev2 = dict(ev, contig="chr2", svtype="DUP", filter="LowSQ", carriers=[],
@@ -237,3 +237,22 @@ def test_collapse_overlapping_events_per_carrier_set():
     assert big["sqmax"] == "17.2"                     # strongest evidence kept
     assert merged[(50_692_669, 50_692_985)]["n_sites"] == 1   # different carriers
     assert merged[(51_000_000, 51_000_500)]["n_sites"] == 1   # no overlap
+
+
+def test_own_call_status():
+    """A cohort site is a breakpoint cluster; re-genotyping then genotypes
+    every sample, backed by an own call or not. On PMS 80% of a family's PASS
+    events have no own call and blind IGV review scored those 0/33."""
+    from vedette.report import own_call_status
+
+    idx = {
+        ("chr22", "DEL"): [(50_000, 60_000, False), (80_000, 90_000, True)],
+        ("chr22", "DUP"): [(50_000, 60_000, True)],
+    }
+    assert own_call_status(idx, "chr22", 80_100, 89_900, "DEL") == "PASS"
+    assert own_call_status(idx, "chr22", 50_100, 59_900, "DEL") == "filtré"
+    assert own_call_status(idx, "chr22", 50_100, 59_900, "DUP") == "PASS"  # type matters
+    assert own_call_status(idx, "chr22", 200_000, 210_000, "DEL") == ""
+    # reciprocal overlap below 0.5 does not count as backing
+    assert own_call_status(idx, "chr22", 59_000, 120_000, "DEL") == ""
+    assert own_call_status(idx, "chr1", 50_100, 59_900, "DEL") == ""

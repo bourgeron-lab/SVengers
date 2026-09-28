@@ -49,6 +49,48 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1septies. Le portage par re-génotypage seul est quasi toujours faux (2026-09-28)
+
+Validation IGV **en aveugle** d'Alexandre sur 60 événements de la famille
+FAM-04 dans PMS (40 sites libérés par le critère directionnel + 20
+contrôles déjà PASS, mélangés, FILTER masqué), 42 relus :
+
+| groupe | n | vrai | faux |
+|---|---|---|---|
+| libérés | 25 | 3 | 22 |
+| contrôles PASS | 17 | 0 | 17 |
+
+Les contrôles à 0/17 disent que le problème préexiste au changement
+directionnel. La cause est ailleurs, et elle est nette — croisement avec les
+appels **propres** des membres de la famille :
+
+| verdict | appel propre PASS | appel propre filtré | aucun appel propre |
+|---|---|---|---|
+| vrai (3) | 3 | 0 | 0 |
+| faux (39) | 6 | 12 | 21 |
+
+Un site de cohorte est un groupe de points de cassure ; le re-génotypage
+attribue ensuite un génotype à **tous** les échantillons, qu'ils aient produit
+un appel ou non. Sur la famille FAM-04 dans PMS : **80,4 % des 19 416 événements
+PASS portés n'ont aucun appel propre derrière eux** (11,8 % ont un appel PASS,
+7,8 % un appel filtré). La relecture note 0/33 pour les non-adossés contre
+3/9 pour les adossés PASS.
+
+Cela explique l'écart avec le benchmark HG002 (précision 0,95 à SQ>=5) : celui-ci
+mesure les **appels par échantillon**, pas le portage re-génotypé affiché dans
+les pages events. Et cela explique pourquoi la même famille paraissait bonne
+dans son run isolé (9 échantillons : peu de sites d'autrui à hériter).
+
+Fait : colonne « appel propre » (PASS / filtré / aucun) et sélecteur sur les
+pages events, réglé par défaut sur « avec appel propre » — 19 416 -> 3 806
+lignes sur la famille FAM-04. Le défaut retient les appels filtrés, sinon les
+sites rescués (la DEL SHANK3 familiale, LowSQ chez chaque porteur) seraient
+masqués.
+
+À faire : regarder la spécificité du génotypeur de cohorte lui-même (seuil
+d'appel d'un porteur au re-génotypage) — c'est la source du problème, la
+colonne ne fait que le rendre visible.
+
 ### 1sexies. Discordance de génotypage rendue directionnelle (2026-09-28)
 
 Sur la cohorte PMS (Phelan-McDermid, 319 génomes), la délétion SHANK3 causale

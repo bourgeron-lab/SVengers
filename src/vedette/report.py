@@ -73,22 +73,25 @@ a.igv{font-size:11px;padding:1px 6px;border:1px solid #9ab;border-radius:4px;tex
 _EVENTS_JS = """
 const rows = Array.from(document.querySelectorAll("tbody tr"));
 const chrSel = document.getElementById("chr"), typeSel = document.getElementById("type"),
-      valSel = document.getElementById("val"), passCb = document.getElementById("pass"),
+      valSel = document.getElementById("val"), ownSel = document.getElementById("own"),
+      passCb = document.getElementById("pass"),
       count = document.getElementById("count");
 function apply(){
-  const c = chrSel.value, t = typeSel.value, v = valSel.value, p = passCb.checked;
+  const c = chrSel.value, t = typeSel.value, v = valSel.value, p = passCb.checked,
+        o = ownSel.value;
   let n = 0;
   for (const r of rows){
     const ok = (c === "all" || r.dataset.chr === c)
             && (t === "all" || r.dataset.type === t)
             && (v === "all" || (r.dataset.val || "none") === v)
+            && (o === "all" || (o === "any" ? r.dataset.own !== "aucun" : r.dataset.own === o))
             && (!p || r.dataset.pass === "1");
     r.hidden = !ok;
     if (ok) n++;
   }
   count.textContent = n.toLocaleString("fr-FR") + " / " + rows.length.toLocaleString("fr-FR");
 }
-chrSel.onchange = typeSel.onchange = valSel.onchange = passCb.onchange = apply;
+chrSel.onchange = typeSel.onchange = valSel.onchange = ownSel.onchange = passCb.onchange = apply;
 
 // manual validation (IGV check): three exclusive radio buttons per row
 // (vrai/faux/incertain — a forced binary choice pollutes labels on genuinely
@@ -126,7 +129,7 @@ document.getElementById("export").onclick = () => {
   document.querySelectorAll("thead th").forEach((th, i) => { COL[th.textContent.trim()] = i; });
   const EXPORT = [["filter", "FILTER"], ["sqmax", "SQmax"], ["carrier_frac", "% port."],
                   ["ref_carrier_frac", "fréq. réf."], ["lcr", "LCR"], ["segdup", "segdup"],
-                  ["heritage", "héritage"], ["porteurs", "porteurs"]];
+                  ["heritage", "héritage"], ["porteurs", "porteurs"], ["appel_propre", "appel propre"]];
   const head = ["site_id", "chr", "pos", "end", "type", "taille",
                 ...EXPORT.map(c => c[0]), "validation"];
   const lines = [head.join("\\t")];
@@ -273,6 +276,51 @@ class _FamilySpill:
 _EVENTS_MAX_MEMBERS = 20  # no events page for catch-all pseudo-families
 
 
+def own_call_index(run_dir: Path, members: list[str]) -> dict:
+    """{(contig, svtype): [(start, stop, is_pass)]} of the family's OWN calls.
+
+    A cohort site records a breakpoint cluster; re-genotyping then assigns a
+    genotype to every sample, whether or not that sample ever produced a call
+    there. On PMS, 80% of the PASS events a family "carries" have no call of
+    their own behind them — and blind IGV review scored those 0/33, against
+    3/9 for the ones backed by an own PASS call. The distinction has to be
+    visible, so it is computed here from the published per-sample VCFs.
+    """
+    idx: dict[tuple[str, str], list[tuple[int, int, bool]]] = defaultdict(list)
+    for m in members:
+        vcf_path = run_dir / "samples" / m / f"{m}.filtered.vcf.gz"
+        if not vcf_path.exists():
+            continue
+        try:
+            with pysam.VariantFile(str(vcf_path)) as vf:
+                for rec in vf:
+                    svtype = rec.info.get("SVTYPE")
+                    if svtype:
+                        idx[(rec.contig, svtype)].append(
+                            (rec.pos, rec.stop, list(rec.filter.keys()) == ["PASS"])
+                        )
+        except (OSError, ValueError):  # a report must survive a missing VCF
+            continue
+    for k in idx:
+        idx[k].sort()
+    return idx
+
+
+def own_call_status(idx: dict, contig: str, pos: int, end: int, svtype: str,
+                    min_ro: float = 0.5) -> str:
+    """"PASS", "filtré" or "" for the family's own call behind a cohort site."""
+    best = ""
+    for op, oe, is_pass in idx.get((contig, svtype), ()):
+        if op > end:
+            break
+        ov = min(end, oe) - max(pos, op)
+        if ov > 0 and ov / max(end - pos, oe - op) >= min_ro:
+            if is_pass:
+                return "PASS"
+            best = "filtré"
+    return best
+
+
 def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                     segdup_iv=None, lcr_iv=None) -> list[dict]:
     """Merge overlapping same-type events carried by exactly the same members.
@@ -299,6 +347,8 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                     a, b = cur.get(k) or "", e.get(k) or ""
                     if b and (not a or float(b) > float(a)):
                         cur[k] = b
+                if e.get("own") == "PASS" or (e.get("own") and not cur.get("own")):
+                    cur["own"] = e["own"]
                 for k in ("rescue", "inherit"):
                     if e.get(k) and e[k] not in (cur.get(k) or ""):
                         cur[k] = " · ".join(x for x in (cur.get(k), e[k]) if x)
@@ -427,6 +477,9 @@ def _write_all_family_events(
             })
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
+        own_idx = own_call_index(run_dir, members)
+        for e in events:
+            e["own"] = own_call_status(own_idx, e["contig"], e["pos"], e["end"], e["svtype"])
         if collapse:
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
@@ -461,7 +514,7 @@ def _write_events_page(
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
         "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
-        "<th>LCR</th><th>segdup</th><th>sites</th>"
+        "<th>LCR</th><th>segdup</th><th>sites</th><th data-key=\"own\">appel propre</th>"
         "<th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
@@ -479,7 +532,8 @@ def _write_events_page(
         rows.append(
             f'<tr class="{cls}" data-chr="{html.escape(e["contig"])}" data-pos="{e["pos"]}" '
             f'data-end="{e["end"]}" data-size="{e["size"]}" data-site="{html.escape(site)}" '
-            f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}">'
+            f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}" '
+            f'data-own="{html.escape(e.get("own") or "aucun")}">'
             f'<td>{html.escape(e["contig"])}</td><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
             f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
             f'<td>{html.escape(e["filter"])}</td><td>{html.escape(e["rescue"])}</td>'
@@ -489,6 +543,7 @@ def _write_events_page(
             f'<td>{html.escape(str(e.get("lcr") or ""))}</td>'
             f'<td>{html.escape(str(e.get("segdup") or ""))}</td>'
             f'<td title="{html.escape(" ".join(e.get("_ids", [])))}">{e.get("n_sites", 1)}</td>'
+            f'<td>{html.escape(e.get("own") or "—")}</td>'
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
@@ -507,6 +562,10 @@ def _write_events_page(
         f'<label>chromosome <select id="chr">{chr_opts}</select></label>'
         f'<label>type <select id="type"><option value="all">tous</option>'
         f'<option>DEL</option><option>DUP</option></select></label>'
+        f'<label>appel propre <select id="own">'
+        f'<option value="any" selected>avec appel propre</option>'
+        f'<option value="all">tous</option><option value="PASS">PASS seulement</option>'
+        f'<option value="aucun">sans appel propre</option></select></label>'
         f'<label>validation <select id="val"><option value="all">toutes</option>'
         f'<option value="none">non validé</option><option value="true">vrai</option>'
         f'<option value="false">faux</option><option value="unsure">incertain</option></select></label>'
@@ -520,7 +579,9 @@ def _write_events_page(
         f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites) ; '
         f'LCR / segdup = fraction du site chevauchant ces masques ; sites = nombre de sites cohorte '
         f'fusionnés dans la ligne (les points de cassure diffèrent d\'un patient à l\'autre, '
-        f'survolez pour les identifiants). '
+        f'survolez pour les identifiants) ; appel propre = un membre a-t-il son propre appel à ce '
+        f'locus, ou le portage vient-il seulement du re-génotypage de cohorte (sur PMS, 80 % des '
+        f'événements sont dans ce dernier cas et la relecture IGV les a tous jugés faux). '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
