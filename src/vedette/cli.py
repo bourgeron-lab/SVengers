@@ -524,6 +524,10 @@ def report(
         False, "--family-events",
         help="Also write families/<FID>/events.html: every DEL/DUP of the family in one page with chromosome/type filters and inheritance (works with or without family workspaces)",
     ),
+    no_collapse_events: bool = typer.Option(
+        False, "--no-collapse-events",
+        help="Keep every cohort site as its own row on the events pages (default: merge overlapping same-type events carried by exactly the same members)",
+    ),
     events_pass_only: bool = typer.Option(
         False, "--events-pass-only",
         help="Restrict the family events pages to PASS sites (cohort scale: non-PASS artifacts are carried by nearly every family and make the pages unusable)",
@@ -547,6 +551,7 @@ def report(
         max_denovo_per_child=max_denovo_per_child,
         family_events=family_events,
         events_pass_only=events_pass_only,
+        collapse_family_events=not no_collapse_events,
     )
     typer.echo(f"rapport -> {path}")
 

@@ -204,3 +204,36 @@ def test_low_gq_carrier_fraction():
     gq_none = np.array([[10], [10]], dtype=np.int16)
     _, frac_none = pass_carrier_stats(nalt_none, gq_none, np.array([True, True]))
     assert np.isnan(frac_none[0])
+
+
+def test_collapse_overlapping_events_per_carrier_set():
+    """One biological deletion shows up as a stack of nested cohort sites when
+    patients have different breakpoints (PMS 22q13). Merge them — but only
+    when the carrier set is identical, so an inherited event never absorbs a
+    de novo one it overlaps."""
+    from vedette.report import collapse_events
+
+    def ev(pos, end, carriers, sid, **kw):
+        return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
+                    size=end - pos, filter="PASS", rescue="", genes="SHANK3",
+                    impact="4 — exonique", inherit=kw.get("inherit", ""),
+                    sqmax=kw.get("sqmax", ""), cfrac="", refcf="", lcr="", segdup="",
+                    carriers=carriers, gt=[])
+
+    child = ["SMP-08"]
+    trio = ["SMP-08", "SMP-09", "SMP-10"]
+    out = collapse_events([
+        ev(50_676_403, 50_757_929, child, "s1", sqmax="8.0"),
+        ev(50_686_127, 50_719_326, child, "s2", sqmax="10.9"),
+        ev(50_722_582, 50_736_717, child, "s3", sqmax="17.2"),
+        ev(50_692_669, 50_692_985, trio, "s4"),       # biparental: stays apart
+        ev(51_000_000, 51_000_500, child, "s5"),      # disjoint: stays apart
+    ])
+    merged = {(e["pos"], e["end"]): e for e in out}
+    assert len(out) == 3
+    big = merged[(50_676_403, 50_757_929)]
+    assert big["n_sites"] == 3 and set(big["_ids"]) == {"s1", "s2", "s3"}
+    assert big["size"] == 50_757_929 - 50_676_403
+    assert big["sqmax"] == "17.2"                     # strongest evidence kept
+    assert merged[(50_692_669, 50_692_985)]["n_sites"] == 1   # different carriers
+    assert merged[(51_000_000, 51_000_500)]["n_sites"] == 1   # no overlap

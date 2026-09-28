@@ -273,6 +273,59 @@ class _FamilySpill:
 _EVENTS_MAX_MEMBERS = 20  # no events page for catch-all pseudo-families
 
 
+def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
+                    segdup_iv=None, lcr_iv=None) -> list[dict]:
+    """Merge overlapping same-type events carried by exactly the same members.
+
+    A cohort site is one breakpoint cluster, and in a cohort ascertained for a
+    locus (Phelan-McDermid: terminal 22q13 deletions of every size) each
+    patient's deletion spans many of them, so one biological event shows up as
+    a stack of nested rows. Grouping on the exact carrier set keeps genuinely
+    different events apart: a de novo deletion in the child stays separate
+    from an inherited one the parents also carry, even where they overlap.
+    """
+    groups: dict[tuple, list[dict]] = defaultdict(list)
+    for e in events:
+        groups[(e["contig"], e["svtype"], tuple(sorted(e["carriers"])))].append(e)
+    out: list[dict] = []
+    for (contig, svtype, _carriers), evs in groups.items():
+        evs.sort(key=lambda e: (e["pos"], e["end"]))
+        cur: dict | None = None
+        for e in evs:
+            if cur is not None and e["pos"] <= cur["end"]:
+                cur["end"] = max(cur["end"], e["end"])
+                cur["_ids"].append(e["id"])
+                for k in ("sqmax", "cfrac", "refcf"):
+                    a, b = cur.get(k) or "", e.get(k) or ""
+                    if b and (not a or float(b) > float(a)):
+                        cur[k] = b
+                for k in ("rescue", "inherit"):
+                    if e.get(k) and e[k] not in (cur.get(k) or ""):
+                        cur[k] = " · ".join(x for x in (cur.get(k), e[k]) if x)
+                continue
+            if cur is not None:
+                out.append(cur)
+            cur = dict(e, _ids=[e["id"]])
+        if cur is not None:
+            out.append(cur)
+    # re-annotate merged spans: genes, impact and masks describe the union
+    for e in out:
+        e["n_sites"] = len(e["_ids"])
+        e["size"] = e["end"] - e["pos"]
+        if e["n_sites"] > 1:
+            start0 = e["pos"] - 1
+            if genes_fn is not None:
+                e["genes"] = genes_fn(e["contig"], start0, e["end"])
+            if impact_fn is not None:
+                e["impact"] = impact_fn(e["contig"], start0, e["end"])[1]
+            if lcr_iv is not None:
+                e["lcr"] = f"{lcr_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
+            if segdup_iv is not None:
+                e["segdup"] = f"{segdup_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
+    out.sort(key=lambda e: (e["contig"], e["pos"]))
+    return out
+
+
 def _write_all_family_events(
     run_dir: Path,
     families: dict[str, list[str]],
@@ -287,6 +340,7 @@ def _write_all_family_events(
     pass_only: bool = False,
     segdup_iv=None,
     lcr_iv=None,
+    collapse: bool = True,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -373,6 +427,8 @@ def _write_all_family_events(
             })
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
+        if collapse:
+            events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
         n_pages += 1
     ev_spill.cleanup()
@@ -405,7 +461,7 @@ def _write_events_page(
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
         "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
-        "<th>LCR</th><th>segdup</th>"
+        "<th>LCR</th><th>segdup</th><th>sites</th>"
         "<th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
@@ -432,6 +488,7 @@ def _write_events_page(
             f'<td>{html.escape(str(e.get("refcf") or ""))}</td>'
             f'<td>{html.escape(str(e.get("lcr") or ""))}</td>'
             f'<td>{html.escape(str(e.get("segdup") or ""))}</td>'
+            f'<td title="{html.escape(" ".join(e.get("_ids", [])))}">{e.get("n_sites", 1)}</td>'
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
@@ -461,7 +518,9 @@ def _write_events_page(
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
         f'SQmax = meilleur SQ par échantillon au merge ; % port. = fraction de porteurs dans ce run ; '
         f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites) ; '
-        f'LCR / segdup = fraction du site chevauchant ces masques. '
+        f'LCR / segdup = fraction du site chevauchant ces masques ; sites = nombre de sites cohorte '
+        f'fusionnés dans la ligne (les points de cassure diffèrent d\'un patient à l\'autre, '
+        f'survolez pour les identifiants). '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -760,6 +819,7 @@ def generate_report(
     max_denovo_per_child: int = 20,
     family_events: bool = False,
     events_pass_only: bool = False,
+    collapse_family_events: bool = True,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -965,7 +1025,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
-            segdup_iv=segdup_iv, lcr_iv=lcr_iv,
+            segdup_iv=segdup_iv, lcr_iv=lcr_iv, collapse=collapse_family_events,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)
