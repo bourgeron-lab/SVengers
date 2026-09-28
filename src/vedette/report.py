@@ -74,24 +74,26 @@ _EVENTS_JS = """
 const rows = Array.from(document.querySelectorAll("tbody tr"));
 const chrSel = document.getElementById("chr"), typeSel = document.getElementById("type"),
       valSel = document.getElementById("val"), ownSel = document.getElementById("own"),
+      supSel = document.getElementById("sup"),
       passCb = document.getElementById("pass"),
       count = document.getElementById("count");
 function apply(){
   const c = chrSel.value, t = typeSel.value, v = valSel.value, p = passCb.checked,
-        o = ownSel.value;
+        o = ownSel.value, sp = supSel.value;
   let n = 0;
   for (const r of rows){
     const ok = (c === "all" || r.dataset.chr === c)
             && (t === "all" || r.dataset.type === t)
             && (v === "all" || (r.dataset.val || "none") === v)
             && (o === "all" || (o === "any" ? r.dataset.own !== "aucun" : r.dataset.own === o))
+            && (sp === "all" || r.dataset.support === sp)
             && (!p || r.dataset.pass === "1");
     r.hidden = !ok;
     if (ok) n++;
   }
   count.textContent = n.toLocaleString("fr-FR") + " / " + rows.length.toLocaleString("fr-FR");
 }
-chrSel.onchange = typeSel.onchange = valSel.onchange = ownSel.onchange = passCb.onchange = apply;
+chrSel.onchange = typeSel.onchange = valSel.onchange = ownSel.onchange = supSel.onchange = passCb.onchange = apply;
 
 // manual validation (IGV check): three exclusive radio buttons per row
 // (vrai/faux/incertain — a forced binary choice pollutes labels on genuinely
@@ -129,7 +131,8 @@ document.getElementById("export").onclick = () => {
   document.querySelectorAll("thead th").forEach((th, i) => { COL[th.textContent.trim()] = i; });
   const EXPORT = [["filter", "FILTER"], ["sqmax", "SQmax"], ["carrier_frac", "% port."],
                   ["ref_carrier_frac", "fréq. réf."], ["lcr", "LCR"], ["segdup", "segdup"],
-                  ["heritage", "héritage"], ["porteurs", "porteurs"], ["appel_propre", "appel propre"]];
+                  ["heritage", "héritage"], ["porteurs", "porteurs"], ["appel_propre", "appel propre"],
+                  ["support", "support"]];
   const head = ["site_id", "chr", "pos", "end", "type", "taille",
                 ...EXPORT.map(c => c[0]), "validation"];
   const lines = [head.join("\\t")];
@@ -347,6 +350,8 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                     a, b = cur.get(k) or "", e.get(k) or ""
                     if b and (not a or float(b) > float(a)):
                         cur[k] = b
+                if e.get("support") == "fort":
+                    cur["support"] = "fort"
                 if e.get("own") == "PASS" or (e.get("own") and not cur.get("own")):
                     cur["own"] = e["own"]
                 for k in ("rescue", "inherit"):
@@ -429,6 +434,16 @@ def _write_all_family_events(
         impact = impact_fn(site["contig"], site["start"], site["end"])[1]
         def _num(v, fmt):
             return "" if v is None else format(float(v), fmt)
+        # support du portage : le CN re-génotypé d'un porteur confirme-t-il le
+        # type ? Mesuré sur les 77 trios PMS, le taux de de novo apparent (proxy
+        # d'erreur de génotypage) tombe de 0,8 % à 0,3 % pour les DEL et de
+        # 1,9 % à 0,3 % pour les DUP quand le CN est cohérent — mais la relecture
+        # IGV montre que l'exiger coûte de vrais événements, d'où une colonne et
+        # non un filtre par défaut.
+        def _cn_ok(cn_val):
+            if cn_m is None or cn_val < 0:
+                return False
+            return cn_val <= 1 if site["svtype"] == "DEL" else cn_val >= 3
         def _ovl(iv):
             return "" if iv is None else f"{iv.overlap_fraction(site['contig'], site['start'], site['end']):.2f}"
         base = "\t".join([
@@ -441,12 +456,17 @@ def _write_all_family_events(
         ])
         for k in fam_ks:
             fid = fids[int(k)]
+            strong = any(
+                nalt_m[idx, i] > 0 and gq_m[idx, i] >= min_carrier_gq
+                and _cn_ok(int(cn_m[idx, i]) if cn_m is not None else -1)
+                for _, i in fam_members[fid]
+            )
             cells = "\t".join(
                 f"{nalt_m[idx, i]}:{gq_m[idx, i]}:"
                 + ("" if cn_m is None or cn_m[idx, i] < 0 else str(int(cn_m[idx, i])))
                 for _, i in fam_members[fid]
             )
-            ev_spill.add(fid, base + "\t" + cells)
+            ev_spill.add(fid, base + "\t" + ("fort" if strong else "faible") + "\t" + cells)
     ev_spill.flush()
 
     n_pages = 0
@@ -466,7 +486,7 @@ def _write_all_family_events(
                 f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
             ) if len(inh) > 1 else (_INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else "")
             gts, carriers = [], []
-            for m, cell in zip(members, r[15:]):
+            for m, cell in zip(members, r[16:]):
                 na, gq, cn = cell.split(":")
                 gt_s = _NALT_GT.get(int(na), "./.")
                 gts.append((gt_s, gq, cn))
@@ -477,7 +497,7 @@ def _write_all_family_events(
                 "contig": r[1], "pos": int(r[2]), "end": int(r[3]), "svtype": r[4],
                 "size": int(r[5]), "filter": r[6], "rescue": r[7], "genes": r[8],
                 "impact": r[9], "sqmax": r[10], "cfrac": r[11], "refcf": r[12],
-                "lcr": r[13], "segdup": r[14],
+                "lcr": r[13], "segdup": r[14], "support": r[15],
                 "inherit": inh_s, "carriers": carriers, "gt": gts,
             })
         fam_dir = run_dir / "families" / fid
@@ -519,7 +539,7 @@ def _write_events_page(
     head = (
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
         "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
-        "<th>LCR</th><th>segdup</th><th>sites</th><th data-key=\"own\">appel propre</th>"
+        "<th>LCR</th><th>segdup</th><th>sites</th><th data-key=\"own\">appel propre</th><th data-key=\"support\">support</th>"
         "<th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
@@ -538,7 +558,8 @@ def _write_events_page(
             f'<tr class="{cls}" data-chr="{html.escape(e["contig"])}" data-pos="{e["pos"]}" '
             f'data-end="{e["end"]}" data-size="{e["size"]}" data-site="{html.escape(site)}" '
             f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}" '
-            f'data-own="{html.escape(e.get("own") or "aucun")}">'
+            f'data-own="{html.escape(e.get("own") or "aucun")}" '
+            f'data-support="{html.escape(e.get("support") or "faible")}">'
             f'<td>{html.escape(e["contig"])}</td><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
             f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
             f'<td>{html.escape(e["filter"])}</td><td>{html.escape(e["rescue"])}</td>'
@@ -549,6 +570,7 @@ def _write_events_page(
             f'<td>{html.escape(str(e.get("segdup") or ""))}</td>'
             f'<td title="{html.escape(" ".join(e.get("_ids", [])))}">{e.get("n_sites", 1)}</td>'
             f'<td>{html.escape(e.get("own") or "—")}</td>'
+            f'<td>{html.escape(e.get("support") or "—")}</td>'
             f'<td class="g">{html.escape(e["genes"] or "—")}</td>'
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
@@ -571,6 +593,8 @@ def _write_events_page(
         f'<option value="any" selected>avec appel propre</option>'
         f'<option value="all">tous</option><option value="PASS">PASS seulement</option>'
         f'<option value="aucun">sans appel propre</option></select></label>'
+        f'<label>support <select id="sup"><option value="all">tous</option>'
+        f'<option value="fort">fort (CN cohérent)</option></select></label>'
         f'<label>validation <select id="val"><option value="all">toutes</option>'
         f'<option value="none">non validé</option><option value="true">vrai</option>'
         f'<option value="false">faux</option><option value="unsure">incertain</option></select></label>'
@@ -581,7 +605,10 @@ def _write_events_page(
         f'<p class="muted">GT<span class="muted">:GQ:CN</span> par membre (suffixe du '
         f'barcode ; ordre : {html.escape(", ".join(members))}). Lignes grisées = non-PASS. '
         f'Porteur = génotype alternatif avec GQ suffisant (les génotypes moins sûrs restent '
-        f'affichés mais ne comptent pas comme porteurs). '
+        f'affichés mais ne comptent pas comme porteurs). Support « fort » = le CN re-génotypé '
+        f"d'un porteur confirme le type (sur les trios PMS, taux de de novo apparent 0,3 % contre "
+        f'0,8 % pour les DEL et 1,9 % pour les DUP sans cette condition) ; ce n\'est pas un filtre '
+        f'par défaut car la relecture IGV montre qu\'il écarte aussi de vrais événements. '
         f'SQmax = meilleur SQ par échantillon au merge ; % port. = fraction de porteurs dans ce run ; '
         f'fréq. réf. = fraction de porteurs du site correspondant dans la cohorte de référence (--known-sites) ; '
         f'LCR / segdup = fraction du site chevauchant ces masques ; sites = nombre de sites cohorte '

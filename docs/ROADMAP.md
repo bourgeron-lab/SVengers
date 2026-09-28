@@ -87,7 +87,48 @@ contraint chevauché, (c) l'appartenance au panel du phénotype de la cohorte,
 lisible à côté du nombre, comme aujourd'hui. À caler sur les listes de de novo
 déjà validées.
 
-### 2ter. Vérification duphold-like au niveau du génotype (demande Alexandre, 2026-09-28)
+### 2ter. Vérification au niveau du génotype — FAIT, mais pas à la duphold (2026-09-28)
+
+Testé avant d'implémenter, sur les 77 trios PMS avec le taux de de novo
+apparent comme proxy d'erreur de génotypage. **Deux approches duphold ont été
+mesurées et écartées** :
+
+- **DHFFC (fold-change contre les flancs)**, le cœur de duphold : ne
+  discrimine rien ici, il est même inversé pour les DEL (1,4 % d'erreur quand
+  il est « cohérent » contre 0,4 % sinon). La raison : **98 % des porteurs DUP
+  sont à des sites de moins de 3 kb**, où la profondeur n'a pas de résolution
+  (bins de 1 kb) — le fold-change y est du bruit.
+- **Exiger des clips des deux côtés** du point de cassure : inversé aussi
+  (DUP 10,5 % d'erreur à deux côtés contre 5,8 % à un seul).
+
+Ce qui marche, mesuré :
+
+| critère (parmi porteurs GQ>=20) | DEL gardés / erreur | DUP gardés / erreur |
+|---|---|---|
+| aucun | 100 % / 0,8 % | 100 % / 1,9 % |
+| **CN cohérent avec le type** | 88 % / **0,3 %** | 24 % / **0,3 %** |
+| RD cohérent | 92 % / 0,6 % | 26 % / 0,6 % |
+| CN cohérent ou PE>=2 | 92 % / 0,4 % | 68 % / 1,3 % |
+
+Le **CN re-génotypé** bat le RD et ne coûte rien (déjà chargé par le rapport).
+Le canal jonction est confirmé peu spécifique : « SR seul » est la pire
+catégorie (petites DEL 5,9 % d'erreur contre 0,8 % avec PE>=2 ; petites DUP
+6,9 % contre 3,0 %).
+
+Fait : colonne **support** (« fort » = le CN d'un porteur confirme le type)
+sur les pages events, avec sélecteur. **Pas** un filtre par défaut : sur les
+42 sites relus sous IGV, l'exiger fait tomber 2 des 3 vrais (précision 23 %
+-> 20 %). Les deux mesures se contredisent sur ce point — le proxy trio dit
+que c'est un bon indicateur d'erreur de génotypage, l'échantillon IGV (3 vrais,
+donc très fragile) dit qu'il écarte du vrai. À retrancher quand il y aura plus
+de validations.
+
+Reste à faire : rendre `_junction_support` spécifique (apparier les clips à la
+jonction — le store ne garde pas le partenaire SA, donc cela demande de
+l'ajouter à l'extraction), et un DHBFC (bins de GC comparable) si un jour la
+profondeur redevient le canal limitant sur de gros événements.
+
+### 2quater. (archive) formulation initiale de la demande duphold
 
 Ce que fait duphold (brentp) : pour chaque appel, un fold-change de profondeur
 contre les flancs (DHFFC), contre la médiane du génome (DHFC) et contre des bins
