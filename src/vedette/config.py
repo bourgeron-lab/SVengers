@@ -101,6 +101,25 @@ class FilterConfig:
     lowmap_segdup_frac: float = 0.70     # segdup overlap above which SR support is required
     min_informative_bins: int = 3
     low_sq_threshold: float = 13.0       # phred; ~P(true)=0.95 once the model is trained
+    # Large deletions sit outside the model's training range: only 131 of
+    # 132555 labelled DEL examples exceed 1 Mb (0.1%), and those all have
+    # degenerate features (dhffc=0, fc_chrom=0, no CN) because they are
+    # total-dropout regions. A real multi-megabase heterozygous deletion looks
+    # nothing like them, and worse, once the HMM splits it into adjacent
+    # segments each segment's flanks fall inside the neighbouring segment, so
+    # dhffc ~ 1 and the model sees no event. On PMS that rejected half of all
+    # 1-10 Mb deletions, including the causal terminal 22q13 ones. fc_chrom
+    # (ratio to the chromosome median) stays informative there, so a call this
+    # large whose chromosome-level depth agrees with a copy loss keeps its
+    # PASS regardless of SQ. Retains 131/131 true and 0 false on every
+    # labelled call we have.
+    # 200 kb, not 1 Mb: on the labelled calls this rescues 5 rejected
+    # deletions, all 5 true; at 100 kb it starts taking false ones (13 true /
+    # 10 false), and at 1 Mb it misses the 229 kb first segment of the PMS
+    # terminal deletions.
+    large_del_rescue_size: int = 200_000
+    large_del_rescue_fc_chrom: float = 0.75
+    large_del_rescue_max_mask: float = 0.5
 
 
 @dataclass(frozen=True)

@@ -49,6 +49,43 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1nonies. Les grandes délétions tombaient sous le seuil SQ (2026-09-28)
+
+Alexandre, sur FAM-01-001 : IGV montre une délétion terminale nette
+chr22:41,9-50,8 Mb chez le proposant, Vedette n'en rapportait que des morceaux.
+
+Les appels propres couvraient pourtant toute la région — mais avec des SQ de
+3,73 et 4,31 sur les deux plus gros segments (6,43 Mb et 229 kb), donc
+`LowSQ`, donc absents du merge. Mesure sur 25 génomes PMS : **50 % des DEL de
+1 à 10 Mb ont SQ < 5**.
+
+Cause, en deux temps :
+1. Le modèle n'a presque pas appris à ces tailles : 131 exemples > 1 Mb sur
+   132 555 DEL étiquetées (0,10 %), et **zéro** exemple DUP vrai au-dessus de
+   100 kb. Pire, ces 131 ont des features dégénérées (dhffc = 0, fc_chrom = 0,
+   CN non appelé) : ce sont des zones de perte totale de couverture, pas des
+   délétions hétérozygotes.
+2. Quand le HMM fractionne une grande délétion en segments adjacents, **les
+   flancs de chaque segment tombent dans le segment voisin**, donc
+   `dhffc` ≈ 1 : la feature la plus discriminante du modèle devient aveugle.
+   Sur le cas réel, dhffc = 1,03 alors que `fc_chrom` = 0,528 dit clairement
+   « une copie ».
+
+Correctif : une DEL d'au moins `large_del_rescue_size` dont le `fc_chrom`
+confirme la perte (< 0,75) et peu masquée garde son PASS quel que soit le SQ,
+avec `INFO/SQ_OVERRIDE=LARGE_DEL_DEPTH` pour la traçabilité. Seuil calé sur
+les données étiquetées : à 200 kb le rattrapage prend 5 appels, tous vrais ;
+à 100 kb il en prend 23 dont 10 faux ; à 1 Mb il rate le premier segment de
+229 kb des délétions terminales PMS. Sur SMP-07, 2 rattrapages sur le génome
+entier et l'étendue PASS passe de fragments épars à 41 894 001-50 799 001.
+
+À faire : c'est un garde-fou, pas une correction de fond. Il faut (a) des
+exemples de grands événements réalistes à l'entraînement v6 — les délétions
+terminales de PMS en fournissent, à condition de les valider indépendamment ;
+(b) corriger la contamination des flancs de `dhffc` (exclure des flancs les
+bins couverts par un autre appel du même échantillon) ; (c) rien n'est fait
+pour les grandes DUP, faute du moindre exemple vrai à l'entraînement.
+
 ### 2bis. Score d'impact plus discriminant (demande Alexandre, 2026-09-28)
 
 Le score actuel est grossier : 0 intergénique / 1 intronique / 2 exonique,

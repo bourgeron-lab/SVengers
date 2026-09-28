@@ -27,6 +27,9 @@ _NEW_INFO = [
     ("EXCLUDE_OVL", "1", "Float", "Fraction of call overlapping the exclusion mask"),
     ("POPCOV_SD", "1", "Float", "Mean population coverage stdev over the call"),
     ("MODEL_VER", "1", "String", "Vedette filter model version"),
+    ("SQ_OVERRIDE", "1", "String",
+     "Reason the calibrated SQ was overridden (LARGE_DEL_DEPTH: deletion beyond the "
+     "model's training size range whose chromosome-level depth confirms a copy loss)"),
 ]
 
 
@@ -52,7 +55,7 @@ def run_filter(
     extractor = FeatureExtractor(store, annotator)
     model = FilterModel.load(model_dir) if model_dir else None
 
-    counts = {"total": 0, "pass": 0, "hard_filtered": 0, "low_sq": 0}
+    counts = {"total": 0, "pass": 0, "hard_filtered": 0, "low_sq": 0, "sq_override": 0}
     feat_writer = None
     feat_fh = None
     if features_out:
@@ -131,9 +134,19 @@ def run_filter(
                     sq = float(sq_all[i])
                     new_rec.samples[sample]["SQ"] = round(sq, 2)
                     new_rec.info["MODEL_VER"] = model.version
-                    if sq < config.filter.low_sq_threshold:
+                    cf = config.filter
+                    override = (
+                        svtypes[i] == "DEL"
+                        and (rec.stop - rec.start) >= cf.large_del_rescue_size
+                        and feats["fc_chrom"] < cf.large_del_rescue_fc_chrom
+                        and feats["maskfrac"] < cf.large_del_rescue_max_mask
+                    )
+                    if sq < cf.low_sq_threshold and not override:
                         all_tags.append("LowSQ")
                         counts["low_sq"] += 1
+                    elif override and sq < cf.low_sq_threshold:
+                        new_rec.info["SQ_OVERRIDE"] = "LARGE_DEL_DEPTH"
+                        counts["sq_override"] += 1
 
                 new_rec.filter.clear()
                 for tag in all_tags or ["PASS"]:
@@ -155,6 +168,6 @@ def run_filter(
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info(
         "filter: %(total)d calls, %(pass)d PASS, %(hard_filtered)d hard-filtered, "
-        "%(low_sq)d LowSQ", counts,
+        "%(low_sq)d LowSQ, %(sq_override)d large-DEL SQ overrides", counts,
     )
     return counts

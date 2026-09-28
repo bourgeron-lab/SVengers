@@ -295,3 +295,30 @@ def test_carrier_requires_sufficient_gq():
     import re
     carriers = re.search(r'<td class="c">([^<]*)</td><td><a class="igv"', page)
     assert carriers and "dad" not in carriers.group(1)
+
+
+def test_large_deletion_keeps_pass_when_chromosome_depth_agrees(tmp_path):
+    """Deletions past ~1 Mb are outside the model's training range (131 of
+    132555 labelled DEL examples, all of them total-dropout regions), and once
+    the HMM splits a terminal deletion into adjacent segments each segment's
+    flanks fall inside its neighbour, so dhffc ~ 1 and the model sees nothing.
+    fc_chrom still does, so it keeps the call."""
+    import pysam
+
+    from vedette.config import load_config
+    from vedette.filter.pipeline import run_filter
+
+    cfg = load_config(None)
+    f = cfg.filter
+    # the real case: chr22:42,559,001-48,986,001 in SMP-07, SQ 3.73, CN=1
+    big, small = 6_427_000, 120_000   # 120 kb: below the 200 kb rescue floor
+    def override(size, fc_chrom, maskfrac):
+        return (size >= f.large_del_rescue_size
+                and fc_chrom < f.large_del_rescue_fc_chrom
+                and maskfrac < f.large_del_rescue_max_mask)
+
+    assert override(big, 0.528, 0.0)          # the rejected PMS deletion
+    assert not override(small, 0.528, 0.0)    # too small: model is in range
+    assert override(229_000, 0.528, 0.0)      # the 229 kb first segment, rescued at 200 kb
+    assert not override(big, 0.98, 0.0)       # depth says no copy loss
+    assert not override(big, 0.528, 0.8)      # mostly masked: untrustworthy
