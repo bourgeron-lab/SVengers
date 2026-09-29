@@ -78,7 +78,7 @@ si un module republie une entrée qu'il ré-émet (vérifié en remettant l'anci
 version : le test tombe).
 
 Risque résiduel, non traité : les stores publiés sont des liens vers l'arbre
-`workflows/nextflow/work`. Un `nextflow clean` les détruirait, et il faudrait
+`workflows/nextflow/work` (2,6 To au 2026-09-29). Un `nextflow clean` les détruirait, et il faudrait
 rappeler depuis les CRAM (~6 jours sur 2670). Deux options le jour où ça compte :
 publier les stores en `copy` (coût disque), ou ne pas les publier du tout et
 assumer le work dir comme emplacement canonique.
