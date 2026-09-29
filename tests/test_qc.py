@@ -353,3 +353,30 @@ def test_collapse_bridges_small_gaps_but_not_distant_events():
 
     # and the cap bounds the worst case: 2% of 50 Mb would be 1 Mb
     assert min(max(GAP_ABS, int(GAP_FRAC * 50_000_000)), GAP_MAX) == GAP_MAX
+
+
+def test_merged_row_shows_majority_inheritance():
+    """A terminal deletion picks up a few sites a parent also carries;
+    concatenating every label buried the fact that the event is de novo."""
+    from vedette.report import collapse_events
+
+    def ev(pos, end, sid, inherit):
+        return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
+                    size=end - pos, filter="PASS", rescue="", genes="", impact="",
+                    inherit=inherit, sqmax="", cfrac="", refcf="", lcr="", segdup="",
+                    carriers=["SMP-07"], gt=[])
+
+    out = collapse_events([
+        ev(1_000_000, 2_000_000, "a", "de novo"),
+        ev(2_000_500, 3_000_000, "b", "de novo"),
+        ev(3_000_500, 4_000_000, "c", "paternel"),
+    ])
+    assert len(out) == 1
+    assert out[0]["inherit"] == "de novo (2/3)"
+
+    # unanimous: no fraction, just the label
+    clean = collapse_events([
+        ev(1_000_000, 2_000_000, "a", "maternel"),
+        ev(2_000_500, 3_000_000, "b", "maternel"),
+    ])
+    assert clean[0]["inherit"] == "maternel"

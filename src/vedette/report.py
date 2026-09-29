@@ -373,17 +373,26 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                     cur["support"] = "fort"
                 if e.get("own") == "PASS" or (e.get("own") and not cur.get("own")):
                     cur["own"] = e["own"]
-                for k in ("rescue", "inherit"):
-                    if e.get(k) and e[k] not in (cur.get(k) or ""):
-                        cur[k] = " · ".join(x for x in (cur.get(k), e[k]) if x)
+                cur["_inh"].append(e.get("inherit") or "")
+                if e.get("rescue"):
+                    cur["rescue"] = e["rescue"]
                 continue
             if cur is not None:
                 out.append(cur)
-            cur = dict(e, _ids=[e["id"]])
+            cur = dict(e, _ids=[e["id"]], _inh=[e.get("inherit") or ""])
         if cur is not None:
             out.append(cur)
     # re-annotate merged spans: genes, impact and masks describe the union
     for e in out:
+        # inheritance of a merged row: the label most of its sites agree on,
+        # not the concatenation of every variant seen. A terminal deletion
+        # picks up a handful of sites a parent also carries, and listing them
+        # all buried the fact that the event is de novo.
+        labels = [x for x in e.pop("_inh", []) if x]
+        if labels:
+            counts = Counter(labels)
+            top, n = counts.most_common(1)[0]
+            e["inherit"] = top if n == len(labels) else f"{top} ({n}/{len(labels)})"
         e["n_sites"] = len(e["_ids"])
         e["size"] = e["end"] - e["pos"]
         if e["n_sites"] > 1:
