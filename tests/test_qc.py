@@ -322,3 +322,34 @@ def test_large_deletion_keeps_pass_when_chromosome_depth_agrees(tmp_path):
     assert override(229_000, 0.528, 0.0)      # the 229 kb first segment, rescued at 200 kb
     assert not override(big, 0.98, 0.0)       # depth says no copy loss
     assert not override(big, 0.528, 0.8)      # mostly masked: untrustworthy
+
+
+def test_collapse_bridges_small_gaps_but_not_distant_events():
+    """A fragmented terminal deletion comes back as several intervals with
+    CN=0 islands or filtered segments between them (FAM-01's 8.9 Mb
+    22q13 deletion arrived as four pieces split by 3, 15 and 55 kb). The
+    tolerated gap scales with the larger neighbour and is capped, so small
+    events stay apart."""
+    from vedette.report import GAP_ABS, GAP_FRAC, GAP_MAX, collapse_events
+
+    def ev(pos, end, sid):
+        return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
+                    size=end - pos, filter="PASS", rescue="", genes="", impact="",
+                    inherit="", sqmax="", cfrac="", refcf="", lcr="", segdup="",
+                    carriers=["SMP-07"], gt=[])
+
+    # 55 kb gap beside a 6.43 Mb segment: 2% of it is 129 kb, so bridged
+    out = collapse_events([ev(42_138_001, 42_504_002, "b"), ev(42_559_001, 48_988_002, "c")])
+    assert len(out) == 1 and out[0]["n_sites"] == 2
+    assert (out[0]["pos"], out[0]["end"]) == (42_138_001, 48_988_002)
+
+    # same 55 kb gap between two 366 kb segments: 2% is 7 kb, so kept apart
+    apart = collapse_events([ev(42_138_001, 42_504_002, "b"), ev(42_559_001, 42_925_002, "d")])
+    assert len(apart) == 2
+
+    # the floor bridges sub-2 kb gaps whatever the size
+    tiny = collapse_events([ev(1_000_000, 1_005_000, "x"), ev(1_006_500, 1_010_000, "y")])
+    assert len(tiny) == 1
+
+    # and the cap bounds the worst case: 2% of 50 Mb would be 1 Mb
+    assert min(max(GAP_ABS, int(GAP_FRAC * 50_000_000)), GAP_MAX) == GAP_MAX
