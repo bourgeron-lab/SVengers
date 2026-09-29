@@ -49,6 +49,40 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1decies. Les stores d'évidence publiés détruits par publishDir (2026-09-29)
+
+Au relancement de dataset_paper (filter -> report, correctif grandes DEL), les
+2670 tâches VEDETTE_FILTER se sont terminées en 10 min avec exit 0 — et
+**2071 des 2670 `samples/<S>/<S>.evidence.zarr` publiés sont devenus illisibles**
+(`OSError 40: Too many levels of symbolic links`).
+
+Mécanisme : `VEDETTE_FILTER` reçoit le store en entrée et le **ré-émet en
+sortie** (pour l'enchaîner vers genotype). Nextflow stage l'entrée par un lien
+symbolique vers le chemin publié, puis `publishDir` republie *toutes* les
+sorties — dont le store — vers ce même chemin publié. Résultat : le chemin
+publié devient un lien vers la copie work, qui est elle-même un lien vers le
+chemin publié. Cycle. Un répertoire ne se hardlinke pas, donc `mode: 'link'`
+retombe silencieusement sur le lien symbolique et rien n'avertit.
+
+Aucune donnée perdue : les vrais stores vivent dans les répertoires work de
+`VEDETTE_CALL`, seul le pointeur avait sauté. Réparation : repointer chaque
+lien cassé vers le store réel (choix par nombre de contigs puis mtime), 2071/2071
+réparés, 0 irréparable. Vérifications : les 2670 stores s'ouvrent, l'attribut
+`sample` correspond au répertoire pour les 2670 (aucun mélange d'échantillons),
+et un `vedette filter` rejoué sur trois échantillons réparés redonne le VCF
+publié **au bit près** — le store repointé est bien celui qu'avait lu le filtre.
+
+Correctifs : `publishDir ... saveAs: { fn -> fn.endsWith('.evidence.zarr') ? null : fn }`
+dans `modules/vedette_filter.nf`, et `tests/test_workflow_modules.py`, qui échoue
+si un module republie une entrée qu'il ré-émet (vérifié en remettant l'ancienne
+version : le test tombe).
+
+Risque résiduel, non traité : les stores publiés sont des liens vers l'arbre
+`workflows/nextflow/work`. Un `nextflow clean` les détruirait, et il faudrait
+rappeler depuis les CRAM (~6 jours sur 2670). Deux options le jour où ça compte :
+publier les stores en `copy` (coût disque), ou ne pas les publier du tout et
+assumer le work dir comme emplacement canonique.
+
 ### 1nonies. Les grandes délétions tombaient sous le seuil SQ (2026-09-28)
 
 Alexandre, sur FAM-01-001 : IGV montre une délétion terminale nette

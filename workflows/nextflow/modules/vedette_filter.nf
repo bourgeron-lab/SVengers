@@ -1,6 +1,12 @@
 process VEDETTE_FILTER {
     tag "$sample"
-    publishDir path: { "${params.outdir}/samples/${sample}" }, mode: params.publish_mode, overwrite: true, failOnError: false
+    // The evidence store is passed through to the downstream steps, not produced
+    // here: publishing it would overwrite the published entry the task read from
+    // with a link to the work-dir copy of itself -- a symlink cycle that makes
+    // the store unreadable. Publish the filter's own outputs only.
+    publishDir path: { "${params.outdir}/samples/${sample}" }, mode: params.publish_mode,
+               overwrite: true, failOnError: false,
+               saveAs: { fn -> fn.endsWith('.evidence.zarr') ? null : fn }
 
     input:
     tuple val(sample), path(vcf), path(tbi), path(store)
