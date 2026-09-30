@@ -21,6 +21,7 @@ import pysam
 
 from .. import __version__
 from ..reference import Contig
+from ..vcfout import clamp_end
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +234,7 @@ def run_merge(
 
     n_sites = 0
     contig_order = {c.name: i for i, c in enumerate(contigs)}
+    contig_length = {c.name: c.length for c in contigs}
     out_path = str(out_vcf)
     mode = "wz" if out_path.endswith(".gz") else "w"
     with pysam.VariantFile(out_path, mode, header=header) as out:
@@ -262,9 +264,10 @@ def run_merge(
                 ):
                     continue
                 n_sites += 1
-                start, end = cl.start, cl.end
-                if end <= start:
-                    end = start + 1
+                # member calls from VCFs written before vcfout clamped END
+                # overhang the contig end by up to one depth bin
+                start = cl.start
+                end = clamp_end(start, cl.end, contig_length.get(contig))
                 rec = out.new_record(
                     contig=contig,
                     start=start,
