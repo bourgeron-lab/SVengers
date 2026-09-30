@@ -259,30 +259,108 @@ def test_own_call_status():
     assert own_call_status(idx, "chr1", 50_100, 59_900, "DEL") == ""
 
 
-def test_own_call_match_takes_the_carriers_breakpoints():
+def test_own_span_takes_the_carriers_breakpoints():
     """A cohort site carries its cluster representative's coordinates. PMS
     pools 22q13 deletions of every size, so FAM-10's own call
     (45,146,001; IGV 45,145,667) was shown at its site's 44,116,001."""
-    from vedette.report import own_call_match
+    from vedette.report import own_span
 
     idx = {("chr22", "DEL"): [
-        (45_146_001, 48_986_001, True, "kid"),
         (44_200_000, 48_900_000, True, "mum"),    # not a carrier of the row
+        (44_617_439, 44_617_645, True, "kid"),    # small polymorphism: not chained
+        (45_146_001, 48_986_001, True, "kid"),
     ]}
-    status, span = own_call_match(idx, "chr22", 44_116_001, 48_986_002, "DEL",
-                                  span_members={"kid"})
-    assert status == "PASS" and span == (45_146_001, 48_986_001)
-    # the status column still looks at the whole family, the span does not
-    status, span = own_call_match(idx, "chr22", 44_116_001, 48_986_002, "DEL",
-                                  span_members={"dad"})
-    assert status == "PASS" and span is None
-    # a filtered own call never moves the row, even overlapping better
-    idx2 = {("chr22", "DEL"): [(1_000, 9_000, True, "kid"), (1_000, 10_000, False, "kid")]}
-    assert own_call_match(idx2, "chr22", 1_000, 10_000, "DEL", {"kid"})[1] == (1_000, 9_000)
-    idx3 = {("chr22", "DEL"): [(1_000, 9_000, False, "kid")]}
-    assert own_call_match(idx3, "chr22", 1_000, 10_000, "DEL", {"kid"}) == ("filtré", None)
-    # 3-tuples from older indexes still give a status
-    assert own_call_match({("chr1", "DEL"): [(1, 100, True)]}, "chr1", 1, 100, "DEL")[0] == "PASS"
+    assert own_span(idx, "chr22", 44_116_001, 48_986_002, "DEL", {"kid"}) == (45_146_001, 48_986_001)
+    assert own_span(idx, "chr22", 44_116_001, 48_986_002, "DEL", {"dad"}) is None
+    # filtered own calls never move a row
+    idx2 = {("chr22", "DEL"): [(1_000, 9_000, False, "kid")]}
+    assert own_span(idx2, "chr22", 1_000, 10_000, "DEL", {"kid"}) is None
+    # own evidence under half of the site: the site's bounds stay
+    idx3 = {("chr22", "DEL"): [(1_000, 4_000, True, "kid")]}
+    assert own_span(idx3, "chr22", 1_000, 10_000, "DEL", {"kid"}) is None
+
+
+def test_own_span_chains_a_fragmented_own_call():
+    """FAM-09 (IGV 43,784,666): the proband's deletion comes back as
+    nine own PASS calls from 43,785,001, each overlapping the 43,570,001 site
+    by less than half — chained, they match it."""
+    from vedette.report import own_span
+
+    idx = {("chr22", "DEL"): [
+        (43_153_340, 43_153_667, True, "kid"),    # unrelated, before the site
+        (43_785_001, 44_113_001, True, "kid"),
+        (44_116_001, 44_739_001, True, "kid"),
+        (44_742_001, 48_988_001, True, "kid"),
+    ]}
+    assert own_span(idx, "chr22", 43_570_001, 46_859_002, "DEL", {"kid"}) == (43_785_001, 48_988_001)
+
+
+def test_own_span_grows_to_the_carriers_breakpoint_but_keeps_scale():
+    """FAM-11's duplication was merged into a site starting 141 kb
+    inside it: the row must reach the carrier's own breakpoint, or the event
+    splits in two. But a small site inside a large own call — here a
+    polymorphism the mother carries too — keeps its own bounds."""
+    from vedette.report import own_span
+
+    idx = {("chr22", "DUP"): [(43_835_001, 46_859_001, True, "kid")]}
+    assert own_span(idx, "chr22", 43_975_501, 46_732_502, "DUP", {"kid"}) == (43_835_001, 46_859_001)
+    assert own_span(idx, "chr22", 45_000_000, 45_000_700, "DUP", {"kid", "mum"}) is None
+
+
+def test_own_span_links_through_filtered_pieces_but_not_past_the_edge():
+    """FAM-08: the middle 138 kb of the deletion is a LowSQ own call;
+    it links the two PASS pieces but never sets an end. And a subtelomeric
+    PASS call sharing 1 bp with the site must not push the row past chr22."""
+    from vedette.report import own_span
+
+    idx = {("chr22", "DEL"): [
+        (46_069_001, 47_611_001, True, "kid"),
+        (47_612_001, 47_750_001, False, "kid"),
+        (47_753_001, 48_986_001, True, "kid"),
+    ]}
+    assert own_span(idx, "chr22", 46_069_001, 48_986_002, "DEL", {"kid"}) == (46_069_001, 48_986_001)
+    # a chain of filtered calls only: nothing to anchor the ends
+    only_filtered = {("chr22", "DEL"): [(1_000, 9_000, False, "kid")]}
+    assert own_span(only_filtered, "chr22", 1_000, 9_000, "DEL", {"kid"}) is None
+    tel = {("chr22", "DEL"): [(50_346_001, 50_800_001, True, "kid"),
+                              (50_800_001, 50_819_001, True, "kid")]}
+    assert own_span(tel, "chr22", 50_346_001, 50_800_002, "DEL", {"kid"}) == (50_346_001, 50_800_001)
+
+
+def test_own_span_ignores_own_calls_of_failed_cohort_sites():
+    """FAM-14: a 23 kb own PASS call in the subtelomere belongs to the
+    site every PMS sample carries (non-PASS at cohort level); it must not set
+    the row's end past the end of chr22."""
+    from vedette.report import _cohort_site_pass, _site_index, own_span
+
+    sites = [
+        {"contig": "chr22", "svtype": "DEL", "start": 50_346_000, "end": 50_800_002, "filter": "PASS"},
+        {"contig": "chr22", "svtype": "DEL", "start": 50_800_000, "end": 50_819_002,
+         "filter": "CohortArtifact;HighCarrierFrac"},
+    ]
+    sidx = _site_index(sites)
+    assert _cohort_site_pass(sidx, "chr22", 50_346_001, 50_796_001, "DEL") is True
+    assert _cohort_site_pass(sidx, "chr22", 50_796_001, 50_819_001, "DEL") is False
+    assert _cohort_site_pass(sidx, "chr22", 1_000, 2_000, "DEL") is None
+    idx = {("chr22", "DEL"): [
+        (50_346_001, 50_796_001, True, "kid", True),
+        (50_796_001, 50_819_001, True, "kid", False),
+    ]}
+    assert own_span(idx, "chr22", 50_346_001, 50_800_002, "DEL", {"kid"}) == (50_346_001, 50_796_001)
+
+
+def test_own_span_nested_calls_do_not_set_ends():
+    """FAM-06: small PASS calls nested in a large LowSQ duplication
+    must not become the row's breakpoints (the 5.6 Mb duplication split)."""
+    from vedette.report import own_span
+
+    idx = {("chr8", "DUP"): [
+        (140_623_001, 141_335_001, False, "kid", None),
+        (140_623_177, 140_623_293, True, "kid", True),
+        (141_091_418, 141_091_983, True, "kid", True),
+        (141_308_477, 141_308_784, True, "kid", True),
+    ]}
+    assert own_span(idx, "chr8", 140_623_001, 141_335_002, "DUP", {"kid"}) is None
 
 
 def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):

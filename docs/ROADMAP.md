@@ -62,13 +62,39 @@ Le caller par échantillon avait juste : l'appel propre du proposant commence à
    patient PMS, la cohorte réunit des 22q13 de toutes tailles — commence à
    44,116,001. Le re-génotypage lui donne 0/1 GQ 99 (79 % du site est bien
    délété chez lui), et la ligne héritait des bornes de l'autre patient : 1 Mb
-   de trop. Correctif : quand un porteur de la ligne a son propre appel derrière
-   le site (même règle RO ≥ 0,5 que la colonne « appel propre ») **et que cet
-   appel est PASS**, la ligne prend ses bornes (meilleur recouvrement) et gènes /
-   impact / masques sont recalculés. Les appels propres filtrés ne déplacent
-   rien : autoriser n'importe quel appel propre déplaçait 26,5 % des lignes PMS,
-   dont 57 656 sur la foi d'un appel que le filtre avait rejeté. La colonne « appel propre » garde sa
-   définition sur toute la famille.
+   de trop. Même défaut le même jour sur **FAM-09** (IGV 43,784,666,
+   page 43,570,001), mais là l'appel propre revient en neuf morceaux dont
+   aucun ne recouvre le site à 50 % : une règle « un appel propre » ne suffit pas.
+
+   Règle finale (`own_span`) : les appels propres des porteurs qui recouvrent
+   le site (≥ 10 % de leur longueur dans le site) sont chaînés avec la règle
+   du collapse ; la meilleure chaîne remplace les bornes du site si elle le
+   recouvre à RO ≥ 0,5. Les bornes de la chaîne viennent uniquement d'appels
+   **PASS, non emboîtés dans un appel plus long, et dont le site de cohorte
+   est PASS** ; les autres appels propres servent seulement de liaison.
+   Chaque garde répond à un cas PMS réel :
+   - appels filtrés comme bornes → 57 656 lignes déplacées sur la foi
+     d'appels rejetés (d'où « PASS seulement ») ;
+   - FAM-08 : le milieu (138 kb) de la délétion est un appel LowSQ ;
+     sans liaison par les appels filtrés, l'événement se coupait en deux ;
+   - FAM-11 : la duplication est entrée dans un site commençant 141 kb
+     à l'intérieur ; une règle « jamais au-delà du site » la coupait en deux
+     (la chaîne peut donc agrandir la ligne) ;
+   - FAM-14 : un appel PASS subtélomérique de 23 kb, dont le site est
+     porté par les 319 échantillons, poussait la fin au-delà du chr22 (d'où
+     « site de cohorte PASS ») ; un appel qui ne touche le site que sur 1 pb
+     faisait de même (d'où les 10 %) ;
+   - FAM-06 : cinq appels PASS de 0,1-0,8 kb emboîtés dans une
+     duplication LowSQ de 712 kb devenaient des bornes et coupaient une
+     duplication de 5,6 Mb (d'où « non emboîtés »).
+
+   Résultat sur les 120 familles PMS, contre le rapport du 30/09 12 h 24 :
+   FAM-09 passe à 43,785,001 (335 pb d'IGV), FAM-10 / FAM-11 / FAM-15 /
+   FAM-01 / FAM-08 / FAM-14 / FAM-06 inchangées, aucune ligne au-delà de
+   la fin d'un chromosome ; 3 % des lignes bougent (médiane 1,6 % de leur
+   taille) ; parmi les événements ≥ 1 Mb, six changent de borne, chacun vers
+   l'appel propre PASS du porteur (FAM-02, FAM-07, FAM-09, FAM-12,
+   FAM-13, FAM-05 à 1 pb).
 2. **Pont sur un petit voisin.** Un polymorphisme de 0,6 kb (NCAR 38, mère à
    GQ 11 donc non-porteuse) à 21 kb du bord a été collé par la tolérance aux
    trous (2 % de 4,9 Mb = 97 kb). Correctif : franchir un trou exige que le plus
@@ -83,7 +109,7 @@ chromosome moins le gap télomérique de 10 kb.
 Reste ouvert, au génotypeur cette fois : un porteur partiel reçoit GQ 99 sur un
 site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
-sans appel propre, que le correctif du report ne couvre pas.
+**sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
 ### 1decies. Les stores d'évidence publiés détruits par publishDir (2026-09-29)
 

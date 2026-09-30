@@ -16,6 +16,7 @@ and writes:
 from __future__ import annotations
 
 import base64
+import bisect
 import csv
 import html
 import io
@@ -309,49 +310,134 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
     return idx
 
 
-def own_call_match(idx: dict, contig: str, pos: int, end: int, svtype: str,
-                   span_members=None, min_ro: float = 0.5):
-    """(status, span) of the family's own call behind a cohort site.
-
-    status is "PASS", "filtré" or "" over every member, as in the "appel
-    propre" column. span is the (pos, end) of the best-overlapping own PASS
-    call made by one of `span_members` (the row's carriers). A filtered own
-    call does not move the row: its boundaries are those of a call the filter
-    rejected, and on PMS it would have moved 57k rows on that evidence alone.
-
-    The span matters because a cohort site's coordinates are those of the
-    cluster representative, not the carrier's. In a cohort ascertained for a
-    locus the cluster pools patients with different breakpoints:
-    FAM-10's 22q13 deletion starts at 45,146,001 in its own call
-    (45,145,667 in IGV), but merged into a site whose representative starts at
-    44,116,001 — and the family page showed the deletion 1 Mb too long.
-    """
-    status, best, best_key = "", None, None
-    for rec in idx.get((contig, svtype), ()):
-        op, oe, is_pass = rec[0], rec[1], rec[2]
-        who = rec[3] if len(rec) > 3 else None
-        if op > end:
-            break
-        ov = min(end, oe) - max(pos, op)
-        if ov <= 0:
-            continue
-        ro = ov / max(end - pos, oe - op)
-        if ro < min_ro:
-            continue
-        if is_pass:
-            status = "PASS"
-        elif not status:
-            status = "filtré"
-        if is_pass and span_members is not None and who in span_members:
-            if best_key is None or ro > best_key:
-                best, best_key = (op, oe), ro
-    return status, best
-
-
 def own_call_status(idx: dict, contig: str, pos: int, end: int, svtype: str,
                     min_ro: float = 0.5) -> str:
     """"PASS", "filtré" or "" for the family's own call behind a cohort site."""
-    return own_call_match(idx, contig, pos, end, svtype, min_ro=min_ro)[0]
+    best = ""
+    for rec in idx.get((contig, svtype), ()):
+        op, oe, is_pass = rec[0], rec[1], rec[2]
+        if op > end:
+            break
+        ov = min(end, oe) - max(pos, op)
+        if ov > 0 and ov / max(end - pos, oe - op) >= min_ro:
+            if is_pass:
+                return "PASS"
+            best = "filtré"
+    return best
+
+
+def own_span(idx: dict, contig: str, pos: int, end: int, svtype: str,
+             carriers, min_ro: float = 0.5, min_call_frac: float = 0.1):
+    """The carriers' own breakpoints for a cohort site, or None.
+
+    A cohort site carries its cluster representative's coordinates, and in a
+    cohort ascertained for a locus the cluster pools patients with different
+    breakpoints. Re-genotyping then gives a carrier GQ 99 on a site that does
+    not match its event, as long as most of the site has the right copy
+    number in it: FAM-10 (own call from 45,146,001, site from
+    44,116,001) and FAM-09 (own calls from 43,785,001, site from
+    43,570,001) were drawn up to 1 Mb too long.
+
+    The carriers' own calls overlapping the site are chained with the
+    collapse rule (`_bridges`): a large depth event comes back in pieces —
+    FAM-09's deletion in nine, none overlapping its site by half — so the
+    chain, not a single call, stands for the carrier's event. The best chain
+    replaces the site's span when it matches the site at reciprocal overlap
+    >= `min_ro`, the rule of the "appel propre" column. The span can grow as
+    well as shrink: FAM-11's duplication was merged into a site
+    starting 141 kb inside it. The reciprocal overlap is the scale guard: a
+    small site inside a large own call (a polymorphism the mother also
+    carries) keeps its own bounds.
+
+    Only PASS own calls set the chain's ends: allowing any own call moved 57k
+    PMS rows on calls the filter had rejected. Filtered own calls still link
+    PASS pieces inside a chain — the middle 138 kb of FAM-08's
+    deletion is a LowSQ call, and without it the event split in two. A call
+    joins only if at least `min_call_frac` of it lies in the site: a call
+    touching the site's edge belongs to the neighbour (a 19 kb subtelomeric
+    PASS call sharing 1 bp with its site pushed rows past the end of chr22).
+
+    An own PASS call whose own cohort site failed the cohort filters (5th
+    field False, see `_cohort_site_pass`) links but does not set ends either:
+    FAM-14's 23 kb PASS call at 50,796,001-50,819,001 belongs to the
+    subtelomeric site every PMS sample carries, and ran the row past chr22.
+    Nor does a call nested in a longer one: FAM-06's 712 kb LowSQ
+    duplication holds five PASS calls of 0.1-0.8 kb, which clipped the row to
+    a sub-kb breakpoint inside the event and split the 5.6 Mb duplication.
+    """
+    calls = []
+    for rec in idx.get((contig, svtype), ()):
+        op, oe, is_pass = rec[0], rec[1], rec[2]
+        if op > end:
+            break
+        who = rec[3] if len(rec) > 3 else None
+        ov = min(end, oe) - max(pos, op)
+        if who in carriers and ov > 0 and ov >= min_call_frac * (oe - op):
+            anchors = is_pass and (len(rec) < 5 or rec[4] is not False)
+            calls.append((op, oe, anchors))
+    # longest first at equal starts, so a nested call always follows its host
+    calls.sort(key=lambda c: (c[0], -c[1]))
+    reach = None
+    for k, (op, oe, anchors) in enumerate(calls):
+        if reach is not None and oe <= reach:
+            calls[k] = (op, oe, False)          # nested: links, never an end
+        reach = oe if reach is None else max(reach, oe)
+    # chains: [start, end, first PASS start, last PASS end]
+    chains = []
+    for op, oe, anchors in calls:
+        if chains and _bridges(chains[-1][0], chains[-1][1], op, oe):
+            c = chains[-1]
+            c[1] = max(c[1], oe)
+        else:
+            chains.append([op, oe, None, None])
+            c = chains[-1]
+        if anchors:
+            c[2] = op if c[2] is None else min(c[2], op)
+            c[3] = oe if c[3] is None else max(c[3], oe)
+    spans = [(c[2], c[3]) for c in chains if c[2] is not None]
+    if not spans:
+        return None
+
+    def ro(c):
+        return (min(end, c[1]) - max(pos, c[0])) / max(end - pos, c[1] - c[0])
+
+    best = max(spans, key=ro)
+    return best if ro(best) >= min_ro else None
+
+
+def _site_index(sites: list[dict]):
+    """{(contig, svtype): (sorted [(pos, end, is_pass)], starts)} of cohort sites."""
+    by: dict[tuple[str, str], list[tuple[int, int, bool]]] = defaultdict(list)
+    for st in sites:
+        by[(st["contig"], st["svtype"])].append((st["start"] + 1, st["end"], st["filter"] == "PASS"))
+    out = {}
+    for k, v in by.items():
+        v.sort()
+        out[k] = (v, [x[0] for x in v])
+    return out
+
+
+def _cohort_site_pass(site_idx: dict, contig: str, op: int, oe: int, svtype: str,
+                      min_ro: float = 0.5):
+    """FILTER==PASS of the cohort site an own call belongs to (best reciprocal
+    overlap >= min_ro), or None when no site matches it."""
+    entry = site_idx.get((contig, svtype))
+    if entry is None:
+        return None
+    lst, starts = entry
+    length = max(oe - op, 1)
+    # RO >= 0.5 bounds a matching site to at most twice the call's length
+    i = bisect.bisect_left(starts, op - length)
+    j = bisect.bisect_right(starts, oe)
+    best, best_ro = None, 0.0
+    for sp, se, ok in lst[i:j]:
+        ov = min(se, oe) - max(sp, op)
+        if ov <= 0:
+            continue
+        r = ov / max(se - sp, length)
+        if r >= min_ro and r > best_ro:
+            best, best_ro = ok, r
+    return best
 
 
 def _reannotate(e: dict, genes_fn=None, impact_fn=None, segdup_iv=None, lcr_iv=None) -> None:
@@ -375,6 +461,21 @@ def _reannotate(e: dict, genes_fn=None, impact_fn=None, segdup_iv=None, lcr_iv=N
 GAP_ABS = 2_000
 GAP_FRAC = 0.02
 GAP_MAX = 250_000
+
+
+def _bridges(a_pos: int, a_end: int, b_pos: int, b_end: int) -> bool:
+    """Whether b (starting at or after a) continues event a.
+
+    Overlap always does. A gap is bridged when it is within the tolerance
+    (GAP_*) AND the smaller neighbour is at least as long as the gap: a 0.6 kb
+    polymorphism 21 kb off a 4.9 Mb deletion is its own event (FAM-10),
+    whereas fragments of one event are large.
+    """
+    gap = b_pos - a_end
+    if gap <= 0:
+        return True
+    tol = min(max(GAP_ABS, int(GAP_FRAC * max(a_end - a_pos, b_end - b_pos))), GAP_MAX)
+    return gap <= tol and min(a_end - a_pos, b_end - b_pos) >= gap
 
 
 def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
@@ -401,19 +502,7 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
         evs.sort(key=lambda e: (e["pos"], e["end"]))
         cur: dict | None = None
         for e in evs:
-            gap_tol = min(
-                max(GAP_ABS, int(GAP_FRAC * max(
-                    cur["end"] - cur["pos"], e["end"] - e["pos"]))), GAP_MAX,
-            ) if cur is not None else 0
-            gap = e["pos"] - cur["end"] if cur is not None else 0
-            # bridging a gap takes a neighbour at least as long as the gap: a
-            # 0.6 kb polymorphism 21 kb off a 4.9 Mb deletion is its own event
-            # (FAM-10), whereas fragments of one event are large
-            bridge = gap <= 0 or (
-                gap <= gap_tol
-                and min(cur["end"] - cur["pos"], e["end"] - e["pos"]) >= gap
-            )
-            if cur is not None and bridge:
+            if cur is not None and _bridges(cur["pos"], cur["end"], e["pos"], e["end"]):
                 cur["end"] = max(cur["end"], e["end"])
                 cur["_ids"].append(e["id"])
                 for k in ("sqmax", "cfrac", "refcf"):
@@ -541,6 +630,7 @@ def _write_all_family_events(
     ev_spill.flush()
 
     n_pages = 0
+    site_idx = _site_index(sites)
     for fid in fids:
         rows = ev_spill.read(fid)
         if not rows:
@@ -574,11 +664,16 @@ def _write_all_family_events(
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
         own_idx = own_call_index(run_dir, members)
+        own_idx = {
+            k: [(op, oe, ok, who,
+                 _cohort_site_pass(site_idx, k[0], op, oe, k[1]) if ok else None)
+                for op, oe, ok, who in v]
+            for k, v in own_idx.items()
+        }
         for e in events:
-            e["own"], span = own_call_match(
-                own_idx, e["contig"], e["pos"], e["end"], e["svtype"],
-                span_members=set(e["carriers"]),
-            )
+            e["own"] = own_call_status(own_idx, e["contig"], e["pos"], e["end"], e["svtype"])
+            span = own_span(own_idx, e["contig"], e["pos"], e["end"], e["svtype"],
+                            set(e["carriers"]))
             if span is not None and span != (e["pos"], e["end"]):
                 e["pos"], e["end"] = span
                 e["size"] = e["end"] - e["pos"]
