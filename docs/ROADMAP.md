@@ -111,6 +111,22 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
 **sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
+### 1duodecies. Deux points relevés au rapport dataset_paper du 2026-09-30
+
+- **Fins d'appels au-delà du chromosome (caller, préexistant).** 24 sites de
+  `cohort/sites.vcf.gz` finissent jusqu'à 1 kb après la fin de leur contig
+  (chrX 156,041,002 pour 156,040,895 ; chr12 133,276,002 pour 133,275,309) :
+  le dernier bin de 1 kb d'un segment de profondeur n'est pas borné à la
+  longueur du contig. 1362 lignes des pages familles en héritent (identique
+  avant et après `ea8a8e3`). À corriger à l'écriture du VCF (vcfout : borner
+  `stop` à la longueur du contig), puis re-merge ; le report peut borner en
+  attendant.
+- **Temps du report.** `own_span` + `_cohort_site_pass` font passer les pages
+  familles de dataset_paper de 1 h 10 à 2 h 15 (2670 échantillons, 1206
+  familles). Piste : résoudre le statut de site de chaque appel propre une
+  seule fois par échantillon (et non par famille), ou joindre appels propres
+  et sites par un balayage trié par contig plutôt que par bisect par appel.
+
 ### 1decies. Les stores d'évidence publiés détruits par publishDir (2026-09-29)
 
 Au relancement de dataset_paper (filter -> report, correctif grandes DEL), les
