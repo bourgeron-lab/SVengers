@@ -78,11 +78,11 @@ def test_band_definition_sane():
 
 
 def test_impact_labels_parse_as_scores(tmp_path):
-    # every impact label must start with its integer score (the de novo
-    # tables sort by that prefix; a bare label crashed the cohort report)
+    # every impact label must start with its score (the de novo tables sort
+    # by that prefix; a bare label crashed the cohort report)
     import pysam
 
-    from vedette.report import _GeneIndex
+    from vedette.report import _GeneIndex, _impact_points
 
     gff = tmp_path / "genes.gff"
     lines = [
@@ -93,8 +93,63 @@ def test_impact_labels_parse_as_scores(tmp_path):
     pysam.tabix_index(str(gff), preset="gff", force=True)  # bgzips to .gff.gz
     idx = _GeneIndex(str(gff) + ".gz")
     for span in ((10_500, 10_600), (15_000, 16_000), (50_000, 60_000)):
-        score, label = idx.impact("chr1", *span)
-        assert int(label.split(" ")[0]) == score
+        for svtype in ("DEL", "DUP"):
+            score, label = idx.impact("chr1", *span, svtype)
+            assert _impact_points(label) == score
+
+
+def _genetrek_fixture(tmp_path):
+    """A GFF with five coding genes and a GeneTrek table describing them."""
+    import pysam
+
+    genes = [  # name, start, end
+        ("SHANK3", 100_000, 160_000), ("RECG", 200_000, 220_000),
+        ("CANDG", 300_000, 320_000), ("CONSTR", 400_000, 420_000),
+        ("PLAIN", 500_000, 520_000),
+    ]
+    lines = []
+    for i, (name, a, b) in enumerate(genes):
+        attr = f'gene_id="ENSG{i}";gene_name="{name}";gene_biotype="protein_coding";'
+        lines.append(f"chr22\thavana\tgene\t{a}\t{b}\t.\t+\t.\t{attr}")
+        lines.append(f"chr22\thavana\texon\t{a}\t{a + 1000}\t.\t+\t.\t{attr}")
+        lines.append(f"chr22\thavana\texon\t{b - 1000}\t{b}\t.\t+\t.\t{attr}")
+    gff = tmp_path / "genes.gff"
+    gff.write_text("\n".join(lines) + "\n")
+    pysam.tabix_index(str(gff), preset="gff", force=True)
+    cols = ["ensg", "hgnc_symbol", "hc_ndd_v7", "sysndd_definitive_v0_11_2",
+            "candidate_ndd_v5", "inheritance", "shet_mean", "loeuf", "is_shet_constrained"]
+    rows = [
+        ["ENSG0", "SHANK3", "true", "true", "false", "Autosomal Dominant", "0.78", "0.37", "true"],
+        ["ENSG1", "RECG", "true", "false", "false", "Autosomal Recessive", "0.01", "1.1", "false"],
+        ["ENSG2", "CANDG", "false", "false", "true", "", "0.2", "0.5", "true"],
+        ["ENSG3", "CONSTR", "false", "false", "false", "", "0.3", "0.2", "true"],
+        ["ENSG4", "PLAIN", "false", "false", "false", "", "0.01", "1.5", "false"],
+    ]
+    tsv = tmp_path / "genetrek.tsv"
+    tsv.write_text("\t".join(cols) + "\n" + "".join("\t".join(r) + "\n" for r in rows))
+    return str(gff) + ".gz", str(tsv)
+
+
+def test_impact_score_follows_the_clingen_grid(tmp_path):
+    """The old 0-4 score put half the coding genome on one level; the new one
+    separates DEL from DUP and reads dosage and inheritance from GeneTrek."""
+    from vedette.report import _GeneIndex
+
+    gff, tsv = _genetrek_fixture(tmp_path)
+    idx = _GeneIndex(gff, tsv)
+    pts = lambda a, b, t="DEL": idx.impact("chr22", a, b, t)[0]
+    assert pts(90_000, 170_000) == 1.00            # SHANK3 fully deleted
+    assert pts(90_000, 120_000) == 0.90            # its first exon
+    assert pts(120_000, 130_000) == 0.0            # intronic only
+    assert pts(190_000, 230_000) == 0.15           # recessive NDD gene
+    assert pts(290_000, 330_000) == 0.45           # candidate NDD, constrained
+    assert pts(390_000, 430_000) == 0.15           # constrained, no NDD evidence
+    assert pts(490_000, 530_000) == 0.0            # plain gene
+    assert pts(600_000, 700_000) == -0.60          # no coding gene
+    assert pts(100_500, 159_500, "DUP") == 0.45    # intragenic DUP of SHANK3
+    assert pts(90_000, 170_000, "DUP") == 0.15     # whole-gene DUP: TS unknown
+    label = idx.impact("chr22", 90_000, 170_000)[1]
+    assert label.startswith("+1.00 — élevé") and "SHANK3" in label and "AD" in label
 
 
 def test_denovo_outlier_guard():

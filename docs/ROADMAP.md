@@ -198,7 +198,39 @@ terminales de PMS en fournissent, à condition de les valider indépendamment ;
 bins couverts par un autre appel du même échantillon) ; (c) rien n'est fait
 pour les grandes DUP, faute du moindre exemple vrai à l'entraînement.
 
-### 2bis. Score d'impact plus discriminant (demande Alexandre, 2026-09-28)
+### 2bis. Score d'impact plus discriminant (demande Alexandre, 2026-09-28) — v1 FAIT (2026-09-30)
+
+**v1 en place** (`_GeneIndex.impact`, `_gene_points`, `_GeneTrek`) : points de
+contenu génique d'après la grille ACMG/ClinGen des CNV (Riggs et al. 2020,
+sections 1-3), séparés DEL / DUP, GeneTrek tenant lieu de carte de dosage
+ClinGen. Gène « type haploinsuffisant » = NDD établi (`hc_ndd_v7` ou
+`sysndd_definitive`) à transmission dominante (l'une des trois colonnes
+`inheritance*`). DEL : complète 1,00 / exonique 0,90 ; NDD établi mode inconnu
+0,45 ; récessif seul 0,15 ; NDD candidat (candidate_ndd, SFARI 1, autisme,
+PanelApp ID/épilepsie/autisme) 0,30, 0,45 si contraint ; contraint seul
+(`is_shet_constrained`, s_het ≥ 0,1 ou LOEUF < 0,35) 0,15 ; section 3 :
+≥ 25 / ≥ 35 gènes codants +0,45 / +0,90. DUP : DUP intragénique d'un gène NDD
+dominant 0,45 (2I, perte de fonction possible), DUP complète 0,15 au plus
+(triplosensibilité absente de GeneTrek) ; ≥ 35 / ≥ 50 gènes +0,45 / +0,90.
+Aucun gène codant −0,60 (1B). Libellé : points, niveau, règle, gène moteur
+avec ses preuves (NDD établi/candidat, AD/AR, s_het), autres gènes NDD, nombre
+de gènes codants. Tri numérique dans les pages familles (`data-impact`).
+
+Mesuré sur les 576 429 lignes PASS des pages familles PMS : l'ancien score
+avait 5 valeurs et **3 664 lignes au niveau maximal** ; le nouveau en a 10,
+et **49 lignes à +1,90 — exactement les délétions 22q13 terminales emportant
+SHANK3 avec ≥ 35 gènes codants**. Suivent +1,45 / +1,00 (délétions SHANK3 plus
+courtes), +1,05 (duplications 8q24.3 de 75-103 gènes des translocations
+déséquilibrées, FAM-09 et FAM-06), puis 499 atteintes exoniques de gènes NDD
+dominants (+0,90, beaucoup sans appel propre).
+
+Reste pour une v2 : triplosensibilité (ClinGen dosage map, à ajouter au
+fichier), 5'/3' du transcrit MANE pour les DEL partielles (2C vs 2D-2E), et
+sections 4-5 (de novo, ségrégation, phénotype de la cohorte) — à caler sur les
+de novo déjà validés par IGV.
+
+**Formulation initiale de la demande :**
+
 
 Le score actuel est grossier : 0 intergénique / 1 intronique / 2 exonique,
 +1 si `candidate_ndd_v5` (7316 gènes), +2 si `hc_ndd_v7` (2200) — soit 4

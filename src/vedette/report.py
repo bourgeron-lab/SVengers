@@ -200,7 +200,7 @@ const ths = Array.from(document.querySelectorAll("th"));
 const NUM = /^-?[0-9]+([.][0-9]+)?$/;
 function cellKey(r, i){
   const k = ths[i].dataset.key;
-  if (k) return r.dataset[k] || "";
+  if (k) { const v = r.dataset[k] || ""; return NUM.test(v) ? parseFloat(v) : v; }
   const t = r.children[i].textContent.trim().replace(/[\\s,\\u202f]/g, "");
   return NUM.test(t) ? parseFloat(t) : r.children[i].textContent.trim().toLowerCase();
 }
@@ -447,13 +447,19 @@ def _cohort_site_pass(site_idx: dict, contig: str, op: int, oe: int, svtype: str
     return best
 
 
+def _impact_points(label: str) -> float:
+    """Leading number of an impact label ("+1.90 — élevé · ..."), 0 if none."""
+    m = re.match(r"\s*([+-]?\d+(?:\.\d+)?)", label or "")
+    return float(m.group(1)) if m else 0.0
+
+
 def _reannotate(e: dict, genes_fn=None, impact_fn=None, segdup_iv=None, lcr_iv=None) -> None:
     """Genes, impact and masks of an event whose span changed."""
     start0 = e["pos"] - 1
     if genes_fn is not None:
         e["genes"] = genes_fn(e["contig"], start0, e["end"])
     if impact_fn is not None:
-        e["impact"] = impact_fn(e["contig"], start0, e["end"])[1]
+        e["impact"] = impact_fn(e["contig"], start0, e["end"], e["svtype"])[1]
     if lcr_iv is not None:
         e["lcr"] = f"{lcr_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
     if segdup_iv is not None:
@@ -598,7 +604,7 @@ def _write_all_family_events(
         if not len(fam_ks):
             continue
         genes = genes_fn(site["contig"], site["start"], site["end"])
-        impact = impact_fn(site["contig"], site["start"], site["end"])[1]
+        impact = impact_fn(site["contig"], site["start"], site["end"], site["svtype"])[1]
         def _num(v, fmt):
             return "" if v is None else format(float(v), fmt)
         # support du portage : le CN re-génotypé d'un porteur confirme-t-il le
@@ -720,7 +726,7 @@ def _write_events_page(
         "<tr><th>chr</th><th>pos</th><th>end</th><th>type</th><th>taille</th><th>FILTER</th>"
         "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
         "<th>LCR</th><th>segdup</th><th>sites</th><th data-key=\"own\">appel propre</th><th data-key=\"support\">support</th>"
-        "<th>gènes</th><th>impact</th><th>héritage</th><th>porteurs</th>"
+        "<th>gènes</th><th data-key=\"impact\">impact</th><th>héritage</th><th>porteurs</th>"
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
     )
@@ -739,6 +745,7 @@ def _write_events_page(
             f'data-end="{e["end"]}" data-size="{e["size"]}" data-site="{html.escape(site)}" '
             f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}" '
             f'data-own="{html.escape(e.get("own") or "aucun")}" '
+            f'data-impact="{_impact_points(e.get("impact") or "")}" '
             f'data-support="{html.escape(e.get("support") or "faible")}">'
             f'<td>{html.escape(e["contig"])}</td><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
             f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
@@ -762,7 +769,9 @@ def _write_events_page(
             f'<label><input type="checkbox" class="v-unsure"> incertain</label></td>{gt_cells}</tr>'
         )
     out_file.write_text(
-        f"<!doctype html><title>{html.escape(title)} — événements</title>"
+        # without the charset a page opened from disk is decoded as
+        # windows-1252 by Chrome ("filtrÃ©", "â€”" everywhere)
+        f'<!doctype html><meta charset="utf-8"><title>{html.escape(title)} — événements</title>'
         f"<style>{_EVENTS_CSS}</style><h1>{html.escape(title)} — "
         f"{n_del} DEL + {n_dup} DUP</h1>"
         f'<div class="bar">'
@@ -837,23 +846,21 @@ class _GeneIndex:
     def __init__(self, gff_path: str | Path, ndd_tsv: str | Path | None = None):
         self.tbx = pysam.TabixFile(str(gff_path))
         self._contigs = set(self.tbx.contigs)
-        # GeneTrek NDD tiers, keyed by ENSG and by symbol
-        self.ndd: dict[str, int] = {}   # 2 = high-confidence, 1 = candidate
+        # GeneTrek gene annotations, keyed by ENSG and by symbol
+        self.gt: dict[str, _GeneTrek] = {}
         if ndd_tsv:
             with open(ndd_tsv) as fh:
                 for row in csv.DictReader(fh, delimiter="\t"):
-                    tier = 0
-                    if row.get("hc_ndd_v7", "").strip().lower() == "true":
-                        tier = 2
-                    elif row.get("candidate_ndd_v5", "").strip().lower() == "true":
-                        tier = 1
-                    if tier:
-                        for key in (row.get("ensg", ""), row.get("hgnc_symbol", "")):
-                            if key:
-                                self.ndd[key] = max(self.ndd.get(key, 0), tier)
+                    g = _GeneTrek.from_row(row)
+                    if g is None:
+                        continue
+                    for key in (row.get("ensg", ""), row.get("hgnc_symbol", "")):
+                        if key:
+                            self.gt[key] = g
 
     def _hits(self, contig: str, start: int, end: int):
-        """[(name, ensg, coding, exon_overlap)] of genes overlapping the site."""
+        """[(name, ensg, coding, exon_overlap, gene_start, gene_end)] of genes
+        overlapping the site (gene bounds 1-based inclusive, 0 if unknown)."""
         if contig not in self._contigs:
             contig = contig.removeprefix("chr")
             if contig not in self._contigs:
@@ -874,12 +881,14 @@ class _GeneIndex:
             g = genes.setdefault(
                 gid.group(1),
                 [name.group(1) if name else gid.group(1), gid.group(1),
-                 "protein_coding" in f[8], False],
+                 "protein_coding" in f[8], False, 0, 0],
             )
             if f[2] == "exon":
                 g[3] = True
-            elif "protein_coding" in f[8]:
-                g[2] = True
+            else:
+                g[4], g[5] = int(f[3]), int(f[4])
+                if "protein_coding" in f[8]:
+                    g[2] = True
         return list(genes.values())
 
     def genes(self, contig: str, start: int, end: int, max_names: int = 6) -> str:
@@ -891,26 +900,140 @@ class _GeneIndex:
             out += f" (+{len(names) - max_names})"
         return out
 
-    def impact(self, contig: str, start: int, end: int) -> tuple[int, str]:
-        """(score, label): 0 intergénique, 1 intronique, 2 exonique,
-        +1 gène NDD candidat / +2 NDD haute confiance (GeneTrek)."""
-        hits = [h for h in self._hits(contig, start, end) if h[2]]  # coding only
+    def impact(self, contig: str, start: int, end: int,
+               svtype: str = "DEL") -> tuple[float, str]:
+        """(points, label): gene-content score of a CNV, after the ACMG/ClinGen
+        CNV scoring rules (Riggs et al. 2020, sections 1-3), with GeneTrek
+        standing in for the ClinGen dosage map. Not an ACMG classification —
+        inheritance and phenotype (sections 4-5) are left to the reader.
+
+        The previous score (0 intergenic / 1 intronic / 2 exonic, +1/+2 for an
+        NDD gene) had 5 values and ignored dosage, inheritance mode and the
+        type of event: half the coding genome landed on the same level.
+        """
+        hits = [h for h in self._hits(contig, start, end) if h[2]]  # coding
         if not hits:
-            return 0, "0 — intergénique"
-        exonic = any(h[3] for h in hits)
-        score = 2 if exonic else 1
-        label = "exonique" if exonic else "intronique"
-        ndd_tier, ndd_genes = 0, []
-        for name, ensg, _coding, _exon in hits:
-            tier = max(self.ndd.get(ensg, 0), self.ndd.get(name, 0))
-            if tier:
-                ndd_genes.append(name)
-                ndd_tier = max(ndd_tier, tier)
-        if ndd_tier:
-            score += ndd_tier
-            label += " · NDD-" + ("HC" if ndd_tier == 2 else "cand")
-            label += f" ({', '.join(sorted(set(ndd_genes))[:3])})"
-        return score, f"{score} — {label}"
+            return -0.60, "-0.60 — aucun gène codant"
+        dup = svtype == "DUP"
+        scored = []
+        for name, ensg, _coding, exonic, gs, ge in hits:
+            g = self.gt.get(ensg) or self.gt.get(name)
+            whole = gs > 0 and start < gs and end >= ge
+            inside = gs > 0 and start >= gs and end <= ge
+            pts, rule = _gene_points(g, dup, whole, exonic, inside)
+            scored.append((pts, name, rule, g))
+        scored.sort(key=lambda t: -t[0])
+        best_pts, best_name, best_rule, best_g = scored[0]
+        n_coding = sum(1 for h in hits if h[3] or (h[4] > 0 and start < h[4] and end >= h[5]))
+        # section 3: number of protein-coding genes (losses 25/35, gains 35/50)
+        lo, hi = (35, 50) if dup else (25, 35)
+        n_pts = 0.90 if n_coding >= hi else 0.45 if n_coding >= lo else 0.0
+        total = round(best_pts + n_pts, 2)
+        band = ("élevé" if total >= 0.90 else "modéré" if total >= 0.45
+                else "faible" if total >= 0 else "aucun gène codant")
+        parts = [f"{total:+.2f} — {band}"]
+        if best_pts > 0:
+            parts.append(f"{best_rule} {best_name} ({best_g.describe()})")
+        else:
+            exonic_any = any(h[3] for h in hits)
+            parts.append("exonique" if exonic_any else "intronique")
+        others = sum(1 for p, *_ in scored[1:] if p >= 0.45)
+        if others:
+            parts.append(f"+{others} gène{'s' if others > 1 else ''} NDD")
+        if n_coding > 1:
+            parts.append(f"{n_coding} gènes codants")
+        return total, " · ".join(parts)
+
+
+class _GeneTrek:
+    """The GeneTrek columns the impact score reads, for one gene."""
+
+    __slots__ = ("established", "candidate", "dominant", "recessive_only",
+                 "constrained", "shet", "loeuf")
+
+    _CANDIDATE_COLS = (
+        "candidate_ndd_v5", "sfari_1_20260322", "autism_combined_v7",
+        "panelapp_eng_id_20260331", "panelapp_aus_id_20260331",
+        "panelapp_eng_epilepsy_20260331", "panelapp_aus_epilepsy_20260331",
+        "panelapp_aus_autism_20260331",
+    )
+    _MODE_COLS = ("inheritance", "inheritance_panelapp_20260617",
+                  "inheritance_sysndd_definitive_v0_11_2")
+
+    @classmethod
+    def from_row(cls, row: dict):
+        def flag(c):
+            return row.get(c, "").strip().lower() == "true"
+
+        def num(c):
+            try:
+                return float(row.get(c, ""))
+            except ValueError:
+                return None
+
+        g = cls()
+        g.established = flag("hc_ndd_v7") or flag("sysndd_definitive_v0_11_2")
+        g.candidate = any(flag(c) for c in cls._CANDIDATE_COLS)
+        modes = " ".join(row.get(c, "") for c in cls._MODE_COLS).lower()
+        g.dominant = "dominant" in modes
+        g.recessive_only = "recessive" in modes and not g.dominant
+        g.shet, g.loeuf = num("shet_mean"), num("loeuf")
+        # haploinsufficiency predictors (ClinGen 2H): s_het or LOEUF
+        g.constrained = (flag("is_shet_constrained")
+                         or (g.shet is not None and g.shet >= 0.1)
+                         or (g.loeuf is not None and g.loeuf < 0.35))
+        if not (g.established or g.candidate or g.constrained):
+            return None
+        return g
+
+    def describe(self) -> str:
+        bits = ["NDD établi" if self.established else "NDD candidat" if self.candidate
+                else "contraint"]
+        if self.dominant:
+            bits.append("AD")
+        elif self.recessive_only:
+            bits.append("AR")
+        if self.shet is not None:
+            bits.append(f"s_het {self.shet:.2f}")
+        elif self.loeuf is not None:
+            bits.append(f"LOEUF {self.loeuf:.2f}")
+        return ", ".join(bits)
+
+
+def _gene_points(g, dup: bool, whole: bool, exonic: bool, inside: bool) -> tuple[float, str]:
+    """(points, rule) of one coding gene hit by a CNV; see _GeneIndex.impact.
+
+    Losses (section 2): an established NDD gene with dominant inheritance is
+    the stand-in for a ClinGen haploinsufficient gene — complete deletion
+    1.00 (2A), exonic 0.90 (2C/2D, 5'/3' not distinguished). Unknown mode
+    0.45, recessive only 0.15 (a heterozygous loss is a carrier state).
+    Candidate NDD genes 0.30, 0.45 when also constrained; a constrained gene
+    with no NDD evidence 0.15 (2H). Intronic: 0.
+
+    Gains: triplosensitivity is not in GeneTrek, so a complete duplication
+    scores 0.15 at most (dominant NDD gene, "TS non évaluée"). A duplication
+    with both breakpoints inside a gene can disrupt it (2I) and is scored as
+    a partial loss: 0.45 for a dominant NDD gene, 0.15 otherwise.
+    """
+    if g is None or not (whole or exonic):
+        return 0.0, ""
+    if not dup:
+        rule = "DEL complète" if whole else "DEL exonique"
+        if g.established and g.dominant:
+            return (1.00 if whole else 0.90), rule
+        if g.established:
+            return (0.15 if g.recessive_only else 0.45), rule
+        if g.candidate:
+            return (0.45 if g.constrained else 0.30), rule
+        return 0.15, rule
+    if inside and exonic and not whole:
+        rule = "DUP intragénique"
+        if g.established and g.dominant:
+            return 0.45, rule
+        return 0.15, rule
+    if whole and g.established and g.dominant:
+        return 0.15, "DUP complète (TS non évaluée)"
+    return 0.0, ""
 
 
 def denovo_outliers(
@@ -1119,8 +1242,8 @@ def generate_report(
     def _genes(contig: str, start: int, end: int) -> str:
         return gene_idx.genes(contig, start, end) if gene_idx else ""
 
-    def _impact(contig: str, start: int, end: int) -> tuple[int, str]:
-        return gene_idx.impact(contig, start, end) if gene_idx else (0, "")
+    def _impact(contig: str, start: int, end: int, svtype: str = "DEL") -> tuple[float, str]:
+        return gene_idx.impact(contig, start, end, svtype) if gene_idx else (0.0, "")
 
     samples, sites, nalt_m, gq_m, cn_m = _read_cohort_vcf(vcf_path, with_cn=family_events)
     passing = [s for s in sites if s["filter"] == "PASS"]
@@ -1279,11 +1402,11 @@ def generate_report(
                 [r["site_id"], f'{r["contig"]}:{int(r["start"]) + 1}-{r["end"]}',
                  r["svtype"], int(r["end"]) - int(r["start"]),
                  _genes(r["contig"], int(r["start"]), int(r["end"])),
-                 _impact(r["contig"], int(r["start"]), int(r["end"]))[1],
+                 _impact(r["contig"], int(r["start"]), int(r["end"]), r["svtype"])[1],
                  r["child"], r["child_gq"], r["dnq"]]
                 for r in denovo
             ]
-            dn_rows.sort(key=lambda row: -int(str(row[5]).split(" ")[0] or 0))
+            dn_rows.sort(key=lambda row: -_impact_points(row[5]))
             family_sections.append(f"""
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
 {len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
@@ -1350,7 +1473,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         for s in rare:
             if s["svtype"] != svtype:
                 continue
-            score, label = _impact(s["contig"], s["start"], s["end"])
+            score, label = _impact(s["contig"], s["start"], s["end"], s["svtype"])
             rows.append((score, [
                 s["id"], f'{s["contig"]}:{s["start"] + 1}-{s["end"]}', s["size"],
                 _genes(s["contig"], s["start"], s["end"]), label,
@@ -1399,8 +1522,17 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 {"".join(family_sections) if family_sections else "<p>Pedigree non fourni.</p>"}
 
 <h2>Sites rares (≤ 2 porteurs)</h2>
-<p>Impact : 0 intergénique, 1 intronique, 2 exonique ; +1 gène NDD candidat,
-+2 gène NDD haute confiance (GeneTrek). Tri par impact puis taille.</p>
+<p>Impact : points de contenu génique d'après la grille ACMG/ClinGen des CNV
+(Riggs et al. 2020, sections 1-3), GeneTrek tenant lieu de carte de dosage
+ClinGen — ce n'est pas une classification ACMG (hérédité et phénotype non
+comptés). DEL : gène NDD établi à transmission dominante délété en entier
++1,00, atteinte exonique +0,90 ; mode inconnu +0,45 ; récessif seul +0,15 ;
+gène NDD candidat +0,30 (+0,45 si contraint) ; gène contraint seul
+(s_het ≥ 0,1 ou LOEUF &lt; 0,35) +0,15 ; ≥ 25 / ≥ 35 gènes codants +0,45 / +0,90.
+DUP : triplosensibilité non disponible — duplication intragénique d'un gène
+NDD dominant +0,45 (perte de fonction possible), duplication complète +0,15 ;
+≥ 35 / ≥ 50 gènes codants +0,45 / +0,90. Aucun gène codant −0,60. Niveaux :
+élevé ≥ 0,90, modéré ≥ 0,45. Tri par impact puis taille.</p>
 <h3>DEL ({sum(1 for s in rare if s["svtype"] == "DEL")})</h3>
 {_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DEL"), limit=40)}
 <h3>DUP ({sum(1 for s in rare if s["svtype"] == "DUP")})</h3>
