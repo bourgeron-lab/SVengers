@@ -71,6 +71,19 @@ def make_header(contigs: list[Contig], sample: str, command: str = "") -> pysam.
     return header
 
 
+def clamp_end(start: int, end: int, length: int | None) -> int:
+    """Half-open end bounded so the written VCF END stays on the contig.
+
+    A depth segment's last 1 kb bin overhangs the contig end (dataset_paper:
+    24 cohort sites up to 1 kb past chrX/chr12/...). htslib writes
+    END = POS + |SVLEN| on symbolic alleles, one base past our half-open end
+    (ROADMAP, SVLEN/END normalization), hence ``length - 1``: END <= length.
+    """
+    if length is not None:
+        end = min(end, length - 1)
+    return max(end, start + 1)
+
+
 def _fmt_gt(gt: tuple[int, int]) -> tuple:
     return (None, None) if gt == (-1, -1) else gt
 
@@ -84,21 +97,23 @@ def write_vcf(
 ) -> None:
     header = make_header(contigs, sample, command)
     order = {c.name: i for i, c in enumerate(contigs)}
+    lengths = {c.name: c.length for c in contigs}
     calls = sorted(calls, key=lambda c: (order.get(c.contig, 1_000_000), c.start))
 
     path = str(path)
     mode = "wz" if path.endswith(".gz") else "w"
     with pysam.VariantFile(path, mode, header=header) as out:
         for i, call in enumerate(calls):
+            end = clamp_end(call.start, call.end, lengths.get(call.contig))
             rec = out.new_record(
                 contig=call.contig,
                 start=call.start,
-                stop=call.end,
+                stop=end,
                 alleles=("N", f"<{call.svtype}>"),
                 id=f"vedette_{call.svtype}_{i + 1}",
             )
             rec.info["SVTYPE"] = call.svtype
-            rec.info["SVLEN"] = call.svlen
+            rec.info["SVLEN"] = (end - call.start) * (1 if call.svtype == "DUP" else -1)
             rec.info["SOURCE"] = call.source
             rec.info["NBINS"] = call.n_bins
             rec.info["MASKFRAC"] = round(call.masked_frac, 4)

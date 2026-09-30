@@ -90,12 +90,13 @@ def test_hwe_matches_brute_force():
         )
 
 
-def _write_filtered_vcf(path, sample, records):
+def _write_filtered_vcf(path, sample, records, contigs=(("chr22", 50_818_468),)):
     """records: (contig, start, end, svtype, filters, sq)"""
     import pysam
 
     header = pysam.VariantHeader()
-    header.contigs.add("chr22", length=50_818_468)
+    for name, length in contigs:
+        header.contigs.add(name, length=length)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
     header.add_line('##ALT=<ID=DUP,Description="Duplication">')
     header.info.add("SVTYPE", "1", "String", "SV type")
@@ -162,6 +163,32 @@ def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     assert sites[(20_000_000, 20_030_000)].info["SQMAX"] == 20.0
     assert abs(sites[(50_654_000, 50_684_001)].info["SQMAX"] - 2.1) < 1e-6
     assert abs(sites[(50_654_000, 50_684_001)].info["SQMEAN"] - 2.1) < 1e-6
+
+
+def test_merge_clamps_site_end_to_contig(tmp_path):
+    """Member calls from VCFs written before vcfout clamped END overhang the
+    contig by up to one depth bin; the cohort site must still end on it."""
+    import pysam
+
+    from vedette.cohort.merge import run_merge
+    from vedette.reference import Contig
+
+    # the published dataset_paper per-sample VCFs: END one 1 kb bin past chr12
+    chr12_len = 133_275_309
+    contigs = (("chr12", chr12_len),)
+    paths = []
+    for i in range(3):
+        p = tmp_path / f"s{i}.vcf.gz"
+        recs = [("chr12", 133_250_000, 133_276_001, "DEL", [], 20.0)]
+        _write_filtered_vcf(p, f"s{i}", recs, contigs=contigs)
+        paths.append(p)
+
+    out = tmp_path / "sites.vcf.gz"
+    assert run_merge(paths, [Contig("chr12", chr12_len, "autosome")], out) == 1
+    (site,) = pysam.VariantFile(str(out))
+    assert site.start == 133_250_000
+    assert site.stop == chr12_len  # was 133,276,002
+    assert site.info["SVLEN"] == -(chr12_len - 1 - 133_250_000)
 
 
 def _write_sites_vcf(path, records):
