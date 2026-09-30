@@ -199,6 +199,7 @@ def _write_reference_cohort(path, records):
     header.info.add("NS", "1", "Integer", "NS")
     header.info.add("NCARRIER", "1", "Integer", "carriers")
     header.filters.add("CohortArtifact", None, None, "artifact")
+    header.filters.add("HighCarrierFrac", None, None, "carried by most samples")
     with pysam.VariantFile(str(path), "wz", header=header) as out:
         for contig, start, end, svtype, af, ns, ncar, filters in records:
             rec = out.new_record(contig=contig, start=start, stop=end,
@@ -275,7 +276,9 @@ def test_cohort_filter_post_processing_flags(tmp_path):
              ("D", "chr22", 4_000_000, 4_020_000, "DEL", 2)]
     _write_sites_vcf(tmp_path / "sites.vcf.gz", sites)
     _write_reference_cohort(tmp_path / "ref.vcf.gz", [
-        ("chr22", 3_000_050, 3_009_900, "DEL", 0.48, 2000, 1840, ["CohortArtifact"]),
+        # two FILTERs: they must not reach INFO joined by ';' (the INFO separator)
+        ("chr22", 3_000_050, 3_009_900, "DEL", 0.48, 2000, 1840,
+         ["CohortArtifact", "HighCarrierFrac"]),
         ("chr22", 4_000_000, 4_020_000, "DUP", 0.9, 2000, 1900, []),  # wrong type: no match
     ])
     gt_paths = []
@@ -313,7 +316,8 @@ def test_cohort_filter_post_processing_flags(tmp_path):
     assert "HighCarrierFrac" not in out["B"].filter.keys()
     assert "CommonRef" in out["C"].filter.keys()
     assert abs(out["C"].info["REF_CARRIER_FRAC"] - 0.92) < 1e-6
-    assert out["C"].info["REF_FILTER"] == "CohortArtifact"
+    assert out["C"].info["REF_FILTER"] == "CohortArtifact|HighCarrierFrac"
+    assert "HighCarrierFrac" not in out["C"].info
     assert list(out["D"].filter.keys()) == ["PASS"]
     assert "REF_AF" not in out["D"].info
     assert counts["high_carrier"] == 1 and counts["cn_discordant"] == 1

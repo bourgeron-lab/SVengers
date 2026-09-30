@@ -127,7 +127,9 @@ class _KnownSites:
         return {
             "af": float(af),
             "carrier_frac": ncar / ns if ns else 0.0,
-            "filter": ";".join(best.filter.keys()) or "PASS",
+            # ';' separates INFO fields: joining on it would truncate REF_FILTER
+            # to its first value and leak the others as undeclared INFO keys
+            "filter": "|".join(best.filter.keys()) or "PASS",
         }
 
 
@@ -193,7 +195,7 @@ def run_cohort_filter(
              "Fraction of carriers whose copy number contradicts SVTYPE (DUP with CN<=1, DEL with CN>=3)"),
             ("REF_AF", "1", "Float", "Allele frequency of the matching site in the reference cohort (--known-sites)"),
             ("REF_CARRIER_FRAC", "1", "Float", "Carrier fraction of the matching site in the reference cohort"),
-            ("REF_FILTER", "1", "String", "FILTER of the matching site in the reference cohort"),
+            ("REF_FILTER", "1", "String", "FILTER of the matching site in the reference cohort, '|'-separated"),
         ):
             if line[0] not in header.info:
                 header.info.add(*line)
