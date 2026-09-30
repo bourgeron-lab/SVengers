@@ -259,6 +259,76 @@ def test_own_call_status():
     assert own_call_status(idx, "chr1", 50_100, 59_900, "DEL") == ""
 
 
+def test_own_call_match_takes_the_carriers_breakpoints():
+    """A cohort site carries its cluster representative's coordinates. PMS
+    pools 22q13 deletions of every size, so FAM-10's own call
+    (45,146,001; IGV 45,145,667) was shown at its site's 44,116,001."""
+    from vedette.report import own_call_match
+
+    idx = {("chr22", "DEL"): [
+        (45_146_001, 48_986_001, True, "kid"),
+        (44_200_000, 48_900_000, True, "mum"),    # not a carrier of the row
+    ]}
+    status, span = own_call_match(idx, "chr22", 44_116_001, 48_986_002, "DEL",
+                                  span_members={"kid"})
+    assert status == "PASS" and span == (45_146_001, 48_986_001)
+    # the status column still looks at the whole family, the span does not
+    status, span = own_call_match(idx, "chr22", 44_116_001, 48_986_002, "DEL",
+                                  span_members={"dad"})
+    assert status == "PASS" and span is None
+    # a filtered own call never moves the row, even overlapping better
+    idx2 = {("chr22", "DEL"): [(1_000, 9_000, True, "kid"), (1_000, 10_000, False, "kid")]}
+    assert own_call_match(idx2, "chr22", 1_000, 10_000, "DEL", {"kid"})[1] == (1_000, 9_000)
+    idx3 = {("chr22", "DEL"): [(1_000, 9_000, False, "kid")]}
+    assert own_call_match(idx3, "chr22", 1_000, 10_000, "DEL", {"kid"}) == ("filtré", None)
+    # 3-tuples from older indexes still give a status
+    assert own_call_match({("chr1", "DEL"): [(1, 100, True)]}, "chr1", 1, 100, "DEL")[0] == "PASS"
+
+
+def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
+    """End to end: the row of a re-genotyped site backed by the child's own
+    call is drawn at the own call's coordinates, with its genes recomputed."""
+    import numpy as np
+    import pysam
+
+    from vedette.report import _FamilySpill, _write_all_family_events
+
+    samples = ["kid", "dad", "mum"]
+    d = tmp_path / "samples" / "kid"
+    d.mkdir(parents=True)
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr22", length=50_818_468)
+    hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    hdr.info.add("SVTYPE", "1", "String", "type")
+    hdr.info.add("END", "1", "Integer", "end")
+    hdr.add_sample("kid")
+    with pysam.VariantFile(str(d / "kid.filtered.vcf.gz"), "wz", header=hdr) as vf:
+        rec = vf.new_record(contig="chr22", start=45_146_000, stop=48_986_001,
+                            alleles=("N", "<DEL>"))
+        rec.info["SVTYPE"] = "DEL"
+        rec.filter.add("PASS")
+        vf.write(rec)
+    sites = [{"id": "s1", "contig": "chr22", "start": 44_116_000, "end": 48_986_002,
+              "svtype": "DEL", "size": 4_870_002, "filter": "PASS", "rescue": "",
+              "idx": 0, "sqmax": None, "carrier_frac": None, "ref_carrier_frac": None}]
+    nalt = np.array([[1, 0, 0]], dtype=np.int8)
+    gq = np.array([[99, 99, 99]], dtype=np.int16)
+    cn = np.array([[1, 2, 2]], dtype=np.int8)
+    seen = []
+
+    def genes(contig, start0, end):
+        seen.append((start0, end))
+        return "G"
+
+    n = _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
+                                 genes, lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"))
+    assert n == 1
+    page = (tmp_path / "families" / "F1" / "events.html").read_text()
+    assert "<td>45,146,001</td><td>48,986,001</td>" in page
+    assert "44,116,001" not in page
+    assert (45_146_000, 48_986_001) in seen      # genes of the own span
+
+
 def test_carrier_requires_sufficient_gq():
     """Re-genotyping emits GT>0 with a low GQ far too readily: on PMS the
     apparent de novo rate — a genotype-error proxy — is 16.7% for DEL
@@ -350,6 +420,11 @@ def test_collapse_bridges_small_gaps_but_not_distant_events():
     # the floor bridges sub-2 kb gaps whatever the size
     tiny = collapse_events([ev(1_000_000, 1_005_000, "x"), ev(1_006_500, 1_010_000, "y")])
     assert len(tiny) == 1
+
+    # a small event does not bridge a gap longer than itself: FAM-10's
+    # 0.6 kb polymorphism 21 kb before its 4.9 Mb deletion stayed glued to it
+    lone = collapse_events([ev(44_094_543, 44_095_118, "p"), ev(44_116_001, 48_986_002, "q")])
+    assert len(lone) == 2
 
     # and the cap bounds the worst case: 2% of 50 Mb would be 1 Mb
     assert min(max(GAP_ABS, int(GAP_FRAC * 50_000_000)), GAP_MAX) == GAP_MAX

@@ -280,7 +280,7 @@ _EVENTS_MAX_MEMBERS = 20  # no events page for catch-all pseudo-families
 
 
 def own_call_index(run_dir: Path, members: list[str]) -> dict:
-    """{(contig, svtype): [(start, stop, is_pass)]} of the family's OWN calls.
+    """{(contig, svtype): [(start, stop, is_pass, member)]} of the family's OWN calls.
 
     A cohort site records a breakpoint cluster; re-genotyping then assigns a
     genotype to every sample, whether or not that sample ever produced a call
@@ -289,7 +289,7 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
     3/9 for the ones backed by an own PASS call. The distinction has to be
     visible, so it is computed here from the published per-sample VCFs.
     """
-    idx: dict[tuple[str, str], list[tuple[int, int, bool]]] = defaultdict(list)
+    idx: dict[tuple[str, str], list[tuple[int, int, bool, str]]] = defaultdict(list)
     for m in members:
         vcf_path = run_dir / "samples" / m / f"{m}.filtered.vcf.gz"
         if not vcf_path.exists():
@@ -300,7 +300,7 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
                     svtype = rec.info.get("SVTYPE")
                     if svtype:
                         idx[(rec.contig, svtype)].append(
-                            (rec.pos, rec.stop, list(rec.filter.keys()) == ["PASS"])
+                            (rec.pos, rec.stop, list(rec.filter.keys()) == ["PASS"], m)
                         )
         except (OSError, ValueError):  # a report must survive a missing VCF
             continue
@@ -309,19 +309,62 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
     return idx
 
 
-def own_call_status(idx: dict, contig: str, pos: int, end: int, svtype: str,
-                    min_ro: float = 0.5) -> str:
-    """"PASS", "filtré" or "" for the family's own call behind a cohort site."""
-    best = ""
-    for op, oe, is_pass in idx.get((contig, svtype), ()):
+def own_call_match(idx: dict, contig: str, pos: int, end: int, svtype: str,
+                   span_members=None, min_ro: float = 0.5):
+    """(status, span) of the family's own call behind a cohort site.
+
+    status is "PASS", "filtré" or "" over every member, as in the "appel
+    propre" column. span is the (pos, end) of the best-overlapping own PASS
+    call made by one of `span_members` (the row's carriers). A filtered own
+    call does not move the row: its boundaries are those of a call the filter
+    rejected, and on PMS it would have moved 57k rows on that evidence alone.
+
+    The span matters because a cohort site's coordinates are those of the
+    cluster representative, not the carrier's. In a cohort ascertained for a
+    locus the cluster pools patients with different breakpoints:
+    FAM-10's 22q13 deletion starts at 45,146,001 in its own call
+    (45,145,667 in IGV), but merged into a site whose representative starts at
+    44,116,001 — and the family page showed the deletion 1 Mb too long.
+    """
+    status, best, best_key = "", None, None
+    for rec in idx.get((contig, svtype), ()):
+        op, oe, is_pass = rec[0], rec[1], rec[2]
+        who = rec[3] if len(rec) > 3 else None
         if op > end:
             break
         ov = min(end, oe) - max(pos, op)
-        if ov > 0 and ov / max(end - pos, oe - op) >= min_ro:
-            if is_pass:
-                return "PASS"
-            best = "filtré"
-    return best
+        if ov <= 0:
+            continue
+        ro = ov / max(end - pos, oe - op)
+        if ro < min_ro:
+            continue
+        if is_pass:
+            status = "PASS"
+        elif not status:
+            status = "filtré"
+        if is_pass and span_members is not None and who in span_members:
+            if best_key is None or ro > best_key:
+                best, best_key = (op, oe), ro
+    return status, best
+
+
+def own_call_status(idx: dict, contig: str, pos: int, end: int, svtype: str,
+                    min_ro: float = 0.5) -> str:
+    """"PASS", "filtré" or "" for the family's own call behind a cohort site."""
+    return own_call_match(idx, contig, pos, end, svtype, min_ro=min_ro)[0]
+
+
+def _reannotate(e: dict, genes_fn=None, impact_fn=None, segdup_iv=None, lcr_iv=None) -> None:
+    """Genes, impact and masks of an event whose span changed."""
+    start0 = e["pos"] - 1
+    if genes_fn is not None:
+        e["genes"] = genes_fn(e["contig"], start0, e["end"])
+    if impact_fn is not None:
+        e["impact"] = impact_fn(e["contig"], start0, e["end"])[1]
+    if lcr_iv is not None:
+        e["lcr"] = f"{lcr_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
+    if segdup_iv is not None:
+        e["segdup"] = f"{segdup_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
 
 
 # A fragmented event leaves gaps where the HMM called CN=0 islands or where a
@@ -362,7 +405,15 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                 max(GAP_ABS, int(GAP_FRAC * max(
                     cur["end"] - cur["pos"], e["end"] - e["pos"]))), GAP_MAX,
             ) if cur is not None else 0
-            if cur is not None and e["pos"] <= cur["end"] + gap_tol:
+            gap = e["pos"] - cur["end"] if cur is not None else 0
+            # bridging a gap takes a neighbour at least as long as the gap: a
+            # 0.6 kb polymorphism 21 kb off a 4.9 Mb deletion is its own event
+            # (FAM-10), whereas fragments of one event are large
+            bridge = gap <= 0 or (
+                gap <= gap_tol
+                and min(cur["end"] - cur["pos"], e["end"] - e["pos"]) >= gap
+            )
+            if cur is not None and bridge:
                 cur["end"] = max(cur["end"], e["end"])
                 cur["_ids"].append(e["id"])
                 for k in ("sqmax", "cfrac", "refcf"):
@@ -396,15 +447,7 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
         e["n_sites"] = len(e["_ids"])
         e["size"] = e["end"] - e["pos"]
         if e["n_sites"] > 1:
-            start0 = e["pos"] - 1
-            if genes_fn is not None:
-                e["genes"] = genes_fn(e["contig"], start0, e["end"])
-            if impact_fn is not None:
-                e["impact"] = impact_fn(e["contig"], start0, e["end"])[1]
-            if lcr_iv is not None:
-                e["lcr"] = f"{lcr_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
-            if segdup_iv is not None:
-                e["segdup"] = f"{segdup_iv.overlap_fraction(e['contig'], start0, e['end']):.2f}"
+            _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
     out.sort(key=lambda e: (e["contig"], e["pos"]))
     return out
 
@@ -532,7 +575,14 @@ def _write_all_family_events(
         fam_dir.mkdir(parents=True, exist_ok=True)
         own_idx = own_call_index(run_dir, members)
         for e in events:
-            e["own"] = own_call_status(own_idx, e["contig"], e["pos"], e["end"], e["svtype"])
+            e["own"], span = own_call_match(
+                own_idx, e["contig"], e["pos"], e["end"], e["svtype"],
+                span_members=set(e["carriers"]),
+            )
+            if span is not None and span != (e["pos"], e["end"]):
+                e["pos"], e["end"] = span
+                e["size"] = e["end"] - e["pos"]
+                _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
         if collapse:
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)

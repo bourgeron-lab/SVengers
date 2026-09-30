@@ -49,6 +49,42 @@ vérité GIAB v5.0q stvar, labels Truvari (5644 TP / 60373 FP).
   assembler les matrices de génotypes depuis genotypes/*.gt.tsv plutôt que de
   re-décoder le VCF cohorte (1,4 Md de génotypes ≈ 1 h pysam vs ~5 min TSV).
 
+### 1undecies. Bornes des événements familiaux : celles du porteur, pas du représentant (2026-09-30)
+
+Alexandre, sur FAM-10 (délétion SHANK3) : IGV place la délétion à
+chr22:45,145,667-50,808,468, la page familiale affichait 44,094,543-50,800,002.
+
+Le caller par échantillon avait juste : l'appel propre du proposant commence à
+**45,146,001**, à 300 pb d'IGV. Deux erreurs sont venues ensuite, au report :
+
+1. **Coordonnées du représentant de cluster.** Au merge, l'appel du proposant
+   (45,15-48,99 Mb) est entré dans un site dont le représentant — un autre
+   patient PMS, la cohorte réunit des 22q13 de toutes tailles — commence à
+   44,116,001. Le re-génotypage lui donne 0/1 GQ 99 (79 % du site est bien
+   délété chez lui), et la ligne héritait des bornes de l'autre patient : 1 Mb
+   de trop. Correctif : quand un porteur de la ligne a son propre appel derrière
+   le site (même règle RO ≥ 0,5 que la colonne « appel propre ») **et que cet
+   appel est PASS**, la ligne prend ses bornes (meilleur recouvrement) et gènes /
+   impact / masques sont recalculés. Les appels propres filtrés ne déplacent
+   rien : autoriser n'importe quel appel propre déplaçait 26,5 % des lignes PMS,
+   dont 57 656 sur la foi d'un appel que le filtre avait rejeté. La colonne « appel propre » garde sa
+   définition sur toute la famille.
+2. **Pont sur un petit voisin.** Un polymorphisme de 0,6 kb (NCAR 38, mère à
+   GQ 11 donc non-porteuse) à 21 kb du bord a été collé par la tolérance aux
+   trous (2 % de 4,9 Mb = 97 kb). Correctif : franchir un trou exige que le plus
+   petit des deux voisins soit au moins aussi long que le trou ; les fragments
+   d'un même événement sont grands, les polymorphismes voisins non.
+
+Fin de l'événement : 50,800,002 contre 50,808,468 dans IGV. Ce n'est pas un
+écart de bornes : le segment 50,800-50,819 kb est subtélomérique (LowMap, MaxN),
+porté par les 319 échantillons, donc non-PASS. 50,808,468 est la fin du
+chromosome moins le gap télomérique de 10 kb.
+
+Reste ouvert, au génotypeur cette fois : un porteur partiel reçoit GQ 99 sur un
+site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
+(premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
+sans appel propre, que le correctif du report ne couvre pas.
+
 ### 1decies. Les stores d'évidence publiés détruits par publishDir (2026-09-29)
 
 Au relancement de dataset_paper (filter -> report, correctif grandes DEL), les
