@@ -297,11 +297,18 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
             continue
         try:
             with pysam.VariantFile(str(vcf_path)) as vf:
+                lengths = {c.name: c.length for c in vf.header.contigs.values()}
                 for rec in vf:
                     svtype = rec.info.get("SVTYPE")
                     if svtype:
+                        # per-sample VCFs written before vcfout clamped END
+                        # run up to one depth bin past the contig end, and
+                        # own_span hands these ends straight to the rows
+                        stop = rec.stop
+                        if lengths.get(rec.contig):
+                            stop = min(stop, lengths[rec.contig])
                         idx[(rec.contig, svtype)].append(
-                            (rec.pos, rec.stop, list(rec.filter.keys()) == ["PASS"], m)
+                            (rec.pos, stop, list(rec.filter.keys()) == ["PASS"], m)
                         )
         except (OSError, ValueError):  # a report must survive a missing VCF
             continue

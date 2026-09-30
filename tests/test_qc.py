@@ -363,6 +363,33 @@ def test_own_span_nested_calls_do_not_set_ends():
     assert own_span(idx, "chr8", 140_623_001, 141_335_002, "DUP", {"kid"}) is None
 
 
+def test_own_call_index_clamps_ends_to_the_contig(tmp_path):
+    """Per-sample VCFs written before vcfout clamped END overhang the contig
+    by up to one 1 kb bin (dataset_paper: chrX 156,041,002 for 156,040,895);
+    rows take own-call ends directly, so the index must bound them."""
+    import pysam
+
+    from vedette.report import own_call_index
+
+    d = tmp_path / "samples" / "kid"
+    d.mkdir(parents=True)
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chrX", length=156_040_895)
+    hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    hdr.info.add("SVTYPE", "1", "String", "type")
+    hdr.info.add("END", "1", "Integer", "end")
+    hdr.add_sample("kid")
+    with pysam.VariantFile(str(d / "kid.filtered.vcf.gz"), "wz", header=hdr) as vf:
+        rec = vf.new_record(contig="chrX", start=156_010_000, stop=156_041_001,
+                            alleles=("N", "<DEL>"))
+        rec.info["SVTYPE"] = "DEL"
+        rec.filter.add("PASS")
+        vf.write(rec)
+    idx = own_call_index(tmp_path, ["kid"])
+    ((pos, end, is_pass, who),) = idx[("chrX", "DEL")]
+    assert end == 156_040_895 and is_pass and who == "kid"
+
+
 def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
     """End to end: the row of a re-genotyped site backed by the child's own
     call is drawn at the own call's coordinates, with its genes recomputed."""
