@@ -69,18 +69,19 @@ tr.nopass{opacity:.55} .g{text-align:left;max-width:26ch;overflow:hidden;text-ov
 td.val{text-align:left;white-space:nowrap} td.val label{margin-right:.4em}
 a.igv{font-size:11px;padding:1px 6px;border:1px solid #9ab;border-radius:4px;text-decoration:none;color:#2a6f97}
 .bar button{font-size:12px;padding:2px 8px;cursor:pointer}
+td.qcw{color:#b3362b}
 """
 
 _EVENTS_JS = """
 const rows = Array.from(document.querySelectorAll("tbody tr"));
 const chrSel = document.getElementById("chr"), typeSel = document.getElementById("type"),
       valSel = document.getElementById("val"), ownSel = document.getElementById("own"),
-      supSel = document.getElementById("sup"),
+      supSel = document.getElementById("sup"), qcSel = document.getElementById("qc"),
       passCb = document.getElementById("pass"),
       count = document.getElementById("count");
 function apply(){
   const c = chrSel.value, t = typeSel.value, v = valSel.value, p = passCb.checked,
-        o = ownSel.value, sp = supSel.value;
+        o = ownSel.value, sp = supSel.value, q = qcSel.value;
   let n = 0;
   for (const r of rows){
     const ok = (c === "all" || r.dataset.chr === c)
@@ -88,13 +89,15 @@ function apply(){
             && (v === "all" || (r.dataset.val || "none") === v)
             && (o === "all" || (o === "any" ? r.dataset.own !== "aucun" : r.dataset.own === o))
             && (sp === "all" || r.dataset.support === sp)
+            && (q === "all" || r.dataset.qc === q)
             && (!p || r.dataset.pass === "1");
     r.hidden = !ok;
     if (ok) n++;
   }
   count.textContent = n.toLocaleString("fr-FR") + " / " + rows.length.toLocaleString("fr-FR");
 }
-chrSel.onchange = typeSel.onchange = valSel.onchange = ownSel.onchange = supSel.onchange = passCb.onchange = apply;
+chrSel.onchange = typeSel.onchange = valSel.onchange = ownSel.onchange = supSel.onchange
+  = qcSel.onchange = passCb.onchange = apply;
 
 // manual validation (IGV check): three exclusive radio buttons per row
 // (vrai/faux/incertain — a forced binary choice pollutes labels on genuinely
@@ -133,7 +136,7 @@ document.getElementById("export").onclick = () => {
   const EXPORT = [["filter", "FILTER"], ["sqmax", "SQmax"], ["carrier_frac", "% port."],
                   ["ref_carrier_frac", "fréq. réf."], ["lcr", "LCR"], ["segdup", "segdup"],
                   ["heritage", "héritage"], ["porteurs", "porteurs"], ["appel_propre", "appel propre"],
-                  ["support", "support"]];
+                  ["support", "support"], ["qc_porteur", "QC porteur"]];
   const head = ["site_id", "chr", "pos", "end", "type", "taille",
                 ...EXPORT.map(c => c[0]), "validation"];
   const lines = [head.join("\\t")];
@@ -570,6 +573,9 @@ def _write_all_family_events(
     lcr_iv=None,
     collapse: bool = True,
     min_carrier_gq: int = 20,
+    sample_qc: dict[str, list[str]] | None = None,
+    wave_scores: dict[str, float | None] | None = None,
+    wave_by_contig: dict[str, dict] | None = None,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -693,6 +699,18 @@ def _write_all_family_events(
                 _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
         if collapse:
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
+        for e in events:
+            alerts = []
+            for m in e["carriers"]:
+                fl = []
+                w = row_wave_score((wave_by_contig or {}).get(m),
+                                   (wave_scores or {}).get(m), e["contig"])
+                if w is not None and w >= WAVE_WARN:
+                    fl.append(f"wave {w:.3f}")
+                fl += (sample_qc or {}).get(m, [])
+                if fl:
+                    alerts.append(f"{m[-3:]} {', '.join(fl)}")
+            e["qc"] = " · ".join(alerts)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
         n_pages += 1
     ev_spill.cleanup()
@@ -727,6 +745,7 @@ def _write_events_page(
         "<th>rescue</th><th>SQmax</th><th>% port.</th><th>fréq. réf.</th>"
         "<th>LCR</th><th>segdup</th><th>sites</th><th data-key=\"own\">appel propre</th><th data-key=\"support\">support</th>"
         "<th>gènes</th><th data-key=\"impact\">impact</th><th>héritage</th><th>porteurs</th>"
+        '<th data-key="qc">QC porteur</th>'
         '<th>IGV</th><th data-key="val">validation</th>'
         + "".join(f"<th>{html.escape(m[-3:])}</th>" for m in members) + "</tr>"
     )
@@ -746,6 +765,7 @@ def _write_events_page(
             f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}" '
             f'data-own="{html.escape(e.get("own") or "aucun")}" '
             f'data-impact="{_impact_points(e.get("impact") or "")}" '
+            f'data-qc="{"alerte" if e.get("qc") else "ok"}" '
             f'data-support="{html.escape(e.get("support") or "faible")}">'
             f'<td>{html.escape(e["contig"])}</td><td>{e["pos"]:,}</td><td>{e["end"]:,}</td>'
             f'<td class="t">{e["svtype"]}</td><td>{e["size"]:,}</td>'
@@ -762,7 +782,9 @@ def _write_events_page(
             f'<td class="g">{html.escape(e["impact"])}</td>'
             f'<td class="g">{html.escape(e.get("inherit") or "—")}</td>'
             f'<td class="c">{",".join(m[-3:] for m in e["carriers"]) or "—"}</td>'
-            f'<td><a class="igv" target="igv" title="Ouvrir dans IGV desktop (port 60151, ±20 %)" '
+            + (f'<td class="c qcw">⚠ {html.escape(e["qc"])}</td>' if e.get("qc")
+               else '<td class="c">—</td>')
+            + f'<td><a class="igv" target="igv" title="Ouvrir dans IGV desktop (port 60151, ±20 %)" '
             f'href="http://localhost:60151/goto?locus={html.escape(e["contig"])}:{max(1, e["pos"] - pad)}-{e["end"] + pad}">IGV</a></td>'
             f'<td class="val"><label><input type="checkbox" class="v-true"> vrai</label> '
             f'<label><input type="checkbox" class="v-false"> faux</label> '
@@ -784,6 +806,9 @@ def _write_events_page(
         f'<option value="aucun">sans appel propre</option></select></label>'
         f'<label>support <select id="sup"><option value="all">tous</option>'
         f'<option value="fort">fort (CN cohérent)</option></select></label>'
+        f'<label>QC porteur <select id="qc"><option value="all">tous</option>'
+        f'<option value="ok">sans alerte</option><option value="alerte">avec alerte</option>'
+        f'</select></label>'
         f'<label>validation <select id="val"><option value="all">toutes</option>'
         f'<option value="none">non validé</option><option value="true">vrai</option>'
         f'<option value="false">faux</option><option value="unsure">incertain</option></select></label>'
@@ -805,6 +830,11 @@ def _write_events_page(
         f'survolez pour les identifiants) ; appel propre = un membre a-t-il son propre appel à ce '
         f'locus, ou le portage vient-il seulement du re-génotypage de cohorte (sur PMS, 80 % des '
         f'événements sont dans ce dernier cas et la relecture IGV les a tous jugés faux). '
+        f'QC porteur = alertes QC de chaque porteur : wave au-delà du seuil (calculé sans le '
+        f'chromosome de la ligne, qu\'un grand CNV fait osciller à lui seul), charge de sites PASS '
+        f'≥ 5× la médiane de la cohorte, ou nombre de candidats de novo au-delà du garde-fou — '
+        f'un événement porté par un génome techniquement atypique est à relire avant d\'y croire, '
+        f'quel que soit son impact. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1036,21 +1066,107 @@ def _gene_points(g, dup: bool, whole: bool, exonic: bool, inside: bool) -> tuple
     return 0.0, ""
 
 
+def sample_qc_flags(overloaded: dict, dn_outliers: dict) -> dict[str, list[str]]:
+    """Per-sample QC alerts shown next to the carriers of a family row.
+
+    The impact score ranks events by gene content alone, so a technically
+    noisy genome floats its artefacts to the top: on dataset_paper, family
+    FAM-03 held a dozen of the 57 rows at >= +1.00 (PTEN, FGFR2...).
+    Carrier load and de novo count are per sample; wave is per row (see
+    `row_wave_score`).
+    """
+    flags: dict[str, list[str]] = defaultdict(list)
+    for smp, x in overloaded.items():
+        flags[smp].append(f"charge {x:.1f}×")
+    for smp, n in dn_outliers.items():
+        flags[smp].append(f"de novo {n}")
+    return dict(flags)
+
+
+def row_wave_score(wave_by_contig: dict | None, sample_score: float | None,
+                   contig: str, min_contigs: int = 10) -> float | None:
+    """A carrier's wave score for one row: the mean of its per-contig scores
+    without the row's own contig.
+
+    The score is low-frequency spectral energy, and a large CNV is a step in
+    coverage: on PMS, 26 of the 48 carriers of a >= 1 Mb chr22 deletion were
+    "wavy" (54%, against 13% of parents), their chr22 alone at 0.4-0.6. Left
+    out of the mean, 5 remain; a genuinely wavy genome oscillates on every
+    contig and keeps its flag. Falls back to the sample score on stores
+    without per-contig values.
+    """
+    if wave_by_contig:
+        vals = [v for k, v in wave_by_contig.items() if k != contig]
+        if len(vals) >= min_contigs:
+            return sum(vals) / len(vals)
+    return sample_score
+
+
+def denovo_event_count(rows: list[dict]) -> int:
+    """De novo candidate events of one child: candidate sites merged by type
+    with the collapse rule (`_bridges`), so that one event spanning several
+    cohort sites (patients' breakpoints differ) counts once. Measured on PMS
+    the effect is small — the children's candidates are mostly distinct
+    small events (SMP-01: 116 sites, 114 events).
+    """
+    by: dict[tuple[str, str], list[tuple[int, int]]] = defaultdict(list)
+    for r in rows:
+        by[(r["contig"], r["svtype"])].append((int(r["start"]), int(r["end"])))
+    n = 0
+    for ivs in by.values():
+        ivs.sort(key=lambda iv: (iv[0], -iv[1]))
+        cur = None
+        for a, b in ivs:
+            if cur is not None and _bridges(cur[0], cur[1], a, b):
+                cur = (cur[0], max(cur[1], b))
+            else:
+                n += 1
+                cur = (a, b)
+    return n
+
+
+# Per-child de novo guard. An absolute cutoff stopped meaning anything once
+# the callset was measured: with > 20 events it flagged 664 of 665
+# dataset_paper children and all 77 PMS children (and hid their de novo
+# tables). Cohort-relative instead, as the carrier-load guard:
+#   dataset_paper  median 75, p90 367, p99 3173 -> 5x median flags 63 (9.5%)
+#   PMS            median 100, max 576          -> 5x median flags 1
+# The absolute floor stays the cutoff below DENOVO_REL_MIN_CHILDREN children
+# (family runs), where a median says nothing.
+DENOVO_REL = 5.0
+DENOVO_REL_MIN_CHILDREN = 20
+
+
+def denovo_counts(denovo_by_family: dict[str, list[dict]]) -> dict[str, int]:
+    """{child: de novo candidate events}, across families."""
+    per_child: dict[str, list[dict]] = defaultdict(list)
+    for rows in denovo_by_family.values():
+        for r in rows:
+            per_child[r["child"]].append(r)
+    return {c: denovo_event_count(rs) for c, rs in per_child.items()}
+
+
+def denovo_cutoff(counts: dict[str, int], floor: int) -> float:
+    """Count above which a child is a technical outlier: DENOVO_REL x the
+    cohort median, never below `floor`."""
+    if len(counts) < DENOVO_REL_MIN_CHILDREN:
+        return float(floor)
+    return max(float(floor), DENOVO_REL * float(np.median(list(counts.values()))))
+
+
 def denovo_outliers(
     denovo_by_family: dict[str, list[dict]], threshold: int
 ) -> dict[str, int]:
-    """Children carrying more GQ-filtered de novo candidates than `threshold`.
+    """Children with more de novo candidate events than `denovo_cutoff`.
 
-    A genuine genome carries <1 de novo CNV on average; a child with dozens is
-    a technical outlier (waviness under the QC bar, contamination, swap) whose
-    candidates would drown the family tables — measured on dataset_paper: two
-    such children held 39 of the 81 top-impact candidates.
+    A genuine genome carries <1 de novo CNV on average; a child far above its
+    cohort is a technical outlier (waviness under the QC bar, contamination,
+    swap) whose candidates would drown the family tables — measured on
+    dataset_paper: two such children held 39 of the 81 top-impact candidates.
     """
-    counts: dict[str, int] = defaultdict(int)
-    for rows in denovo_by_family.values():
-        for r in rows:
-            counts[r["child"]] += 1
-    return {c: n for c, n in counts.items() if n > threshold}
+    counts = denovo_counts(denovo_by_family)
+    cut = denovo_cutoff(counts, threshold)
+    return {c: n for c, n in counts.items() if n > cut}
 
 
 def _read_cohort_vcf(path: Path, with_cn: bool = False):
@@ -1304,11 +1420,13 @@ def generate_report(
                     denovo_by_family[r["family_id"]].append(r)
 
     # ---- de novo per-child guard: technical outliers leave the family tables
-    dn_outliers = denovo_outliers(denovo_by_family, max_denovo_per_child)
+    dn_counts = denovo_counts(denovo_by_family)
+    dn_cut = denovo_cutoff(dn_counts, max_denovo_per_child)
+    dn_outliers = {c: n for c, n in dn_counts.items() if n > dn_cut}
     if dn_outliers:
         logger.warning(
-            "garde-fou de novo: %d enfant(s) au-dessus de %d candidats exclu(s): %s",
-            len(dn_outliers), max_denovo_per_child,
+            "garde-fou de novo: %d enfant(s) au-dessus de %.0f candidats exclu(s): %s",
+            len(dn_outliers), dn_cut,
             ", ".join(f"{c} ({n})" for c, n in sorted(dn_outliers.items())),
         )
 
@@ -1419,10 +1537,28 @@ def generate_report(
 {len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{html.escape(fid)}/events.html">tous les événements (filtres chr/type)</a>' if family_events else ""}</p>
-{f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {max_denovo_per_child} candidats de novo — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
+{f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {dn_cut:.0f} candidats de novo ({DENOVO_REL:g}× la médiane de la cohorte) — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
+
+    # ---- per-sample wave QC (evidence-store meta, absent on old stores)
+    wave_scores: dict[str, float | None] = {}
+    wave_by_contig: dict[str, dict] = {}
+    for s in samples:
+        store_path = run_dir / "samples" / s / f"{s}.evidence.zarr"
+        wave_scores[s] = None
+        if store_path.exists():
+            try:
+                from .extract.store import EvidenceStore
+
+                meta = EvidenceStore(store_path).meta
+                wave_scores[s] = meta.get("wave_score")
+                wave_by_contig[s] = meta.get("wave_by_contig") or {}
+            except Exception:  # report survives a broken/foreign store
+                pass
+    n_wavy = sum(1 for v in wave_scores.values() if v is not None and v >= WAVE_WARN)
+    sample_qc = sample_qc_flags(overloaded, dn_outliers)
 
     # ---- family events pages: one sweep of the matrices, never a per-family
     # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
@@ -1432,24 +1568,12 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
             segdup_iv=segdup_iv, lcr_iv=lcr_iv, collapse=collapse_family_events,
-            min_carrier_gq=min_carrier_gq,
+            min_carrier_gq=min_carrier_gq, sample_qc=sample_qc,
+            wave_scores=wave_scores, wave_by_contig=wave_by_contig,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)
 
-    # ---- per-sample wave QC (evidence-store meta, absent on old stores)
-    wave_scores: dict[str, float | None] = {}
-    for s in samples:
-        store_path = run_dir / "samples" / s / f"{s}.evidence.zarr"
-        wave_scores[s] = None
-        if store_path.exists():
-            try:
-                from .extract.store import EvidenceStore
-
-                wave_scores[s] = EvidenceStore(store_path).meta.get("wave_score")
-            except Exception:  # report survives a broken/foreign store
-                pass
-    n_wavy = sum(1 for v in wave_scores.values() if v is not None and v >= WAVE_WARN)
 
     # ---- HTML assembly
     svc = Counter(s["svtype"] for s in passing)
@@ -1511,7 +1635,7 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 <span class=kpi><b>{len(rare)}</b>sites rares (≤2 porteurs)</span>
 <span class=kpi><b>{n_wavy}</b>échantillons wavy (score ≥ {WAVE_WARN})</span>
 <span class=kpi><b>{len(overloaded)}</b>échantillons surchargés (≥{CARRIER_EXCESS_WARN}x la médiane de porteurs PASS)</span>
-<span class=kpi><b>{len(dn_outliers)}</b>enfants outliers de novo (&gt;{max_denovo_per_child})</span>
+<span class=kpi><b>{len(dn_outliers)}</b>enfants outliers de novo (&gt;{dn_cut:.0f})</span>
 </div>
 
 <h2>Spectres (sites PASS)</h2>

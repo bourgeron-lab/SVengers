@@ -111,6 +111,43 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
 **sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
+### 1terdecies. Drapeau QC du porteur sur les lignes familles (2026-10-01)
+
+Demande d'Alexandre après le rapport dataset_paper : le score d'impact ne
+regarde que le contenu génique, et la famille FAM-03 occupait une
+dizaine des 57 lignes ≥ +1,00 (PTEN, FGFR2…) avec des enfants à 478 et 94
+candidats de novo. Colonne « QC porteur » + filtre (tous / sans alerte / avec
+alerte) : wave, charge de sites PASS ≥ 5× la médiane, garde-fou de novo.
+
+Deux défauts trouvés en le validant sur PMS (49 des 58 lignes ≥ +1,00
+d'abord signalées, alors que ce sont les vraies délétions SHANK3) :
+
+1. **Le garde-fou de novo à seuil absolu signalait tout le monde** : > 20
+   candidats = 664 des 665 enfants dataset_paper et les 77 enfants PMS, et
+   leurs tableaux de novo étaient masqués dans le rapport principal. Seuil
+   désormais relatif, comme la charge de porteurs : 5× la médiane de la
+   cohorte (dataset_paper médiane 75, p90 367, p99 3173 → 63 enfants, dont
+   SMP-03 de la famille FAM-03 ; PMS médiane 100 → 1 enfant), le plancher de 20
+   restant le seuil des runs famille (< 20 enfants). Le comptage se fait en
+   événements (sites fusionnés par la règle du collapse) ; mon hypothèse
+   qu'un grand de novo comptait pour des dizaines de sites était fausse,
+   l'effet est marginal (SMP-01 : 116 sites, 114 événements).
+2. **Le score de wave est gonflé par les grands CNV** : 54 % des porteurs
+   d'une DEL chr22 ≥ 1 Mb sont « wavy » contre 13 % des parents ; chr22 seul
+   est à 0,4-0,6 chez eux (énergie basse fréquence d'une marche de
+   couverture). Exclure les contigs portant un grand appel propre ne marche
+   pas (les 319 échantillons PMS en ont un, souvent artefactuel, et le
+   signal des vrais wavy s'effondre). Retenu : sur chaque ligne, le wave du
+   porteur est la moyenne de ses scores par contig **sans le contig de la
+   ligne** (`row_wave_score`) — 26 → 5 porteurs signalés sur leur DEL chr22 ;
+   un génome réellement wavy oscille partout et garde son drapeau.
+
+Résultat PMS : lignes ≥ +1,00 avec appel propre PASS, 51 sans alerte / 7 avec
+(FAM-09 et FAM-06 portent deux grands CNV, DEL chr22 + DUP chr8 de
+translocation ; FAM-14 wave 0,184). Reste à faire : le score de wave
+lui-même (stocké au call) devrait exclure les segments CNV appelés — à
+recalibrer contre les labels du wave-detector (docs/wave_qc_validation.md).
+
 ### 1duodecies. Deux points relevés au rapport dataset_paper du 2026-09-30
 
 - **Fins d'appels au-delà du chromosome (caller, préexistant) — corrigé dans

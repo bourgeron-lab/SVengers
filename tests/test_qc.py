@@ -155,14 +155,33 @@ def test_impact_score_follows_the_clingen_grid(tmp_path):
 def test_denovo_outlier_guard():
     from vedette.report import denovo_outliers
 
+    def dn_rows(child, n, contig="chr1", step=1_000_000):
+        return [{"child": child, "contig": contig, "svtype": "DEL",
+                 "start": i * step, "end": i * step + 1_000} for i in range(n)]
+
     dn = {
-        "F1": [{"child": "kidA"}] * 3,
-        "F2": [{"child": "kidB"}] * 25 + [{"child": "kidC"}],
-        "F3": [{"child": "kidB"}] * 5,   # counted across families
+        "F1": dn_rows("kidA", 3),
+        "F2": dn_rows("kidB", 25) + dn_rows("kidC", 1),
+        "F3": dn_rows("kidB", 5, contig="chr2"),   # counted across families
     }
     out = denovo_outliers(dn, threshold=20)
     assert out == {"kidB": 30}
     assert denovo_outliers({}, 20) == {}
+
+
+def test_denovo_guard_counts_events_not_sites():
+    """A de novo 22q13 deletion spans 50-80 cohort sites; counted as sites it
+    made 77 PMS probands look like technical outliers."""
+    from vedette.report import denovo_event_count, denovo_outliers
+
+    # 60 nested/overlapping sites of one 5 Mb terminal deletion
+    big = [{"child": "kid", "contig": "chr22", "svtype": "DEL",
+            "start": 45_146_000 + i * 80_000, "end": 50_800_002} for i in range(60)]
+    assert denovo_event_count(big) == 1
+    assert denovo_outliers({"F": big}, threshold=20) == {}
+    # the same intervals as DUPs are a second event, not the same one
+    dups = [dict(r, svtype="DUP") for r in big[:3]]
+    assert denovo_event_count(big + dups) == 2
 
 
 def test_family_events_page(tmp_path):
@@ -481,6 +500,55 @@ def test_read_cohort_vcf_clamps_site_ends_to_the_contig(tmp_path):
     assert by_start[1_000_000]["end"] == 1_020_001  # inside: untouched
 
 
+def test_sample_qc_flags_and_family_row_alert(tmp_path):
+    """dataset_paper: family FAM-03 held a dozen of the 57 rows at
+    impact >= +1.00, its children carrying 478 and 94 de novo candidates. The
+    row must carry its carriers' QC alerts, filterable on the page."""
+    import numpy as np
+
+    from vedette.report import _FamilySpill, _write_all_family_events, sample_qc_flags
+
+    flags = sample_qc_flags({"kid": 12.3}, {"kid": 478})
+    assert flags == {"kid": ["charge 12.3×", "de novo 478"]}
+
+    samples = ["kid", "dad", "mum"]
+    sites = [
+        {"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL", "size": 1001,
+         "filter": "PASS", "rescue": "", "idx": 0, "sqmax": None, "carrier_frac": None,
+         "ref_carrier_frac": None},
+        {"id": "s2", "contig": "chr1", "start": 9999, "end": 12000, "svtype": "DEL", "size": 2001,
+         "filter": "PASS", "rescue": "", "idx": 1, "sqmax": None, "carrier_frac": None,
+         "ref_carrier_frac": None},
+    ]
+    nalt = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.int8)     # s1 kid, s2 dad
+    gq = np.array([[60, 99, 99], [99, 60, 99]], dtype=np.int16)
+    cn = np.array([[1, 2, 2], [2, 1, 2]], dtype=np.int8)
+    wave = {"kid": 0.2, "dad": 0.05, "mum": None}
+    n = _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
+                                 lambda *a: "", lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"),
+                                 sample_qc=flags, wave_scores=wave)
+    assert n == 1
+    page = (tmp_path / "families" / "F1" / "events.html").read_text()
+    assert page.count('data-qc="alerte"') == 1 and page.count('data-qc="ok"') == 1
+    assert "⚠ kid wave 0.200, charge 12.3×, de novo 478" in page
+    assert '<select id="qc">' in page
+
+
+def test_row_wave_score_leaves_out_the_rows_contig():
+    """PMS: a >= 1 Mb chr22 deletion alone pushed 26 of 48 carriers over the
+    wave threshold; without chr22 in the mean, 5 remain."""
+    from vedette.qc import WAVE_WARN
+    from vedette.report import row_wave_score
+
+    flat = {f"chr{i}": 0.03 for i in range(1, 22)}
+    proband = flat | {"chr22": 0.49, "chr17": 0.58, "chr16": 0.37}   # deletion + GC-rich
+    assert row_wave_score(proband, 0.116, "chr22") < row_wave_score(proband, 0.116, "chr1")
+    wavy = {f"chr{i}": 0.30 for i in range(1, 23)}
+    assert row_wave_score(wavy, 0.30, "chr22") >= WAVE_WARN       # a wavy genome stays wavy
+    assert row_wave_score({}, 0.2, "chr22") == 0.2               # old stores: sample score
+    assert row_wave_score(None, None, "chr22") is None
+
+
 def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
     """End to end: the row of a re-genotyped site backed by the child's own
     call is drawn at the own call's coordinates, with its genes recomputed."""
@@ -651,3 +719,14 @@ def test_merged_row_shows_majority_inheritance():
         ev(2_000_500, 3_000_000, "b", "maternel"),
     ])
     assert clean[0]["inherit"] == "maternel"
+
+
+def test_denovo_cutoff_is_cohort_relative():
+    """An absolute 20 flagged 664 of 665 dataset_paper children; 5x the
+    cohort median flags the tail only, with the floor for family runs."""
+    from vedette.report import denovo_cutoff
+
+    cohort = {f"k{i}": 100 for i in range(76)} | {"noisy": 576}
+    assert denovo_cutoff(cohort, 20) == 500.0
+    assert {c for c, n in cohort.items() if n > denovo_cutoff(cohort, 20)} == {"noisy"}
+    assert denovo_cutoff({"kid": 3, "kid2": 40}, 20) == 20.0     # too few children
