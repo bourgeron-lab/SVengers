@@ -445,6 +445,42 @@ def test_own_call_index_clamps_ends_to_the_contig(tmp_path):
     assert end == 156_040_895 and is_pass and who == "kid"
 
 
+def test_read_cohort_vcf_clamps_site_ends_to_the_contig(tmp_path):
+    """Cohort sites merged before merge clamped END overhang the contig
+    (dataset_paper: 24 sites, chr12 133,276,002 for 133,275,309); a family
+    row without an own span keeps the site's ends, so the reader bounds them."""
+    import pysam
+
+    from vedette.report import _read_cohort_vcf
+
+    chr12 = 133_275_309
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr12", length=chr12)
+    hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    hdr.info.add("SVTYPE", "1", "String", "type")
+    hdr.info.add("END", "1", "Integer", "end")
+    for key, typ in (("AF", "Float"), ("NS", "Integer"), ("NCARRIER", "Integer"),
+                     ("HWE_P", "Float"), ("RESCUE", "String")):
+        hdr.info.add(key, "1", typ, key)
+    hdr.formats.add("GT", "1", "String", "Genotype")
+    hdr.formats.add("GQ", "1", "Integer", "Genotype quality")
+    hdr.add_sample("kid")
+    path = tmp_path / "cohort.vcf.gz"
+    with pysam.VariantFile(str(path), "wz", header=hdr) as vf:
+        for start, stop in ((1_000_000, 1_020_001), (133_250_000, 133_276_002)):
+            rec = vf.new_record(contig="chr12", start=start, stop=stop,
+                                alleles=("N", "<DEL>"))
+            rec.info["SVTYPE"] = "DEL"
+            rec.samples["kid"]["GT"] = (0, 1)
+            rec.samples["kid"]["GQ"] = 99
+            vf.write(rec)
+    _, sites, *_ = _read_cohort_vcf(path)
+    by_start = {st["start"]: st for st in sites}
+    assert by_start[133_250_000]["end"] == chr12
+    assert by_start[133_250_000]["size"] == chr12 - 133_250_000
+    assert by_start[1_000_000]["end"] == 1_020_001  # inside: untouched
+
+
 def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
     """End to end: the row of a re-genotyped site backed by the child's own
     call is drawn at the own call's coordinates, with its genes recomputed."""

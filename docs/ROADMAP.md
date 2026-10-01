@@ -113,14 +113,21 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 
 ### 1duodecies. Deux points relevés au rapport dataset_paper du 2026-09-30
 
-- **Fins d'appels au-delà du chromosome (caller, préexistant).** 24 sites de
-  `cohort/sites.vcf.gz` finissent jusqu'à 1 kb après la fin de leur contig
-  (chrX 156,041,002 pour 156,040,895 ; chr12 133,276,002 pour 133,275,309) :
-  le dernier bin de 1 kb d'un segment de profondeur n'est pas borné à la
-  longueur du contig. 1362 lignes des pages familles en héritent (identique
-  avant et après `ea8a8e3`). À corriger à l'écriture du VCF (vcfout : borner
-  `stop` à la longueur du contig), puis re-merge ; le report peut borner en
-  attendant.
+- **Fins d'appels au-delà du chromosome (caller, préexistant) — corrigé dans
+  le code, données à reprendre.** 24 sites de `cohort/sites.vcf.gz` finissent
+  jusqu'à 1 kb après la fin de leur contig (chrX 156,041,002 pour
+  156,040,895 ; chr12 133,276,002 pour 133,275,309) : le dernier bin de 1 kb
+  d'un segment de profondeur n'était pas borné à la longueur du contig. 1362
+  lignes des pages familles en héritent (identique avant et après `ea8a8e3`).
+  Correctifs : `447ad86` borne la fin à l'écriture (`vcfout.clamp_end`,
+  partagé par `write_vcf` et `run_merge` ; borne interne `length - 1` car
+  htslib écrit END = POS + |SVLEN|, cf. (f) : l'END écrit tombe sur la
+  dernière base du contig) ; `04d63af` borne les appels propres lus par le
+  report (`own_call_index`) ; `_read_cohort_vcf` borne aussi les sites, pour
+  les lignes sans appel propre. Reste : re-merge de dataset_paper et PMS
+  (`sites.vcf.gz` et `cohort.vcf.gz` publiés débordent encore). Les VCF
+  filtrés par échantillon gardent le débordement jusqu'à un rappel : le
+  report les borne à la lecture, tout autre lecteur direct les voit encore.
 - **Temps du report.** `own_span` + `_cohort_site_pass` font passer les pages
   familles de dataset_paper de 1 h 10 à 2 h 15 (2670 échantillons, 1206
   familles). Piste : résoudre le statut de site de chaque appel propre une

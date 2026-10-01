@@ -1076,7 +1076,14 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False):
         has_sqmax = "SQMAX" in vcf.header.info
         has_carrier_frac = "CARRIER_FRAC" in vcf.header.info
         has_ref_carrier_frac = "REF_CARRIER_FRAC" in vcf.header.info
+        lengths = {c.name: c.length for c in vcf.header.contigs.values()}
         for rec in vcf:
+            # sites merged before merge clamped END run up to one depth bin
+            # past the contig end, and family rows without an own span keep
+            # the site's ends (same bound as own_call_index)
+            stop = rec.stop
+            if lengths.get(rec.contig):
+                stop = min(stop, lengths[rec.contig])
             af = rec.info.get("AF", (0.0,))
             af = af[0] if isinstance(af, tuple) else af
             nalt = np.full(n, -1, np.int8)   # -1 = missing
@@ -1093,8 +1100,8 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False):
                     if v is not None:
                         cn[i] = min(int(v), 127)
             sites.append({
-                "id": rec.id, "contig": rec.contig, "start": rec.start, "end": rec.stop,
-                "svtype": rec.info.get("SVTYPE", "?"), "size": rec.stop - rec.start,
+                "id": rec.id, "contig": rec.contig, "start": rec.start, "end": stop,
+                "svtype": rec.info.get("SVTYPE", "?"), "size": stop - rec.start,
                 "af": float(af), "ns": int(rec.info.get("NS", 0)),
                 "ncarrier": int(rec.info.get("NCARRIER", 0)),
                 "hwe": float(rec.info.get("HWE_P", 1.0)),
