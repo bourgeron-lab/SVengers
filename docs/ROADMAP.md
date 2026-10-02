@@ -147,8 +147,17 @@ constitutionnelle de 3 Mb voisine d'une fenêtre délétée (CN par fenêtre 2,9
 à CN 1,60-1,66 homogène sur 22q13 (43-50 Mb) avec la BAF attendue pour
 f = 0,35 — candidat de délétion 22q13 en mosaïque (anneau 22 ?), à vérifier.
 
+Seuil abaissé à 3 fenêtres (3 Mb) le même jour : Alexandre a vu dans IGV une
+délétion 22q13 terminale en mosaïque (47,7 Mb-fin, CN 1,62, BAF conforme à
+f = 0,38) que le seuil de 5 Mb manquait, comme le caller principal (aucun
+appel : CN trop proche de 2 pour le HMM). La dernière fenêtre partielle du
+contig est gardée et la fin bornée à sa longueur. Effet : PMS 1 → 3 porteurs,
+tous des mosaïques 22q13 terminales (f 0,35-0,56) ; dataset_paper 3 → 4, le
+nouveau étant une DUP 7q11.23 de 3 Mb à CN 2,68 (région riche en segdups,
+mosaïque ou duplication constitutionnelle sous-estimée — à voir dans IGV).
+
 Limites : autosomes seulement (ploïdie des X/Y absente des stores 0.3) ;
-événements < 5 Mb hors de portée ; les délétions complètes (f ≈ 1) n'ont plus
+événements < 3 Mb hors de portée ; les délétions complètes (f ≈ 1) n'ont plus
 de sites hétérozygotes et ne sont pas confirmées par la BAF (c'est le travail
 du caller principal). À faire : intégrer la passe au pipeline Nextflow, et
 faire profiter le caller de la fraction (états fractionnaires ou fusion des

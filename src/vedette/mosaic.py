@@ -32,7 +32,11 @@ from pathlib import Path
 import numpy as np
 
 WINDOW_BP = 1_000_000
-MIN_WINDOWS = 5            # 5 Mb: smaller mosaic events are out of reach at ~30x
+# 3 Mb. At 5 Mb a PMS proband's terminal 22q13 loss at CN 1.62 (47.7 Mb to
+# the end of chr22, BAF exactly as f = 0.38 predicts, confirmed in IGV) was
+# out of reach; at 3 windows the PMS scan finds three terminal 22q13 mosaics
+# and nothing else.
+MIN_WINDOWS = 3
 MIN_VALID_FRAC = 0.5       # a window needs half its bins unmasked
 MIN_HET_PER_WINDOW = 20    # heterozygous sites for a window's BAF summary
 SPLIT_T = 6.0              # binary-segmentation split threshold (in noise SDs)
@@ -76,6 +80,11 @@ def expected_baf_excess(svtype: str, f: float) -> float:
     return (1 + f) / (2 + f) - 0.5
 
 
+def homogeneous(win_cn: np.ndarray, cn: float) -> bool:
+    """Whether a segment's windows sit at one level (HOMOG_*), as a clone does."""
+    return bool(np.mean(np.abs(np.asarray(win_cn) - cn) <= HOMOG_TOL) >= HOMOG_FRAC)
+
+
 def _segments(levels: np.ndarray, sd: float, min_len: int, t_split: float) -> list[tuple[int, int]]:
     """Binary segmentation of window levels into [i, j) runs."""
     out: list[tuple[int, int]] = []
@@ -110,9 +119,13 @@ def _windows(store, contig: str):
     corr = np.asarray(corr, dtype=np.float64)
     mask = np.asarray(mask, dtype=bool)
     nb = max(1, WINDOW_BP // store.bin_size)
-    n_win = len(corr) // nb
-    blk = corr[:n_win * nb].reshape(n_win, nb).copy()
-    bad = mask[:n_win * nb].reshape(n_win, nb) | ~np.isfinite(blk)
+    # keep the last, partial window: a terminal event lives in it
+    n_win = -(-len(corr) // nb)
+    pad = n_win * nb - len(corr)
+    corr = np.concatenate([corr, np.full(pad, np.nan)])
+    mask = np.concatenate([mask, np.ones(pad, dtype=bool)])
+    blk = corr.reshape(n_win, nb).copy()
+    bad = mask.reshape(n_win, nb) | ~np.isfinite(blk)
     blk[bad] = np.nan
     valid = (~bad).mean(axis=1) >= MIN_VALID_FRAC
     level = np.full(n_win, np.nan)
@@ -134,7 +147,7 @@ def _windows(store, contig: str):
     except KeyError:
         pass
     starts = np.arange(n_win) * WINDOW_BP
-    return starts, level, dev
+    return starts, level, dev, (len(corr) - pad) * store.bin_size
 
 
 def scan_store(store) -> list[MosaicCall]:
@@ -142,6 +155,7 @@ def scan_store(store) -> list[MosaicCall]:
     and BAF support; only BAF-supported segments are returned."""
     contigs = [c for c in AUTOSOMES if store.has_contig(c)]
     data = {c: _windows(store, c) for c in contigs}
+    length = {c: d[3] for c, d in data.items()}
     all_levels = np.concatenate([d[1] for d in data.values()]) if data else np.array([])
     base = np.nanmedian(all_levels) if np.isfinite(all_levels).any() else np.nan
     if not np.isfinite(base) or base <= 0:
@@ -153,7 +167,7 @@ def scan_store(store) -> list[MosaicCall]:
     sd = 1.4826 * np.median(np.abs(diffs - np.median(diffs))) / np.sqrt(2) if len(diffs) else 0.0
     sd = max(sd, 0.01)
     calls: list[MosaicCall] = []
-    for c, (starts, level, dev) in data.items():
+    for c, (starts, level, dev, _len) in data.items():
         ok = np.isfinite(level)
         if ok.sum() < MIN_WINDOWS:
             continue
@@ -163,8 +177,7 @@ def scan_store(store) -> list[MosaicCall]:
             cn = 2.0 * float(np.median(lv[i:j]))
             if abs(cn - 2.0) < MIN_CN_SHIFT:
                 continue
-            win_cn = 2.0 * lv[i:j]
-            if np.mean(np.abs(win_cn - cn) <= HOMOG_TOL) < HOMOG_FRAC:
+            if not homogeneous(2.0 * lv[i:j], cn):
                 continue                   # blend of levels, not one clone
             svtype = "DEL" if cn < 2 else "DUP"
             f = float(np.clip(abs(cn - 2.0), 0.0, 1.0))
@@ -178,7 +191,8 @@ def scan_store(store) -> list[MosaicCall]:
                 continue
             calls.append(MosaicCall(
                 sample=store.sample, contig=c,
-                start=int(starts[wins[0]]), end=int(starts[wins[-1]] + WINDOW_BP),
+                start=int(starts[wins[0]]),
+                end=int(min(starts[wins[-1]] + WINDOW_BP, length[c])),
                 svtype=svtype, cn=round(cn, 3), fraction=round(f, 3),
                 baf_dev=round(excess, 4), baf_expected=round(exp, 4),
                 n_windows=int(len(wins)),

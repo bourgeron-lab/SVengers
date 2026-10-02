@@ -84,7 +84,27 @@ def test_mosaic_flags_on_family_rows():
 
 
 def test_blend_of_integer_levels_is_not_a_mosaic(tmp_path):
-    """Five windows too short to split — three at CN 3, two at CN 1 — share
-    one segment whose median says "gain"; the windows say two events."""
+    """PMS: a constitutional 16p13 duplication beside a deleted window (2.9,
+    2.5, 3.0, 1.15) and a 22q13 deletion with an intermediate edge (1.66,
+    1.65, 1.03, 1.02) have intermediate medians but are not clones."""
+    import numpy as np
+
+    from vedette.mosaic import homogeneous
+
+    assert not homogeneous(np.array([2.9, 2.5, 3.0, 1.15]), 2.5)
+    assert not homogeneous(np.array([1.66, 1.65, 1.03, 1.02]), 1.65)
+    assert homogeneous(np.array([1.33, 1.35, 1.33, 1.25, 1.33]), 1.33)
+    # and a full-copy block resolved by the segmenter is a gain, not a mosaic
     st = _store(tmp_path, {"chr6": [(10, 13, 3.0, True), (13, 15, 1.0, True)]})
-    assert [c for c in scan_store(st) if c.contig == "chr6"] == []
+    chr6 = [c for c in scan_store(st) if c.contig == "chr6"]
+    assert chr6 and not any(c.mosaic for c in chr6)
+
+
+def test_short_terminal_mosaic_reaches_the_contig_end(tmp_path):
+    """A PMS proband's terminal 22q13 loss at CN 1.62 over ~3 Mb, out of reach
+    at a 5 Mb minimum; its end must stop at the contig, not at the window."""
+    st = _store(tmp_path, {"chr8": (37, 40, 1.62, True)})
+    calls = [c for c in scan_store(st) if c.contig == "chr8"]
+    assert len(calls) == 1 and calls[0].mosaic
+    assert calls[0].fraction == pytest.approx(0.38, abs=0.06)
+    assert calls[0].end == CONTIG_MB * 1_000_000

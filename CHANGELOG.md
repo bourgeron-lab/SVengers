@@ -45,7 +45,7 @@ Nextflow wrapper (`workflows/nextflow`) on SLURM.
   default.
 - A carrier without an own PASS call keeps its cohort site's breakpoints,
   which can overshoot its event (edge-CN test at genotyping planned).
-- Mosaic detection: autosomes only, segments ≥ 5 Mb; complete losses are not
+- Mosaic detection: autosomes only, segments ≥ 3 Mb; complete losses are not
   confirmed by BAF (no heterozygous sites left).
 - Impact score: no triplosensitivity (gains of dosage-sensitive genes are
   under-scored), no 5'/3' distinction for partial deletions, inheritance and

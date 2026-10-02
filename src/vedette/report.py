@@ -1739,7 +1739,7 @@ NDD dominant +0,45 (perte de fonction possible), duplication complète +0,15 ;
 {_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DUP"), limit=40)}
 
 <h2>Mosaïques chromosomiques</h2>
-{('<p>Segments ≥ 5 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, '
+{('<p>Segments ≥ 3 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, '
   'gain CN = 2 + f, f = fraction de cellules), confirmés par le déséquilibre allélique '
   '(|BAF − 0,5| observé au-delà du bruit / attendu pour f). Un clone présent dans une partie '
   'des cellules n\'est pas constitutionnel : artefact de culture (lignée lymphoblastoïde) ou '
