@@ -269,7 +269,7 @@ def test_gtr_discordance_is_directional(tmp_path):
                 gt, cn = ("0/1", 1) if k == 0 else ("0/0", 2)
             rows.append(dict(zip(GENOTYPE_COLUMNS, [
                 sid, contig, start, end, svtype, f"S{k}", gt, 40, cn, 0.99, "", 0, 0, 0, 0, "",
-            ])))
+            ], strict=False)))
         path = tmp_path / f"S{k}.gt.tsv"
         with open(path, "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
@@ -323,7 +323,7 @@ def test_cohort_filter_post_processing_flags(tmp_path):
                 gt, cn = ("0/1", 1) if k < 2 else ("0/0", 2)
             rows.append(dict(zip(GENOTYPE_COLUMNS, [
                 sid, contig, start, end, svtype, smp, gt, 40, cn, 0.99, "", 0, 0, 0, 0, "",
-            ])))
+            ], strict=False)))
         path = tmp_path / f"{smp}.gt.tsv"
         with open(path, "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")

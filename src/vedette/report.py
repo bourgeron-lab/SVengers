@@ -388,7 +388,7 @@ def own_span(idx: dict, contig: str, pos: int, end: int, svtype: str,
     # longest first at equal starts, so a nested call always follows its host
     calls.sort(key=lambda c: (c[0], -c[1]))
     reach = None
-    for k, (op, oe, anchors) in enumerate(calls):
+    for k, (op, oe, _anchors) in enumerate(calls):
         if reach is not None and oe <= reach:
             calls[k] = (op, oe, False)          # nested: links, never an end
         reach = oe if reach is None else max(reach, oe)
@@ -514,7 +514,7 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
     for e in events:
         groups[(e["contig"], e["svtype"], tuple(sorted(e["carriers"])))].append(e)
     out: list[dict] = []
-    for (contig, svtype, _carriers), evs in groups.items():
+    for (_contig, _svtype, _carriers), evs in groups.items():
         evs.sort(key=lambda e: (e["pos"], e["end"]))
         cur: dict | None = None
         for e in evs:
@@ -620,11 +620,11 @@ def _write_all_family_events(
         # 1,9 % à 0,3 % pour les DUP quand le CN est cohérent — mais la relecture
         # IGV montre que l'exiger coûte de vrais événements, d'où une colonne et
         # non un filtre par défaut.
-        def _cn_ok(cn_val):
+        def _cn_ok(cn_val, site=site):
             if cn_m is None or cn_val < 0:
                 return False
             return cn_val <= 1 if site["svtype"] == "DEL" else cn_val >= 3
-        def _ovl(iv):
+        def _ovl(iv, site=site):
             return "" if iv is None else f"{iv.overlap_fraction(site['contig'], site['start'], site['end']):.2f}"
         base = "\t".join([
             site["id"] or "", site["contig"], str(site["start"] + 1), str(site["end"]),
@@ -667,7 +667,7 @@ def _write_all_family_events(
                 f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
             ) if len(inh) > 1 else (_INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else "")
             gts, carriers = [], []
-            for m, cell in zip(members, r[16:]):
+            for m, cell in zip(members, r[16:], strict=False):
                 na, gq, cn = cell.split(":")
                 gt_s = _NALT_GT.get(int(na), "./.")
                 gts.append((gt_s, gq, cn))
@@ -1626,6 +1626,21 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         key=lambda r: (r[0], r[1]),
     )
     n_mosaic_samples = len({r[0] for r in mosaic_rows})
+    if mosaic_rows:
+        mosaic_section = (
+            "<p>Segments ≥ 3 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, "
+            "gain CN = 2 + f, f = fraction de cellules), confirmés par le déséquilibre allélique "
+            "(|BAF − 0,5| observé au-delà du bruit / attendu pour f). Un clone présent dans une "
+            "partie des cellules n'est pas constitutionnel : artefact de culture (lignée "
+            "lymphoblastoïde) ou processus clonal dans le prélèvement — à vérifier avant toute "
+            "interprétation de ses CNV.</p>"
+            + _table(["échantillon", "chr", "Mb", "type", "CN", "fraction", "BAF obs. / att."],
+                     mosaic_rows)
+        )
+    elif mosaic_by_sample:
+        mosaic_section = "<p>Aucun segment mosaïque.</p>"
+    else:
+        mosaic_section = "<p>Scan non lancé (<code>vedette mosaic --run-dir</code>).</p>"
 
     # ---- family events pages: one sweep of the matrices, never a per-family
     # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
@@ -1739,14 +1754,7 @@ NDD dominant +0,45 (perte de fonction possible), duplication complète +0,15 ;
 {_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DUP"), limit=40)}
 
 <h2>Mosaïques chromosomiques</h2>
-{('<p>Segments ≥ 3 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, '
-  'gain CN = 2 + f, f = fraction de cellules), confirmés par le déséquilibre allélique '
-  '(|BAF − 0,5| observé au-delà du bruit / attendu pour f). Un clone présent dans une partie '
-  'des cellules n\'est pas constitutionnel : artefact de culture (lignée lymphoblastoïde) ou '
-  'processus clonal dans le prélèvement — à vérifier avant toute interprétation de ses CNV.</p>'
-  + _table(["échantillon", "chr", "Mb", "type", "CN", "fraction", "BAF obs. / att."], mosaic_rows))
- if mosaic_rows else ("<p>Aucun segment mosaïque.</p>" if mosaic_by_sample
-                      else "<p>Scan non lancé (<code>vedette mosaic --run-dir</code>).</p>")}
+{mosaic_section}
 
 <h2>Échantillons</h2>
 <p>Le score de wave mesure les oscillations mégabase de couverture survivant à la

@@ -137,7 +137,8 @@ def test_impact_score_follows_the_clingen_grid(tmp_path):
 
     gff, tsv = _genetrek_fixture(tmp_path)
     idx = _GeneIndex(gff, tsv)
-    pts = lambda a, b, t="DEL": idx.impact("chr22", a, b, t)[0]
+    def pts(a, b, t="DEL"):
+        return idx.impact("chr22", a, b, t)[0]
     assert pts(90_000, 170_000) == 1.00            # SHANK3 fully deleted
     assert pts(90_000, 120_000) == 0.90            # its first exon
     assert pts(120_000, 130_000) == 0.0            # intronic only
@@ -600,7 +601,7 @@ def test_carrier_requires_sufficient_gq():
     low-GQ alternative genotype must not make the sample a carrier."""
     import numpy as np
 
-    from vedette.report import _write_all_family_events, _FamilySpill
+    from vedette.report import _FamilySpill, _write_all_family_events
 
     samples = ["kid", "dad", "mum"]
     sites = [{"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL",
@@ -637,10 +638,8 @@ def test_large_deletion_keeps_pass_when_chromosome_depth_agrees(tmp_path):
     the HMM splits a terminal deletion into adjacent segments each segment's
     flanks fall inside its neighbour, so dhffc ~ 1 and the model sees nothing.
     fc_chrom still does, so it keeps the call."""
-    import pysam
 
     from vedette.config import load_config
-    from vedette.filter.pipeline import run_filter
 
     cfg = load_config(None)
     f = cfg.filter
@@ -740,14 +739,15 @@ def test_big_cnv_alert_on_family_rows(tmp_path):
 
     from vedette.report import BIG_CNV_WARN, _FamilySpill, _write_all_family_events, big_cnv_counts
 
-    ev = lambda pos, size, own="PASS", flt="PASS", car=("dad",): dict(
-        contig="chr10", pos=pos, end=pos + size, filter=flt, own=own, carriers=list(car))
+    def ev(pos, size, own="PASS", flt="PASS", car=("dad",)):
+        return dict(contig="chr10", pos=pos, end=pos + size, filter=flt, own=own,
+                    carriers=list(car))
     n = big_cnv_counts([ev(1, 2_000_000), ev(5_000_000, 1_500_000), ev(9_000_000, 900_000),
                         ev(12_000_000, 3_000_000, own="filtré"), ev(20_000_000, 2_000_000, flt="LowSQ")])
     assert n["dad"] == 2                      # 900 kb, filtered own call, non-PASS: not counted
 
     samples = ["kid", "dad", "mum"]
-    sites, rows = [], []
+    sites = []
     for i in range(BIG_CNV_WARN):
         start = 10_000_000 * (i + 1)
         sites.append({"id": f"s{i}", "contig": "chr10", "start": start, "end": start + 1_200_000,
@@ -758,14 +758,20 @@ def test_big_cnv_alert_on_family_rows(tmp_path):
     cn = np.array([[2, 1, 2]] * BIG_CNV_WARN, dtype=np.int8)
     # dad's own PASS calls behind each site
     import pysam
-    d = tmp_path / "samples" / "dad"; d.mkdir(parents=True)
-    hdr = pysam.VariantHeader(); hdr.contigs.add("chr10", length=133_797_422)
+    d = tmp_path / "samples" / "dad"
+    d.mkdir(parents=True)
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr10", length=133_797_422)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
-    hdr.info.add("SVTYPE", "1", "String", "t"); hdr.info.add("END", "1", "Integer", "e"); hdr.add_sample("dad")
+    hdr.info.add("SVTYPE", "1", "String", "t")
+    hdr.info.add("END", "1", "Integer", "e")
+    hdr.add_sample("dad")
     with pysam.VariantFile(str(d / "dad.filtered.vcf.gz"), "wz", header=hdr) as vf:
         for st in sites:
             r = vf.new_record(contig="chr10", start=st["start"], stop=st["end"], alleles=("N", "<DEL>"))
-            r.info["SVTYPE"] = "DEL"; r.filter.add("PASS"); vf.write(r)
+            r.info["SVTYPE"] = "DEL"
+            r.filter.add("PASS")
+            vf.write(r)
     _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
                              lambda *a: "", lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"))
     page = (tmp_path / "families" / "F1" / "events.html").read_text()
