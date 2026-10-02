@@ -576,6 +576,7 @@ def _write_all_family_events(
     sample_qc: dict[str, list[str]] | None = None,
     wave_scores: dict[str, float | None] | None = None,
     wave_by_contig: dict[str, dict] | None = None,
+    mosaic_by_sample: dict[str, list[dict]] | None = None,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -711,6 +712,7 @@ def _write_all_family_events(
                 fl += (sample_qc or {}).get(m, [])
                 if big[m] >= BIG_CNV_WARN:
                     fl.append(f"grands CNV {big[m]}")
+                fl += mosaic_flags((mosaic_by_sample or {}).get(m, []), e)
                 if fl:
                     alerts.append(f"{m[-3:]} {', '.join(fl)}")
             e["qc"] = " · ".join(alerts)
@@ -837,7 +839,8 @@ def _write_events_page(
         f'chromosome de la ligne, qu\'un grand CNV fait osciller à lui seul), charge de sites PASS '
         f'≥ 5× la médiane de la cohorte, nombre de candidats de novo au-delà du garde-fou, ou '
         f'« grands CNV » : au moins 3 événements ≥ 1 Mb avec appel propre PASS chez ce porteur '
-        f'(médiane de dataset_paper 0, p99 1) — '
+        f'(médiane de dataset_paper 0, p99 1), ou « mosaïque » : le porteur a un segment chromosomique '
+        f'à nombre de copies fractionnaire confirmé par la BAF (vedette mosaic) — '
         f'un événement porté par un génome techniquement atypique est à relire avant d\'y croire, '
         f'quel que soit son impact. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
@@ -1106,6 +1109,24 @@ def big_cnv_counts(events: list[dict]) -> Counter:
             for m in e["carriers"]:
                 n[m] += 1
     return n
+
+
+def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
+    """Alerts of a carrier with mosaic segments (`vedette mosaic`): the row's
+    own segment when the row lies in one, else a sample-level warning.
+
+    A clone present in a fraction of the cells makes the integer CN-HMM emit
+    fragments: a dataset_paper parent's 50 Mb 10q loss at CN 1.33 came back
+    as 57 CN=1 rows. The row says which mosaic it belongs to."""
+    mos = [g for g in segments if g["mosaic"]]
+    if not mos:
+        return []
+    for g in mos:
+        if (g["contig"] == e["contig"] and g["svtype"] == e.get("svtype", g["svtype"])
+                and min(g["end"], e["end"]) - max(g["start"], e["pos"] - 1) > 0):
+            return [f"mosaïque {round(100 * g['fraction'])} % "
+                    f"{g['contig']}:{g['start'] // 1_000_000}-{g['end'] // 1_000_000} Mb"]
+    return [f"porteur mosaïque ({len(mos)} segment{'s' if len(mos) > 1 else ''})"]
 
 
 def row_wave_score(wave_by_contig: dict | None, sample_score: float | None,
@@ -1584,6 +1605,25 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
                 pass
     n_wavy = sum(1 for v in wave_scores.values() if v is not None and v >= WAVE_WARN)
     sample_qc = sample_qc_flags(overloaded, dn_outliers)
+    # ---- mosaic segments (`vedette mosaic --run-dir`), when present
+    from .mosaic import read_tsv as _read_mosaic
+
+    mosaic_by_sample: dict[str, list[dict]] = {}
+    for s in samples:
+        tsv = run_dir / "samples" / s / f"{s}.mosaic.tsv"
+        if tsv.exists():
+            try:
+                mosaic_by_sample[s] = _read_mosaic(tsv)
+            except (OSError, ValueError, KeyError):
+                pass
+    mosaic_rows = sorted(
+        ([s, g["contig"], f'{g["start"] // 1_000_000}-{g["end"] // 1_000_000}', g["svtype"],
+          f'{g["cn"]:.2f}', f'{round(100 * g["fraction"])} %',
+          f'{g["baf_dev"]:.3f} / {g["baf_expected"]:.3f}']
+         for s, segs in mosaic_by_sample.items() for g in segs if g["mosaic"]),
+        key=lambda r: (r[0], r[1]),
+    )
+    n_mosaic_samples = len({r[0] for r in mosaic_rows})
 
     # ---- family events pages: one sweep of the matrices, never a per-family
     # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
@@ -1595,6 +1635,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
             segdup_iv=segdup_iv, lcr_iv=lcr_iv, collapse=collapse_family_events,
             min_carrier_gq=min_carrier_gq, sample_qc=sample_qc,
             wave_scores=wave_scores, wave_by_contig=wave_by_contig,
+            mosaic_by_sample=mosaic_by_sample,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)
@@ -1659,6 +1700,7 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 <span class=kpi><b>{n_artifact}</b>artefacts cohorte</span>
 <span class=kpi><b>{len(rare)}</b>sites rares (≤2 porteurs)</span>
 <span class=kpi><b>{n_wavy}</b>échantillons wavy (score ≥ {WAVE_WARN})</span>
+<span class=kpi><b>{n_mosaic_samples if mosaic_by_sample else "—"}</b>échantillons avec mosaïque chromosomique</span>
 <span class=kpi><b>{len(overloaded)}</b>échantillons surchargés (≥{CARRIER_EXCESS_WARN}x la médiane de porteurs PASS)</span>
 <span class=kpi><b>{len(dn_outliers)}</b>enfants outliers de novo (&gt;{dn_cut:.0f})</span>
 </div>
@@ -1693,6 +1735,16 @@ NDD dominant +0,45 (perte de fonction possible), duplication complète +0,15 ;
 {_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DEL"), limit=40)}
 <h3>DUP ({sum(1 for s in rare if s["svtype"] == "DUP")})</h3>
 {_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DUP"), limit=40)}
+
+<h2>Mosaïques chromosomiques</h2>
+{('<p>Segments ≥ 5 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, '
+  'gain CN = 2 + f, f = fraction de cellules), confirmés par le déséquilibre allélique '
+  '(|BAF − 0,5| observé au-delà du bruit / attendu pour f). Un clone présent dans une partie '
+  'des cellules n\'est pas constitutionnel : artefact de culture (lignée lymphoblastoïde) ou '
+  'processus clonal dans le prélèvement — à vérifier avant toute interprétation de ses CNV.</p>'
+  + _table(["échantillon", "chr", "Mb", "type", "CN", "fraction", "BAF obs. / att."], mosaic_rows))
+ if mosaic_rows else ("<p>Aucun segment mosaïque.</p>" if mosaic_by_sample
+                      else "<p>Scan non lancé (<code>vedette mosaic --run-dir</code>).</p>")}
 
 <h2>Échantillons</h2>
 <p>Le score de wave mesure les oscillations mégabase de couverture survivant à la

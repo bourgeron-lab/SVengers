@@ -111,6 +111,49 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
 **sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
+### 1quaterdecies. Mosaïques chromosomiques (`vedette mosaic`, 2026-10-02)
+
+Vérifié par Alexandre dans IGV sur le père SMP-02 (famille FAM-03) : une seule
+délétion chr10:83,36 Mb-fin là où Vedette rendait 57 fragments CN=1. La
+profondeur donne **CN ≈ 1,33 homogène** sur 50 Mb : une perte dans ~2/3 des
+cellules. Le même clone (fraction 0,62-0,67) porte 12 segments ≥ 5 Mb — pertes
+2q, 6q, chr9, 10q, 12p, 17p, gains 4p et 17q (profil d'isochromosome 17q) —
+avec le déséquilibre allélique attendu (|BAF − 0,5| 0,20 sur 10q, 0,05 chez la
+mère ; attendu 0,25 pour une perte, 0,125 pour un gain à f = 0,67). Non
+transmis aux enfants : clone somatique (artefact de culture d'une lignée
+lymphoblastoïde, ou processus clonal dans le prélèvement), pas un événement
+constitutionnel — signalé à Alexandre comme possible découverte fortuite.
+
+Pourquoi Vedette le ratait : le CN-HMM n'a que des états entiers ; un rapport
+de 0,665 alterne entre CN 1 et CN 2 (fragments), et les gains à CN 2,67 ne
+tombent sur aucun état (non appelés).
+
+Passe ajoutée (`src/vedette/mosaic.py`, `vedette mosaic --run-dir`, ~1 s par
+échantillon depuis le store) : fenêtres de 1 Mb, segmentation binaire, fraction
+cellulaire sous hypothèse de changement d'une copie (perte CN = 2 − f, gain
+CN = 2 + f), puis deux filtres : **homogénéité** (≥ 75 % des fenêtres à ±0,2 du
+CN du segment — un mélange de niveaux entiers n'est pas un clone) et **BAF**
+(excès de |BAF − 0,5| ≥ 40 % de l'attendu pour f). Mosaïque si
+0,15 ≤ f ≤ 0,85 ; les segments à f ≈ 1 (grands gains constitutionnels, ex.
+duplications 8q24 des translocations PMS) sont écrits mais sans alerte. Le
+rapport lit `samples/<S>/<S>.mosaic.tsv` : alerte « mosaïque 67 % chr10:83-133
+Mb » sur les lignes qui tombent dans un segment du porteur, « porteur
+mosaïque » sur ses autres lignes, table « Mosaïques chromosomiques ».
+
+Calibrage du filtre d'homogénéité sur PMS : sans lui, une duplication 16p13
+constitutionnelle de 3 Mb voisine d'une fenêtre délétée (CN par fenêtre 2,9 /
+2,5 / 3,0 / 1,15) et une délétion 22q13 au bord intermédiaire (1,66 / 1,65 /
+1,03 / 1,02) passaient pour des mosaïques ; avec lui, seul reste un proposant
+à CN 1,60-1,66 homogène sur 22q13 (43-50 Mb) avec la BAF attendue pour
+f = 0,35 — candidat de délétion 22q13 en mosaïque (anneau 22 ?), à vérifier.
+
+Limites : autosomes seulement (ploïdie des X/Y absente des stores 0.3) ;
+événements < 5 Mb hors de portée ; les délétions complètes (f ≈ 1) n'ont plus
+de sites hétérozygotes et ne sont pas confirmées par la BAF (c'est le travail
+du caller principal). À faire : intégrer la passe au pipeline Nextflow, et
+faire profiter le caller de la fraction (états fractionnaires ou fusion des
+fragments d'un segment mosaïque en un appel unique).
+
 ### 1terdecies. Drapeau QC du porteur sur les lignes familles (2026-10-01)
 
 Demande d'Alexandre après le rapport dataset_paper : le score d'impact ne

@@ -245,6 +245,44 @@ def genotype(
     typer.echo(f"{n} site genotypes -> {out}")
 
 
+@app.command()
+def mosaic(
+    store: Optional[Path] = typer.Argument(None, help="One sample's evidence store (.zarr)"),
+    out: Optional[Path] = typer.Option(None, help="Output TSV (with STORE)"),
+    run_dir: Optional[Path] = typer.Option(
+        None, "--run-dir",
+        help="Scan every samples/<S>/<S>.evidence.zarr of a run, writing <S>.mosaic.tsv beside it",
+    ),
+) -> None:
+    """Chromosomal-scale mosaic CNVs (fractional copy number confirmed by BAF), from the store."""
+    from .extract.store import EvidenceStore
+    from .mosaic import scan_store, write_tsv
+
+    if run_dir is not None:
+        n_samples = n_calls = n_carriers = 0
+        for d in sorted((run_dir / "samples").iterdir()):
+            path = d / f"{d.name}.evidence.zarr"
+            if not path.exists():
+                continue
+            try:
+                calls = scan_store(EvidenceStore(path))
+            except Exception as exc:  # one unreadable store must not stop the batch
+                typer.echo(f"{d.name}: skipped ({exc})", err=True)
+                continue
+            write_tsv(calls, d / f"{d.name}.mosaic.tsv")
+            n_samples += 1
+            n_calls += len(calls)
+            n_carriers += any(c.mosaic for c in calls)
+        typer.echo(f"{n_samples} samples scanned, {n_calls} segments, "
+                   f"{n_carriers} samples with a mosaic segment")
+        return
+    if store is None or out is None:
+        raise typer.BadParameter("give STORE and --out, or --run-dir")
+    calls = scan_store(EvidenceStore(store))
+    write_tsv(calls, out)
+    typer.echo(f"{len(calls)} segments ({sum(c.mosaic for c in calls)} mosaic) -> {out}")
+
+
 @app.command("cohort-filter")
 def cohort_filter(
     sites: Path = typer.Argument(..., help="Sites VCF from `vedette merge`"),
