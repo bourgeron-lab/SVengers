@@ -19,6 +19,7 @@ include { VEDETTE_MERGE } from './modules/vedette_merge'
 include { VEDETTE_GENOTYPE } from './modules/vedette_genotype'
 include { VEDETTE_COHORT_FILTER } from './modules/vedette_cohort_filter'
 include { VEDETTE_PED } from './modules/vedette_ped'
+include { VEDETTE_MOSAIC } from './modules/vedette_mosaic'
 include { VEDETTE_REPORT } from './modules/vedette_report'
 
 def validatedSteps() {
@@ -135,6 +136,14 @@ workflow {
         VEDETTE_PED(VEDETTE_COHORT_FILTER.out.cohort_vcf)
     }
 
+    // chromosomal-scale mosaics, per sample from its store; the report stages
+    // the TSVs (an input, not the published copies, so it never races them)
+    def mosaic_tsvs = Channel.value([])
+    if ('report' in steps && params.mosaic.toString().toLowerCase() in ["true", "1", "yes"]) {
+        VEDETTE_MOSAIC(calls.map { sample, vcf, tbi, store -> [sample, store] })
+        mosaic_tsvs = VEDETTE_MOSAIC.out.tsv.collect().ifEmpty([])
+    }
+
     if ('report' in steps) {
         VEDETTE_REPORT(
             VEDETTE_COHORT_FILTER.out.cohort_vcf,
@@ -142,6 +151,7 @@ workflow {
             VEDETTE_PED.out.report,
             VEDETTE_PED.out.summary,
             VEDETTE_PED.out.sweep,
+            mosaic_tsvs,
         )
     }
 }

@@ -565,6 +565,10 @@ def report(
     min_carrier_gq: int = typer.Option(
         20, help="Minimum GQ for a genotype to count as a carrier on the events pages (re-genotyping emits low-GQ carriers readily: apparent de novo rate 14-17% below GQ 20 vs 1-2% above)",
     ),
+    mosaic_dir: Optional[Path] = typer.Option(
+        None, "--mosaic-dir",
+        help="Directory of <S>.mosaic.tsv (vedette mosaic); default samples/<S>/ of the run",
+    ),
     no_collapse_events: bool = typer.Option(
         False, "--no-collapse-events",
         help="Keep every cohort site as its own row on the events pages (default: merge overlapping same-type events carried by exactly the same members)",
@@ -594,6 +598,7 @@ def report(
         events_pass_only=events_pass_only,
         collapse_family_events=not no_collapse_events,
         min_carrier_gq=min_carrier_gq,
+        mosaic_dir=mosaic_dir,
     )
     typer.echo(f"rapport -> {path}")
 

@@ -1388,6 +1388,7 @@ def generate_report(
     events_pass_only: bool = False,
     collapse_family_events: bool = True,
     min_carrier_gq: int = 20,
+    mosaic_dir: str | Path | None = None,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -1610,7 +1611,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
 
     mosaic_by_sample: dict[str, list[dict]] = {}
     for s in samples:
-        tsv = run_dir / "samples" / s / f"{s}.mosaic.tsv"
+        tsv = (Path(mosaic_dir) / f"{s}.mosaic.tsv" if mosaic_dir
+               else run_dir / "samples" / s / f"{s}.mosaic.tsv")
         if tsv.exists():
             try:
                 mosaic_by_sample[s] = _read_mosaic(tsv)

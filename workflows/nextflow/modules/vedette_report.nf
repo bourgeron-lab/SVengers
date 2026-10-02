@@ -8,6 +8,7 @@ process VEDETTE_REPORT {
     path mendel_report
     path mendel_summary
     path trio_sweep
+    path mosaic_tsvs, stageAs: 'mosaic/*'
 
     output:
     path "report.html", emit: report
@@ -27,6 +28,8 @@ process VEDETTE_REPORT {
         ? "--family-events" : ""
     def events_pass_arg = params.events_pass_only.toString().toLowerCase() in ["true", "1", "yes"] \
         ? "--events-pass-only" : ""
+    def mosaic_arg = params.mosaic.toString().toLowerCase() in ["true", "1", "yes"] \
+        ? "--mosaic-dir mosaic" : ""
     """
     mkdir -p rundir/cohort
     # published per-sample evidence stores: wave-QC column of the sample table
@@ -38,7 +41,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} \\
+    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} ${mosaic_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi

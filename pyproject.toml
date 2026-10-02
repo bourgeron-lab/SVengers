@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vedette"
-version = "0.1.0.dev0"
+version = "1.0.0"
 description = "Vedette: a multi-evidence germline CNV caller (DEL/DUP) for short-read WGS with calibrated post-calling filtering"
 readme = "README.md"
 requires-python = ">=3.11"
