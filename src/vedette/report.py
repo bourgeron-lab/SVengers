@@ -699,6 +699,7 @@ def _write_all_family_events(
                 _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
         if collapse:
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
+        big = big_cnv_counts(events)
         for e in events:
             alerts = []
             for m in e["carriers"]:
@@ -708,6 +709,8 @@ def _write_all_family_events(
                 if w is not None and w >= WAVE_WARN:
                     fl.append(f"wave {w:.3f}")
                 fl += (sample_qc or {}).get(m, [])
+                if big[m] >= BIG_CNV_WARN:
+                    fl.append(f"grands CNV {big[m]}")
                 if fl:
                     alerts.append(f"{m[-3:]} {', '.join(fl)}")
             e["qc"] = " · ".join(alerts)
@@ -832,7 +835,9 @@ def _write_events_page(
         f'événements sont dans ce dernier cas et la relecture IGV les a tous jugés faux). '
         f'QC porteur = alertes QC de chaque porteur : wave au-delà du seuil (calculé sans le '
         f'chromosome de la ligne, qu\'un grand CNV fait osciller à lui seul), charge de sites PASS '
-        f'≥ 5× la médiane de la cohorte, ou nombre de candidats de novo au-delà du garde-fou — '
+        f'≥ 5× la médiane de la cohorte, nombre de candidats de novo au-delà du garde-fou, ou '
+        f'« grands CNV » : au moins 3 événements ≥ 1 Mb avec appel propre PASS chez ce porteur '
+        f'(médiane de dataset_paper 0, p99 1) — '
         f'un événement porté par un génome techniquement atypique est à relire avant d\'y croire, '
         f'quel que soit son impact. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
@@ -1081,6 +1086,26 @@ def sample_qc_flags(overloaded: dict, dn_outliers: dict) -> dict[str, list[str]]
     for smp, n in dn_outliers.items():
         flags[smp].append(f"de novo {n}")
     return dict(flags)
+
+
+# Large-CNV burden alert: events >= BIG_CNV_SIZE with the carrier's own PASS
+# call, per sample. dataset_paper: median 0, p99 1, max 13 (SMP-02: 13
+# non-transmitted deletions >= 1 Mb on 5 chromosomes, missed by wave, carrier
+# load and the de novo guard alike); >= 3 flags 2 of 2673 samples.
+BIG_CNV_SIZE = 1_000_000
+BIG_CNV_WARN = 3
+
+
+def big_cnv_counts(events: list[dict]) -> Counter:
+    """{carrier: PASS events >= BIG_CNV_SIZE backed by an own PASS call} of
+    one family page (a sample belongs to one family, so it is its count)."""
+    n: Counter = Counter()
+    for e in events:
+        if (e["filter"] == "PASS" and e.get("own") == "PASS"
+                and e["end"] - e["pos"] >= BIG_CNV_SIZE):
+            for m in e["carriers"]:
+                n[m] += 1
+    return n
 
 
 def row_wave_score(wave_by_contig: dict | None, sample_score: float | None,

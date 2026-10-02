@@ -730,3 +730,45 @@ def test_denovo_cutoff_is_cohort_relative():
     assert denovo_cutoff(cohort, 20) == 500.0
     assert {c for c, n in cohort.items() if n > denovo_cutoff(cohort, 20)} == {"noisy"}
     assert denovo_cutoff({"kid": 3, "kid2": 40}, 20) == 20.0     # too few children
+
+
+def test_big_cnv_alert_on_family_rows(tmp_path):
+    """dataset_paper SMP-02: 13 non-transmitted deletions >= 1 Mb, missed by
+    the wave, carrier-load and de novo guards; >= 3 large own-PASS events
+    flags the carrier on every row it carries."""
+    import numpy as np
+
+    from vedette.report import BIG_CNV_WARN, _FamilySpill, _write_all_family_events, big_cnv_counts
+
+    ev = lambda pos, size, own="PASS", flt="PASS", car=("dad",): dict(
+        contig="chr10", pos=pos, end=pos + size, filter=flt, own=own, carriers=list(car))
+    n = big_cnv_counts([ev(1, 2_000_000), ev(5_000_000, 1_500_000), ev(9_000_000, 900_000),
+                        ev(12_000_000, 3_000_000, own="filtré"), ev(20_000_000, 2_000_000, flt="LowSQ")])
+    assert n["dad"] == 2                      # 900 kb, filtered own call, non-PASS: not counted
+
+    samples = ["kid", "dad", "mum"]
+    sites, rows = [], []
+    for i in range(BIG_CNV_WARN):
+        start = 10_000_000 * (i + 1)
+        sites.append({"id": f"s{i}", "contig": "chr10", "start": start, "end": start + 1_200_000,
+                      "svtype": "DEL", "size": 1_200_000, "filter": "PASS", "rescue": "",
+                      "idx": i, "sqmax": None, "carrier_frac": None, "ref_carrier_frac": None})
+    nalt = np.array([[0, 1, 0]] * BIG_CNV_WARN, dtype=np.int8)
+    gq = np.array([[99, 99, 99]] * BIG_CNV_WARN, dtype=np.int16)
+    cn = np.array([[2, 1, 2]] * BIG_CNV_WARN, dtype=np.int8)
+    # dad's own PASS calls behind each site
+    import pysam
+    d = tmp_path / "samples" / "dad"; d.mkdir(parents=True)
+    hdr = pysam.VariantHeader(); hdr.contigs.add("chr10", length=133_797_422)
+    hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    hdr.info.add("SVTYPE", "1", "String", "t"); hdr.info.add("END", "1", "Integer", "e"); hdr.add_sample("dad")
+    with pysam.VariantFile(str(d / "dad.filtered.vcf.gz"), "wz", header=hdr) as vf:
+        for st in sites:
+            r = vf.new_record(contig="chr10", start=st["start"], stop=st["end"], alleles=("N", "<DEL>"))
+            r.info["SVTYPE"] = "DEL"; r.filter.add("PASS"); vf.write(r)
+    _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
+                             lambda *a: "", lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"))
+    page = (tmp_path / "families" / "F1" / "events.html").read_text()
+    assert page.count('data-qc="alerte"') == BIG_CNV_WARN
+    assert f"dad grands CNV {BIG_CNV_WARN}" in page
+

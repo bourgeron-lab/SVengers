@@ -142,6 +142,15 @@ d'abord signalées, alors que ce sont les vraies délétions SHANK3) :
    ligne** (`row_wave_score`) — 26 → 5 porteurs signalés sur leur DEL chr22 ;
    un génome réellement wavy oscille partout et garde son drapeau.
 
+4ᵉ alerte « grands CNV » (2026-10-02) : au moins 3 événements ≥ 1 Mb avec
+appel propre PASS chez le porteur (`big_cnv_counts`, par page familiale). Sur
+dataset_paper, la famille FAM-03 n'était signalée par aucune des trois alertes :
+ses 13 lignes ≥ 1 Mb sont portées par le père SMP-02 (wave 0,112 recalculé
+depuis son store 0.3, charge normale, pas d'enfant), 13 délétions non
+transmises sur 5 chromosomes — médiane de la cohorte 0, p99 1, max 13 ; le
+seuil 3 signale 2 échantillons sur 2673 (SMP-02, SMP-04). Réarrangement
+complexe ou problème d'échantillon : à trancher par IGV.
+
 Résultat PMS : lignes ≥ +1,00 avec appel propre PASS, 51 sans alerte / 7 avec
 (FAM-09 et FAM-06 portent deux grands CNV, DEL chr22 + DUP chr8 de
 translocation ; FAM-14 wave 0,184). Reste à faire : le score de wave
