@@ -111,6 +111,35 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
 **sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
+### 1quindecies. Décalage entraînement/production sur `gq` — à corriger par v6 (2026-10-05)
+
+Benchmark HG002 de la v1.0.0 (docs/benchmark_hg002_v1.tsv) contre celui du
+modèle v5 (09-18) : DEL 50-300 pb rappel 0,225 → 0,210, LCR 0,192 → 0,172,
+F1 global 0,495 → 0,483 ; CMRG identique. Autopsie des 132 DEL vraies
+50-300 pb perdues : 103 sont toujours appelées (JUNCTION) mais tombent en
+LowSQ, 21 manquent à l'appel. Le filtre n'y est pour rien (anciens appels
+refiltrés avec le code v1 : même SQ médian 5,16). Entre les deux appels, **une
+seule feature change pour les 104 candidats appariés : `gq` (+10 en
+médiane)** ; remettre l'ancien `gq` sur les features v1 rend PASS 95 des 104
+(SQ médian 4,35 → 5,16).
+
+Origine : `fd1f49e` (09-09 17:34) remplace la vraisemblance de Poisson du
+nombre de lectures de jonction par une binomiale négative. Les appels GIAB
+HG002/3/4 qui ont servi à entraîner v3 → v5 datent du 09-09 matin (Poisson) ;
+tous les appels de production (cohortes GHFC, HG002 v1) sont postérieurs
+(binomiale négative). Le modèle v5 sert donc en production une feature dont
+la distribution a changé depuis son entraînement. Le benchmark v5 (sur les
+appels du 09-09) surestimait légèrement la production ; celui de la v1 est le
+fidèle.
+
+Correctif : **v6** — rappeler HG003/HG004 avec le code v1 (HG002 l'est déjà,
+`resources/giab/hg002_v1/`), recalculer les features, mêmes labels, et
+réentraîner (avec `lcr_ovl` désormais vivante et des grands événements
+réalistes, cf. 1ter / 1nonies) ; re-benchmarker. Garde-fou à ajouter : le
+manifeste du modèle doit stocker des quantiles de référence par feature, et
+`vedette filter` avertir quand la distribution servie s'en écarte (test de
+dérive) — ce décalage serait sorti au premier run de production.
+
 ### 1quaterdecies. Mosaïques chromosomiques (`vedette mosaic`, 2026-10-02)
 
 Vérifié par Alexandre dans IGV sur le père SMP-02 (famille FAM-03) : une seule
