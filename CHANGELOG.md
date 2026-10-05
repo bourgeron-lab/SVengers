@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.1.0 — 2026-10
+
+### Filter model v6 (production)
+
+- `models/v6` replaces `models/v5` (operating threshold unchanged, SQ ≥ 5).
+  Same training data and labels; the GIAB samples are re-called with the
+  current code and features recomputed. v5 had been trained on GIAB calls
+  made before the negative-binomial junction likelihood changed `gq`, so in
+  production it served a feature whose distribution had moved.
+- Holdout of 8 wavy GHFC children (production features, unseen by both
+  models), SQ ≥ 5: DEL precision/recall 0.974/0.714 → 0.978/0.973, DUP
+  0.795/0.728 → 0.878/0.960.
+- HG002, first out-of-sample figure (v6 trained without HG002): DEL
+  precision 0.870, recall 0.365, F1 0.514 (GIAB v5.0q); best F1 of the
+  compared callers from 300 bp up; CMRG F1 0.573. Earlier HG002 figures were
+  in-sample. Tables: `docs/benchmark_hg002_v6.tsv`.
+
+### Fixes
+
+- `bench`: truth VCFs that declare no SVTYPE/SVLEN (CMRG) are read.
+- `configs/giab.toml` carries the production operating point; GIAB runs keep
+  1 kb depth bins (a CRAM-only run with `ghfc.toml` scans at 100 bp).
+
 ## v1.0.0 — 2026-10-05
 
 First release. Germline DEL/DUP calling from WGS with post-calling filtering,
@@ -13,7 +36,7 @@ Nextflow wrapper (`workflows/nextflow`) on SLURM.
   schema-versioned Zarr evidence store; downstream stages never re-read the
   CRAM.
 - **filter** — hard filters, then a calibrated per-type score (SQ,
-  gradient boosting, models/v5, operating threshold SQ ≥ 5); large deletions
+  gradient boosting, models/v5 in v1.0.0, operating threshold SQ ≥ 5); large deletions
   the model under-scores are kept when chromosome-level depth agrees.
 - **merge / genotype** — cohort site clustering with recurrence rescue, then
   re-genotyping of every sample from its store.

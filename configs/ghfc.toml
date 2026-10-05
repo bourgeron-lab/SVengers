@@ -9,7 +9,8 @@ lcr_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/selfchain-LCR.hg38
 pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/popCovStdev.bw"
 
 [filter]
-# v5 models (30 features, wavy-enriched training: GIAB + 16 GHFC wavy trios,
-# transmission labels): operating point SQ>=5 = precision 0.95 on HG002 v5.0q;
-# wavy-holdout DUP PR-AUC 0.988 (v4: 0.908)
+# v6 models (v1.1.0): v5's data and labels, GIAB re-called with the current
+# code (NB junction gq) and live lcr_ovl. Operating point SQ>=5: wavy holdout
+# DEL precision/recall 0.978/0.973, DUP 0.878/0.960 (v5 on the same features:
+# 0.974/0.714, 0.795/0.728); HG002 out of sample DEL precision 0.870, F1 0.514
 low_sq_threshold = 5.0
