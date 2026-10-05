@@ -132,7 +132,20 @@ la distribution a changé depuis son entraînement. Le benchmark v5 (sur les
 appels du 09-09) surestimait légèrement la production ; celui de la v1 est le
 fidèle.
 
-Correctif : **v6** — rappeler HG003/HG004 avec le code v1 (HG002 l'est déjà,
+**v6 entraîné le 2026-10-05** (`models/v6`, pas encore en production) : mêmes
+données et labels que v5, appels GIAB refaits avec le code v1, features avec
+`lcr_ovl` vivante. Holdout 8 enfants wavy (features de production, hors
+entraînement des deux modèles), au seuil SQ ≥ 5 : DEL P 0,974 / R 0,714 (v5)
+→ P 0,978 / R 0,973 (v6) ; DUP P 0,795 / R 0,728 → P 0,878 / R 0,960 —
+le décalage de `gq` coûtait donc ~25 points de rappel en production. HG002
+avec un modèle v6 entraîné SANS HG002 (premier chiffre hors échantillon :
+v3-v5 étaient évalués sur un HG002 vu à l'entraînement) : DEL R 0,365 /
+P 0,870 / F1 0,514 (v5 en échantillon : 0,323 / 0,955 / 0,483 ; Manta
+0,376 / 0,934 / 0,536 ; dysgu 0,389 / 0,879 / 0,539) ; meilleur F1 de la
+table dès 300 pb (300 pb-1 kb 0,722, 1-10 kb 0,831, 10-100 kb 0,706) ; CMRG
+F1 0,573 (v5 0,531). docs/benchmark_hg002_v6.tsv.
+
+Correctif (fait) : **v6** — rappeler HG003/HG004 avec le code v1 (HG002 l'est déjà,
 `resources/giab/hg002_v1/`), recalculer les features, mêmes labels, et
 réentraîner (avec `lcr_ovl` désormais vivante et des grands événements
 réalistes, cf. 1ter / 1nonies) ; re-benchmarker. Garde-fou à ajouter : le

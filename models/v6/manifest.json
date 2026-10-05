@@ -1,0 +1,143 @@
+{
+  "model_version": "v6",
+  "vedette_version": "1.0.0",
+  "schema_hash": "f89b9e8890da996f",
+  "features": [
+    "size_log10",
+    "is_dup",
+    "precise",
+    "src_both",
+    "src_junction",
+    "maskfrac",
+    "dhffc",
+    "fc_chrom",
+    "fc_residual",
+    "depth_cv",
+    "frac_consistent",
+    "n_bins_informative",
+    "flank_asym",
+    "pe",
+    "sr",
+    "cig",
+    "ins_z",
+    "ins_pairs",
+    "evidence_ratio",
+    "homlen",
+    "baf_n",
+    "baf_dev",
+    "segdup_ovl",
+    "lcr_ovl",
+    "exclude_ovl",
+    "popcov_stdev",
+    "gq",
+    "cn",
+    "cnq",
+    "wave_score"
+  ],
+  "created": "2026-10-05T14:52:52",
+  "training_data": "GIAB HG002/3/4 called with v1.0.0 (NB junction gq) + 16 wavy GHFC children (transmission labels), features with live lcr_ovl, 30-feature schema",
+  "metrics": {
+    "DEL": {
+      "n": 126069,
+      "n_tp": 106347,
+      "n_labeled_oof": 126069,
+      "pr_auc_oof": 0.9951,
+      "roc_auc_oof": 0.9771,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 109467,
+          "fdr": 0.0443,
+          "recall": 0.9838
+        },
+        {
+          "sq": 7,
+          "kept": 99685,
+          "fdr": 0.0157,
+          "recall": 0.9226
+        },
+        {
+          "sq": 10,
+          "kept": 94809,
+          "fdr": 0.0096,
+          "recall": 0.883
+        },
+        {
+          "sq": 13,
+          "kept": 89028,
+          "fdr": 0.0055,
+          "recall": 0.8326
+        },
+        {
+          "sq": 17,
+          "kept": 83334,
+          "fdr": 0.0037,
+          "recall": 0.7807
+        },
+        {
+          "sq": 20,
+          "kept": 77125,
+          "fdr": 0.0029,
+          "recall": 0.7231
+        },
+        {
+          "sq": 30,
+          "kept": 10110,
+          "fdr": 0.0001,
+          "recall": 0.0951
+        }
+      ]
+    },
+    "DUP": {
+      "n": 85153,
+      "n_tp": 60007,
+      "n_labeled_oof": 85153,
+      "pr_auc_oof": 0.9837,
+      "roc_auc_oof": 0.965,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 63109,
+          "fdr": 0.0836,
+          "recall": 0.9637
+        },
+        {
+          "sq": 7,
+          "kept": 52400,
+          "fdr": 0.0342,
+          "recall": 0.8434
+        },
+        {
+          "sq": 10,
+          "kept": 45132,
+          "fdr": 0.0183,
+          "recall": 0.7383
+        },
+        {
+          "sq": 13,
+          "kept": 39833,
+          "fdr": 0.0109,
+          "recall": 0.6566
+        },
+        {
+          "sq": 17,
+          "kept": 30670,
+          "fdr": 0.0046,
+          "recall": 0.5088
+        },
+        {
+          "sq": 20,
+          "kept": 26759,
+          "fdr": 0.0031,
+          "recall": 0.4446
+        },
+        {
+          "sq": 30,
+          "kept": 5461,
+          "fdr": 0.0005,
+          "recall": 0.091
+        }
+      ]
+    }
+  }
+}
