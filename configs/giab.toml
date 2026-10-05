@@ -1,4 +1,4 @@
-# Vedette configuration for GIAB HG002 training runs.
+# Vedette configuration for GIAB runs (training and benchmark).
 # Same reference/masks as the GHFC cohort; the CRAM scan bins depth at 1 kb
 # so evidence-store statistics match the cohort's fast-path stores.
 
@@ -11,3 +11,9 @@ pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/re
 
 [extract]
 bin_size = 1000
+
+# Production operating point (models/v5): as configs/ghfc.toml. Without it a
+# GIAB benchmark would score at the model's default threshold, not the one
+# the cohorts run at.
+[filter]
+low_sq_threshold = 5.0
