@@ -1,0 +1,161 @@
+truth	caller	svtype	stratum_kind	stratum	tp_base	fn	recall	tp_comp	fp	precision	f1
+GIAB_v5.0q	vedette_v1	DEL	all	all	3281	6871	0.3232	3281	156	0.9546	0.4829
+GIAB_v5.0q	vedette_v1	DEL	context	clean	2608	3186	0.4501	2602	97	0.9641	0.6137
+GIAB_v5.0q	vedette_v1	DEL	context	lcr	587	2830	0.1718	593	53	0.918	0.2894
+GIAB_v5.0q	vedette_v1	DEL	context	segdup	86	855	0.0914	86	6	0.9348	0.1665
+GIAB_v5.0q	vedette_v1	DEL	size	50-300bp	1522	5734	0.2098	1518	127	0.9228	0.3418
+GIAB_v5.0q	vedette_v1	DEL	size	300bp-1kb	1170	915	0.5612	1174	13	0.989	0.716
+GIAB_v5.0q	vedette_v1	DEL	size	1-10kb	552	192	0.7419	552	16	0.9718	0.8415
+GIAB_v5.0q	vedette_v1	DEL	size	10-100kb	37	29	0.5606	37	0	1.0	0.7184
+GIAB_v5.0q	vedette_v1	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+GIAB_v5.0q	vedette_v1	INS	all	all	353	17640	0.0196	353	46	0.8847	0.0384
+GIAB_v5.0q	vedette_v1	INS	context	clean	292	8450	0.0334	294	27	0.9159	0.0645
+GIAB_v5.0q	vedette_v1	INS	context	lcr	53	8004	0.0066	52	18	0.7429	0.013
+GIAB_v5.0q	vedette_v1	INS	context	segdup	8	1186	0.0067	7	1	0.875	0.0133
+GIAB_v5.0q	vedette_v1	INS	size	50-300bp	347	10526	0.0319	347	46	0.883	0.0616
+GIAB_v5.0q	vedette_v1	INS	size	300bp-1kb	6	4915	0.0012	6	0	1.0	0.0024
+GIAB_v5.0q	vedette_v1	INS	size	1-10kb	0	2085	0.0	0	0		
+GIAB_v5.0q	vedette_v1	INS	size	10-100kb	0	111	0.0	0	0		
+GIAB_v5.0q	vedette_v1	INS	size	100kb-1Mb	0	3	0.0	0	0		
+GIAB_v5.0q	vedette_v5_sq5	DEL	all	all	3392	6760	0.3341	3392	176	0.9507	0.4945
+GIAB_v5.0q	vedette_v5_sq5	DEL	context	clean	2647	3147	0.4569	2639	109	0.9603	0.6192
+GIAB_v5.0q	vedette_v5_sq5	DEL	context	lcr	656	2761	0.192	664	61	0.9159	0.3174
+GIAB_v5.0q	vedette_v5_sq5	DEL	context	segdup	89	852	0.0946	89	6	0.9368	0.1718
+GIAB_v5.0q	vedette_v5_sq5	DEL	size	50-300bp	1635	5621	0.2253	1629	147	0.9172	0.3618
+GIAB_v5.0q	vedette_v5_sq5	DEL	size	300bp-1kb	1168	917	0.5602	1174	13	0.989	0.7153
+GIAB_v5.0q	vedette_v5_sq5	DEL	size	1-10kb	552	192	0.7419	552	16	0.9718	0.8415
+GIAB_v5.0q	vedette_v5_sq5	DEL	size	10-100kb	37	29	0.5606	37	0	1.0	0.7184
+GIAB_v5.0q	vedette_v5_sq5	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+GIAB_v5.0q	vedette_v5_sq5	INS	all	all	422	17571	0.0235	422	57	0.881	0.0457
+GIAB_v5.0q	vedette_v5_sq5	INS	context	clean	346	8396	0.0396	348	30	0.9206	0.0759
+GIAB_v5.0q	vedette_v5_sq5	INS	context	lcr	67	7990	0.0083	66	25	0.7253	0.0164
+GIAB_v5.0q	vedette_v5_sq5	INS	context	segdup	9	1185	0.0075	8	2	0.8	0.0149
+GIAB_v5.0q	vedette_v5_sq5	INS	size	50-300bp	412	10461	0.0379	412	57	0.8785	0.0727
+GIAB_v5.0q	vedette_v5_sq5	INS	size	300bp-1kb	9	4912	0.0018	9	0	1.0	0.0037
+GIAB_v5.0q	vedette_v5_sq5	INS	size	1-10kb	1	2084	0.0005	1	0	1.0	0.001
+GIAB_v5.0q	vedette_v5_sq5	INS	size	10-100kb	0	111	0.0	0	0		
+GIAB_v5.0q	vedette_v5_sq5	INS	size	100kb-1Mb	0	3	0.0	0	0		
+GIAB_v5.0q	manta	DEL	all	all	3816	6336	0.3759	3816	268	0.9344	0.5361
+GIAB_v5.0q	manta	DEL	context	clean	2871	2923	0.4955	2867	150	0.9503	0.6514
+GIAB_v5.0q	manta	DEL	context	lcr	850	2567	0.2488	854	99	0.8961	0.3894
+GIAB_v5.0q	manta	DEL	context	segdup	95	846	0.101	95	19	0.8333	0.1801
+GIAB_v5.0q	manta	DEL	size	50-300bp	2203	5053	0.3036	2201	174	0.9267	0.4574
+GIAB_v5.0q	manta	DEL	size	300bp-1kb	1094	991	0.5247	1095	44	0.9614	0.6789
+GIAB_v5.0q	manta	DEL	size	1-10kb	486	258	0.6532	487	34	0.9347	0.769
+GIAB_v5.0q	manta	DEL	size	10-100kb	33	33	0.5	33	12	0.7333	0.5946
+GIAB_v5.0q	manta	DEL	size	100kb-1Mb	0	1	0.0	0	4	0.0	
+GIAB_v5.0q	manta	INS	all	all	290	17703	0.0161	290	98	0.7474	0.0316
+GIAB_v5.0q	manta	INS	context	clean	226	8516	0.0259	233	71	0.7664	0.05
+GIAB_v5.0q	manta	INS	context	lcr	58	7999	0.0072	51	22	0.6986	0.0143
+GIAB_v5.0q	manta	INS	context	segdup	6	1188	0.005	6	5	0.5455	0.01
+GIAB_v5.0q	manta	INS	size	50-300bp	236	10637	0.0217	236	31	0.8839	0.0424
+GIAB_v5.0q	manta	INS	size	300bp-1kb	40	4881	0.0081	42	19	0.6885	0.0161
+GIAB_v5.0q	manta	INS	size	1-10kb	14	2071	0.0067	12	34	0.2609	0.0131
+GIAB_v5.0q	manta	INS	size	10-100kb	0	111	0.0	0	11	0.0	
+GIAB_v5.0q	manta	INS	size	100kb-1Mb	0	3	0.0	0	3	0.0	
+GIAB_v5.0q	delly	DEL	all	all	2883	7269	0.284	2883	606	0.8263	0.4227
+GIAB_v5.0q	delly	DEL	context	clean	2384	3410	0.4115	2380	435	0.8455	0.5535
+GIAB_v5.0q	delly	DEL	context	lcr	426	2991	0.1247	430	96	0.8175	0.2163
+GIAB_v5.0q	delly	DEL	context	segdup	73	868	0.0776	73	75	0.4932	0.1341
+GIAB_v5.0q	delly	DEL	size	50-300bp	1105	6151	0.1523	1101	159	0.8738	0.2594
+GIAB_v5.0q	delly	DEL	size	300bp-1kb	1142	943	0.5477	1139	209	0.845	0.6646
+GIAB_v5.0q	delly	DEL	size	1-10kb	597	147	0.8024	604	154	0.7968	0.7996
+GIAB_v5.0q	delly	DEL	size	10-100kb	39	27	0.5909	39	66	0.3714	0.4561
+GIAB_v5.0q	delly	DEL	size	100kb-1Mb	0	1	0.0	0	18	0.0	
+GIAB_v5.0q	delly	INS	all	all	226	17767	0.0126	226	477	0.3215	0.0242
+GIAB_v5.0q	delly	INS	context	clean	121	8621	0.0138	140	270	0.3415	0.0266
+GIAB_v5.0q	delly	INS	context	lcr	87	7970	0.0108	68	110	0.382	0.021
+GIAB_v5.0q	delly	INS	context	segdup	18	1176	0.0151	18	97	0.1565	0.0275
+GIAB_v5.0q	delly	INS	size	50-300bp	49	10824	0.0045	35	53	0.3977	0.0089
+GIAB_v5.0q	delly	INS	size	300bp-1kb	154	4767	0.0313	170	232	0.4229	0.0583
+GIAB_v5.0q	delly	INS	size	1-10kb	21	2064	0.0101	19	101	0.1583	0.0189
+GIAB_v5.0q	delly	INS	size	10-100kb	2	109	0.018	2	76	0.0256	0.0212
+GIAB_v5.0q	delly	INS	size	100kb-1Mb	0	3	0.0	0	15	0.0	
+GIAB_v5.0q	dysgu	DEL	all	all	3944	6208	0.3885	3944	544	0.8788	0.5388
+GIAB_v5.0q	dysgu	DEL	context	clean	2944	2850	0.5081	2942	272	0.9154	0.6535
+GIAB_v5.0q	dysgu	DEL	context	lcr	904	2513	0.2646	906	252	0.7824	0.3954
+GIAB_v5.0q	dysgu	DEL	context	segdup	96	845	0.102	96	20	0.8276	0.1816
+GIAB_v5.0q	dysgu	DEL	size	50-300bp	2251	5005	0.3102	2241	458	0.8303	0.4517
+GIAB_v5.0q	dysgu	DEL	size	300bp-1kb	1185	900	0.5683	1193	66	0.9476	0.7105
+GIAB_v5.0q	dysgu	DEL	size	1-10kb	486	258	0.6532	488	20	0.9606	0.7777
+GIAB_v5.0q	dysgu	DEL	size	10-100kb	22	44	0.3333	22	0	1.0	0.5
+GIAB_v5.0q	dysgu	DEL	size	100kb-1Mb	0	1	0.0	0	0		
+GIAB_v5.0q	dysgu	INS	all	all	25	17968	0.0014	25	53	0.3205	0.0028
+GIAB_v5.0q	dysgu	INS	context	clean	16	8726	0.0018	21	36	0.3684	0.0036
+GIAB_v5.0q	dysgu	INS	context	lcr	7	8050	0.0009	2	11	0.1538	0.0017
+GIAB_v5.0q	dysgu	INS	context	segdup	2	1192	0.0017	2	6	0.25	0.0033
+GIAB_v5.0q	dysgu	INS	size	50-300bp	2	10871	0.0002	2	18	0.1	0.0004
+GIAB_v5.0q	dysgu	INS	size	300bp-1kb	14	4907	0.0028	13	11	0.5417	0.0057
+GIAB_v5.0q	dysgu	INS	size	1-10kb	9	2076	0.0043	10	22	0.3125	0.0085
+GIAB_v5.0q	dysgu	INS	size	10-100kb	0	111	0.0	0	2	0.0	
+GIAB_v5.0q	dysgu	INS	size	100kb-1Mb	0	3	0.0	0	0		
+CMRG_v1.00	vedette_v1	DEL	all	all	34	58	0.3696	34	2	0.9444	0.5312
+CMRG_v1.00	vedette_v1	DEL	context	clean	32	44	0.4211	32	2	0.9412	0.5818
+CMRG_v1.00	vedette_v1	DEL	context	lcr	2	14	0.125	2	0	1.0	0.2222
+CMRG_v1.00	vedette_v1	DEL	size	50-300bp	13	49	0.2097	13	2	0.8667	0.3377
+CMRG_v1.00	vedette_v1	DEL	size	300bp-1kb	14	7	0.6667	14	0	1.0	0.8
+CMRG_v1.00	vedette_v1	DEL	size	1-10kb	7	2	0.7778	7	0	1.0	0.875
+CMRG_v1.00	vedette_v1	INS	all	all	4	120	0.0323	4	0	1.0	0.0625
+CMRG_v1.00	vedette_v1	INS	context	clean	2	86	0.0227	2	0	1.0	0.0444
+CMRG_v1.00	vedette_v1	INS	context	lcr	2	30	0.0625	2	0	1.0	0.1176
+CMRG_v1.00	vedette_v1	INS	context	segdup	0	4	0.0	0	0		
+CMRG_v1.00	vedette_v1	INS	size	50-300bp	4	66	0.0571	4	0	1.0	0.1081
+CMRG_v1.00	vedette_v1	INS	size	300bp-1kb	0	31	0.0	0	0		
+CMRG_v1.00	vedette_v1	INS	size	1-10kb	0	21	0.0	0	0		
+CMRG_v1.00	vedette_v1	INS	size	10-100kb	0	2	0.0	0	0		
+CMRG_v1.00	vedette_v5_sq5	DEL	all	all	34	58	0.3696	34	2	0.9444	0.5312
+CMRG_v1.00	vedette_v5_sq5	DEL	context	clean	32	44	0.4211	32	2	0.9412	0.5818
+CMRG_v1.00	vedette_v5_sq5	DEL	context	lcr	2	14	0.125	2	0	1.0	0.2222
+CMRG_v1.00	vedette_v5_sq5	DEL	size	50-300bp	13	49	0.2097	13	2	0.8667	0.3377
+CMRG_v1.00	vedette_v5_sq5	DEL	size	300bp-1kb	14	7	0.6667	14	0	1.0	0.8
+CMRG_v1.00	vedette_v5_sq5	DEL	size	1-10kb	7	2	0.7778	7	0	1.0	0.875
+CMRG_v1.00	vedette_v5_sq5	INS	all	all	6	118	0.0484	6	0	1.0	0.0923
+CMRG_v1.00	vedette_v5_sq5	INS	context	clean	4	84	0.0455	4	0	1.0	0.087
+CMRG_v1.00	vedette_v5_sq5	INS	context	lcr	2	30	0.0625	2	0	1.0	0.1176
+CMRG_v1.00	vedette_v5_sq5	INS	context	segdup	0	4	0.0	0	0		
+CMRG_v1.00	vedette_v5_sq5	INS	size	50-300bp	6	64	0.0857	6	0	1.0	0.1579
+CMRG_v1.00	vedette_v5_sq5	INS	size	300bp-1kb	0	31	0.0	0	0		
+CMRG_v1.00	vedette_v5_sq5	INS	size	1-10kb	0	21	0.0	0	0		
+CMRG_v1.00	vedette_v5_sq5	INS	size	10-100kb	0	2	0.0	0	0		
+CMRG_v1.00	manta	DEL	all	all	45	47	0.4891	45	1	0.9783	0.6522
+CMRG_v1.00	manta	DEL	context	clean	38	38	0.5	38	1	0.9744	0.6609
+CMRG_v1.00	manta	DEL	context	lcr	7	9	0.4375	7	0	1.0	0.6087
+CMRG_v1.00	manta	DEL	size	50-300bp	27	35	0.4355	27	1	0.9643	0.6
+CMRG_v1.00	manta	DEL	size	300bp-1kb	12	9	0.5714	12	0	1.0	0.7273
+CMRG_v1.00	manta	DEL	size	1-10kb	6	3	0.6667	6	0	1.0	0.8
+CMRG_v1.00	manta	INS	all	all	3	121	0.0242	3	0	1.0	0.0472
+CMRG_v1.00	manta	INS	context	clean	2	86	0.0227	2	0	1.0	0.0444
+CMRG_v1.00	manta	INS	context	lcr	1	31	0.0312	1	0	1.0	0.0606
+CMRG_v1.00	manta	INS	context	segdup	0	4	0.0	0	0		
+CMRG_v1.00	manta	INS	size	50-300bp	1	69	0.0143	1	0	1.0	0.0282
+CMRG_v1.00	manta	INS	size	300bp-1kb	0	31	0.0	1	0	1.0	
+CMRG_v1.00	manta	INS	size	1-10kb	2	19	0.0952	1	0	1.0	0.1739
+CMRG_v1.00	manta	INS	size	10-100kb	0	2	0.0	0	0		
+CMRG_v1.00	delly	DEL	all	all	24	68	0.2609	24	4	0.8571	0.4
+CMRG_v1.00	delly	DEL	context	clean	22	54	0.2895	22	4	0.8462	0.4314
+CMRG_v1.00	delly	DEL	context	lcr	2	14	0.125	2	0	1.0	0.2222
+CMRG_v1.00	delly	DEL	size	50-300bp	7	55	0.1129	7	0	1.0	0.2029
+CMRG_v1.00	delly	DEL	size	300bp-1kb	10	11	0.4762	10	3	0.7692	0.5882
+CMRG_v1.00	delly	DEL	size	1-10kb	7	2	0.7778	7	1	0.875	0.8235
+CMRG_v1.00	delly	INS	all	all	3	121	0.0242	3	5	0.375	0.0455
+CMRG_v1.00	delly	INS	context	clean	3	85	0.0341	3	4	0.4286	0.0632
+CMRG_v1.00	delly	INS	context	lcr	0	32	0.0	0	1	0.0	
+CMRG_v1.00	delly	INS	context	segdup	0	4	0.0	0	0		
+CMRG_v1.00	delly	INS	size	50-300bp	3	67	0.0429	3	1	0.75	0.0811
+CMRG_v1.00	delly	INS	size	300bp-1kb	0	31	0.0	0	2	0.0	
+CMRG_v1.00	delly	INS	size	1-10kb	0	21	0.0	0	2	0.0	
+CMRG_v1.00	delly	INS	size	10-100kb	0	2	0.0	0	0		
+CMRG_v1.00	dysgu	DEL	all	all	42	50	0.4565	42	8	0.84	0.5915
+CMRG_v1.00	dysgu	DEL	context	clean	36	40	0.4737	36	7	0.8372	0.605
+CMRG_v1.00	dysgu	DEL	context	lcr	6	10	0.375	6	1	0.8571	0.5217
+CMRG_v1.00	dysgu	DEL	size	50-300bp	23	39	0.371	23	5	0.8214	0.5111
+CMRG_v1.00	dysgu	DEL	size	300bp-1kb	14	7	0.6667	14	3	0.8235	0.7368
+CMRG_v1.00	dysgu	DEL	size	1-10kb	5	4	0.5556	5	0	1.0	0.7143
+CMRG_v1.00	dysgu	INS	all	all	0	124	0.0	0	0		
+CMRG_v1.00	dysgu	INS	context	clean	0	88	0.0	0	0		
+CMRG_v1.00	dysgu	INS	context	lcr	0	32	0.0	0	0		
+CMRG_v1.00	dysgu	INS	context	segdup	0	4	0.0	0	0		
+CMRG_v1.00	dysgu	INS	size	50-300bp	0	70	0.0	0	0		
+CMRG_v1.00	dysgu	INS	size	300bp-1kb	0	31	0.0	0	0		
+CMRG_v1.00	dysgu	INS	size	1-10kb	0	21	0.0	0	0		
+CMRG_v1.00	dysgu	INS	size	10-100kb	0	2	0.0	0	0		
