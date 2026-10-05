@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0 — 2026-10
+## v1.0.0 — 2026-10-05
 
 First release. Germline DEL/DUP calling from WGS with post-calling filtering,
 cohort re-genotyping and pedigree-aware reporting, run end to end by the
