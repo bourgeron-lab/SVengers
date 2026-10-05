@@ -139,3 +139,23 @@ def test_plot_trio_sweep(tmp_path):
     ]
     plot_trio_sweep(rows, tmp_path / "sweep.png")
     assert (tmp_path / "sweep.png").stat().st_size > 0
+
+
+def test_records_of_an_explicit_allele_vcf_without_sv_header(tmp_path):
+    """CMRG's truth VCF declares no SVTYPE/SVLEN; pysam raises on undeclared
+    keys, which crashed the CMRG benchmark."""
+    import pysam
+
+    from vedette.bench.truth import _records
+
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr1", length=1_000_000)
+    hdr.add_sample("HG002")
+    path = tmp_path / "cmrg.vcf.gz"
+    with pysam.VariantFile(str(path), "wz", header=hdr) as vf:
+        rec = vf.new_record(contig="chr1", start=999, alleles=("A" + "C" * 120, "A"))
+        vf.write(rec)
+        rec = vf.new_record(contig="chr1", start=5_000, alleles=("G", "G" + "T" * 80))
+        vf.write(rec)
+    got = list(_records(path))
+    assert [(t, s) for t, s, *_ in got] == [("DEL", 120), ("INS", 80)]

@@ -50,9 +50,13 @@ def _records(vcf_path: Path):
     if not vcf_path.exists():
         return
     with pysam.VariantFile(str(vcf_path)) as vcf:
+        # pysam raises on an INFO key the header does not declare instead of
+        # returning None; CMRG's explicit-allele VCF declares neither
+        has_svtype = "SVTYPE" in vcf.header.info
+        has_svlen = "SVLEN" in vcf.header.info
         for rec in vcf:
-            svtype = rec.info.get("SVTYPE")
-            svlen = rec.info.get("SVLEN")
+            svtype = rec.info.get("SVTYPE") if has_svtype else None
+            svlen = rec.info.get("SVLEN") if has_svlen else None
             if isinstance(svlen, tuple):
                 svlen = svlen[0]
             if svtype in ("DEL", "DUP", "INS"):
