@@ -77,7 +77,7 @@ const rows = Array.from(document.querySelectorAll("tbody tr"));
 const chrSel = document.getElementById("chr"), typeSel = document.getElementById("type"),
       valSel = document.getElementById("val"), ownSel = document.getElementById("own"),
       supSel = document.getElementById("sup"), qcSel = document.getElementById("qc"),
-      passCb = document.getElementById("pass"),
+      passCb = document.getElementById("pass"), subCb = document.getElementById("sub"),
       count = document.getElementById("count");
 function apply(){
   const c = chrSel.value, t = typeSel.value, v = valSel.value, p = passCb.checked,
@@ -90,14 +90,15 @@ function apply(){
             && (o === "all" || (o === "any" ? r.dataset.own !== "aucun" : r.dataset.own === o))
             && (sp === "all" || r.dataset.support === sp)
             && (q === "all" || r.dataset.qc === q)
-            && (!p || r.dataset.pass === "1");
+            && (subCb.checked || r.dataset.sub !== "1")
+            && (!p || r.dataset.pass === "1" || (subCb.checked && r.dataset.sub === "1"));
     r.hidden = !ok;
     if (ok) n++;
   }
   count.textContent = n.toLocaleString("fr-FR") + " / " + rows.length.toLocaleString("fr-FR");
 }
 chrSel.onchange = typeSel.onchange = valSel.onchange = ownSel.onchange = supSel.onchange
-  = qcSel.onchange = passCb.onchange = apply;
+  = qcSel.onchange = passCb.onchange = subCb.onchange = apply;
 
 // manual validation (IGV check): three exclusive radio buttons per row
 // (vrai/faux/incertain — a forced binary choice pollutes labels on genuinely
@@ -577,6 +578,7 @@ def _write_all_family_events(
     wave_scores: dict[str, float | None] | None = None,
     wave_by_contig: dict[str, dict] | None = None,
     mosaic_by_sample: dict[str, list[dict]] | None = None,
+    subthreshold: dict[str, list[dict]] | None = None,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -594,6 +596,7 @@ def _write_all_family_events(
         for _, i in fam_members[fid]:
             fam_of_col[i] = k
 
+    sub_sharers = subthreshold_sharers(subthreshold) if subthreshold else {}
     ev_spill = _FamilySpill(run_dir / "families" / ".events_tmp")
     for site in sites:
         if pass_only and site["filter"] != "PASS":
@@ -653,7 +656,8 @@ def _write_all_family_events(
     site_idx = _site_index(sites)
     for fid in fids:
         rows = ev_spill.read(fid)
-        if not rows:
+        if not rows and not any(m in (subthreshold or {}) or m in (mosaic_by_sample or {})
+                                for m, _ in fam_members[fid]):
             continue
         inherit: dict[str, list[tuple[str, str]]] = defaultdict(list)
         for site_id, child, inh in inh_spill.read(fid):
@@ -681,8 +685,6 @@ def _write_all_family_events(
                 "lcr": r[13], "segdup": r[14], "support": r[15],
                 "inherit": inh_s, "carriers": carriers, "gt": gts,
             })
-        fam_dir = run_dir / "families" / fid
-        fam_dir.mkdir(parents=True, exist_ok=True)
         own_idx = own_call_index(run_dir, members)
         own_idx = {
             k: [(op, oe, ok, who,
@@ -702,6 +704,11 @@ def _write_all_family_events(
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
         events += mosaic_events(members, mosaic_by_sample or {}, genes_fn, impact_fn,
                                 segdup_iv, lcr_iv)
+        if subthreshold:
+            events += subthreshold_events(members, subthreshold, sub_sharers, events,
+                                          genes_fn, impact_fn, segdup_iv, lcr_iv)
+        if not events:
+            continue
         big = big_cnv_counts(events)
         for e in events:
             alerts = []
@@ -718,6 +725,8 @@ def _write_all_family_events(
                 if fl:
                     alerts.append(f"{m[-3:]} {', '.join(fl)}")
             e["qc"] = " · ".join(alerts)
+        fam_dir = run_dir / "families" / fid
+        fam_dir.mkdir(parents=True, exist_ok=True)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
         n_pages += 1
     ev_spill.cleanup()
@@ -770,6 +779,7 @@ def _write_events_page(
             f'<tr class="{cls}" data-chr="{html.escape(e["contig"])}" data-pos="{e["pos"]}" '
             f'data-end="{e["end"]}" data-size="{e["size"]}" data-site="{html.escape(site)}" '
             f'data-type="{e["svtype"]}" data-pass="{1 if is_pass else 0}" '
+            f'data-sub="{1 if e.get("sub") else 0}" '
             f'data-own="{html.escape(e.get("own") or "aucun")}" '
             f'data-impact="{_impact_points(e.get("impact") or "")}" '
             f'data-qc="{"alerte" if e.get("qc") else "ok"}" '
@@ -820,6 +830,7 @@ def _write_events_page(
         f'<option value="none">non validé</option><option value="true">vrai</option>'
         f'<option value="false">faux</option><option value="unsure">incertain</option></select></label>'
         f'<label><input type="checkbox" id="pass" checked> PASS uniquement</label>'
+        f'<label><input type="checkbox" id="sub" checked> + sous le seuil (gènes NDD)</label>'
         f'<span class="muted"><b id="count"></b> lignes</span>'
         f'<button id="export" type="button">Exporter validations (TSV)</button>'
         f'<label class="muted">Importer <input type="file" id="import" accept=".tsv,.txt"></label></div>'
@@ -844,7 +855,11 @@ def _write_events_page(
         f'(médiane de dataset_paper 0, p99 1), ou « mosaïque » : le porteur a un segment chromosomique '
         f'à nombre de copies fractionnaire confirmé par la BAF (vedette mosaic) — '
         f'un événement porté par un génome techniquement atypique est à relire avant d\'y croire, '
-        f'quel que soit son impact. '
+        f'quel que soit son impact. Sous le seuil (rescue « SOUS-SEUIL NDD ») = appel propre '
+        f'rejeté par le seul score SQ, avec un CN franc (DEL CN ≤ 1, DUP CN ≥ 3, GQ ≥ 90, ≥ 1 kb), '
+        f'touchant un gène NDD établi (impact ≥ 0,90) et absent de tout génome hors de la famille '
+        f'(environ 0,15 par génome sur PMS) : une liste à relire dans IGV, pas des appels validés '
+        f'(case « + sous le seuil » pour les masquer). '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1147,6 +1162,122 @@ def mosaic_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
     return rows
 
 
+# Sub-threshold tier: a call the filter model under-scores but whose depth is
+# unambiguous, private to its family and hitting an established dominant NDD
+# gene. A PMS proband's 9 kb deletion of the 3' end of SHANK3 (CN 1, RD 0.50,
+# GQ 99, confirmed in IGV) had SQ 0.38 for a threshold of 5: depth-only, no
+# heterozygous site to read a BAF from in the GC-rich 22q13.33, noisy depth —
+# v5's known weak spot on small depth-only deletions. On PMS such calls are
+# 0.15 per genome once private (dataset_paper 0.06): a review list, not a
+# PASS set.
+SUB_MIN_GQ = 90
+SUB_MIN_SIZE = 1_000
+SUB_MIN_IMPACT = 0.90
+
+
+def subthreshold_candidates(run_dir: Path, samples: list[str]) -> dict[str, list[dict]]:
+    """{sample: [call]} of the calls rejected by the score alone (FILTER is
+    exactly LowSQ) with a clear copy number (DEL CN <= 1, DUP CN >= 3), GQ >=
+    SUB_MIN_GQ and >= SUB_MIN_SIZE, from the published per-sample VCFs."""
+    out: dict[str, list[dict]] = {}
+    for s in samples:
+        vcf_path = run_dir / "samples" / s / f"{s}.filtered.vcf.gz"
+        if not vcf_path.exists():
+            continue
+        calls = []
+        try:
+            with pysam.VariantFile(str(vcf_path)) as vf:
+                lengths = {c.name: c.length for c in vf.header.contigs.values()}
+                for rec in vf:
+                    if list(rec.filter.keys()) != ["LowSQ"]:
+                        continue
+                    svtype = rec.info.get("SVTYPE")
+                    fmt = rec.samples[0]
+                    cn, gq = fmt.get("CN"), fmt.get("GQ")
+                    if cn is None or gq is None or gq < SUB_MIN_GQ:
+                        continue
+                    if not ((svtype == "DEL" and cn <= 1) or (svtype == "DUP" and cn >= 3)):
+                        continue
+                    end = min(rec.stop, lengths.get(rec.contig) or rec.stop)
+                    if end - rec.start < SUB_MIN_SIZE:
+                        continue
+                    calls.append({"sample": s, "contig": rec.contig, "start": rec.start,
+                                  "end": end, "svtype": svtype, "cn": int(cn), "gq": int(gq),
+                                  "sq": fmt.get("SQ")})
+        except (OSError, ValueError):  # a report must survive a missing VCF
+            continue
+        if calls:
+            out[s] = calls
+    return out
+
+
+def subthreshold_sharers(cands: dict[str, list[dict]], min_ro: float = 0.5) -> dict:
+    """{(sample, contig, start, svtype): {other samples with a candidate at RO >=
+    min_ro}}: a sub-threshold call shared beyond the family is an artefact."""
+    by: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for calls in cands.values():
+        for c in calls:
+            by[(c["contig"], c["svtype"])].append(c)
+    out: dict[tuple, set] = {}
+    for lst in by.values():
+        lst.sort(key=lambda c: c["start"])
+        starts = [c["start"] for c in lst]
+        for c in lst:
+            length = c["end"] - c["start"]
+            i = bisect.bisect_left(starts, c["start"] - length)
+            j = bisect.bisect_right(starts, c["end"])
+            others = set()
+            for d in lst[i:j]:
+                if d["sample"] == c["sample"]:
+                    continue
+                ov = min(c["end"], d["end"]) - max(c["start"], d["start"])
+                if ov > 0 and ov / max(length, d["end"] - d["start"]) >= min_ro:
+                    others.add(d["sample"])
+            out[(c["sample"], c["contig"], c["start"], c["svtype"])] = others
+    return out
+
+
+def subthreshold_events(members: list[str], cands: dict[str, list[dict]], sharers: dict,
+                        shown: list[dict], genes_fn=None, impact_fn=None,
+                        segdup_iv=None, lcr_iv=None) -> list[dict]:
+    """Family-page rows for the members' sub-threshold calls (see SUB_*) that
+    hit an established NDD gene (impact >= SUB_MIN_IMPACT), are found in no
+    genome outside the family and are not already on the page."""
+    fam = set(members)
+    rows = []
+    for m in members:
+        for c in cands.get(m, []):
+            others = sharers.get((m, c["contig"], c["start"], c["svtype"]), set())
+            if others - fam:
+                continue
+            pos, end = c["start"] + 1, c["end"]
+            if any(e["contig"] == c["contig"] and e["svtype"] == c["svtype"]
+                   and min(e["end"], end) - max(e["pos"], pos) > 0.5 * max(e["end"] - e["pos"], end - pos)
+                   for e in shown):
+                continue
+            if impact_fn is None or impact_fn(c["contig"], c["start"], end, c["svtype"])[0] < SUB_MIN_IMPACT:
+                continue
+            also = sorted(x[-3:] for x in others & fam)
+            sq = "" if c["sq"] is None else f"{c['sq']:.2f}"
+            e = {
+                "id": f"sub_{m}_{c['contig']}_{c['start']}",
+                "contig": c["contig"], "pos": pos, "end": end, "svtype": c["svtype"],
+                "size": end - c["start"], "filter": "LowSQ", "rescue": "SOUS-SEUIL NDD",
+                "genes": "", "impact": "", "sqmax": sq, "cfrac": "", "refcf": "",
+                "lcr": "", "segdup": "", "support": "fort", "own": "LowSQ",
+                "inherit": f"sous le seuil (SQ {sq})"
+                           + (f" · appel aussi chez {', '.join(also)}" if also else ""),
+                "carriers": [m],
+                "gt": [("0/1" if c["svtype"] == "DUP" or c["cn"] == 1 else "1/1",
+                        str(c["gq"]), str(c["cn"])) if x == m else ("—", "", "")
+                       for x in members],
+                "n_sites": 1, "_ids": [], "sub": True,
+            }
+            _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
+            rows.append(e)
+    return rows
+
+
 def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
     """Alerts of a carrier with mosaic segments (`vedette mosaic`): the row's
     own segment when the row lies in one, else a sample-level warning.
@@ -1425,6 +1556,7 @@ def generate_report(
     collapse_family_events: bool = True,
     min_carrier_gq: int = 20,
     mosaic_dir: str | Path | None = None,
+    subthreshold: bool = True,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -1690,13 +1822,17 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
     # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
     if family_events and pedigree is not None and inh_spill is not None:
         inh_spill.flush()
+        sub_cands = subthreshold_candidates(run_dir, samples) if subthreshold else None
+        if sub_cands is not None:
+            logger.info("events: %d appels sous le seuil candidats (%d échantillons)",
+                        sum(len(v) for v in sub_cands.values()), len(sub_cands))
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
             segdup_iv=segdup_iv, lcr_iv=lcr_iv, collapse=collapse_family_events,
             min_carrier_gq=min_carrier_gq, sample_qc=sample_qc,
             wave_scores=wave_scores, wave_by_contig=wave_by_contig,
-            mosaic_by_sample=mosaic_by_sample,
+            mosaic_by_sample=mosaic_by_sample, subthreshold=sub_cands,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

@@ -778,3 +778,82 @@ def test_big_cnv_alert_on_family_rows(tmp_path):
     assert page.count('data-qc="alerte"') == BIG_CNV_WARN
     assert f"dad grands CNV {BIG_CNV_WARN}" in page
 
+
+
+def _sub_vcf(run_dir, sample, calls):
+    """Per-sample filtered VCF with (start, stop, svtype, filters, cn, gq, sq)."""
+    import pysam
+
+    d = run_dir / "samples" / sample
+    d.mkdir(parents=True)
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr22", length=50_818_468)
+    for t in ("DEL", "DUP"):
+        hdr.add_line(f'##ALT=<ID={t},Description="{t}">')
+    hdr.add_line('##FILTER=<ID=LowSQ,Description="low SQ">')
+    hdr.add_line('##FILTER=<ID=LowMap,Description="low mappability">')
+    hdr.info.add("SVTYPE", "1", "String", "type")
+    hdr.info.add("END", "1", "Integer", "end")
+    hdr.formats.add("GT", "1", "String", "Genotype")
+    hdr.formats.add("GQ", "1", "Integer", "GQ")
+    hdr.formats.add("CN", "1", "Integer", "CN")
+    hdr.formats.add("SQ", "1", "Float", "SQ")
+    hdr.add_sample(sample)
+    with pysam.VariantFile(str(d / f"{sample}.filtered.vcf.gz"), "wz", header=hdr) as vf:
+        for start, stop, svtype, filters, cn, gq, sq in calls:
+            rec = vf.new_record(contig="chr22", start=start, stop=stop,
+                                alleles=("N", f"<{svtype}>"))
+            rec.info["SVTYPE"] = svtype
+            for f in filters:
+                rec.filter.add(f)
+            s = rec.samples[sample]
+            s["GT"], s["GQ"], s["CN"], s["SQ"] = "0/1", gq, cn, sq
+            vf.write(rec)
+
+
+def test_subthreshold_ndd_call_is_a_row_of_its_family_page(tmp_path):
+    """A PMS proband's 9 kb deletion of the 3' end of SHANK3 (CN 1, GQ 99,
+    confirmed in IGV) failed the score alone (SQ 0.38): it must reach the
+    family page as a sub-threshold row; the same call in an unrelated genome
+    (an artefact), a call with another filter, a CN-2 call and a call in no
+    NDD gene must not."""
+    from vedette.report import _FamilySpill, _write_all_family_events, subthreshold_candidates
+
+    shank3 = (50_731_000, 50_740_001, "DEL", ["LowSQ"], 1, 99, 0.38)
+    _sub_vcf(tmp_path, "kid", [
+        shank3,
+        (50_600_000, 50_610_001, "DEL", ["LowSQ"], 1, 99, 0.5),       # recurrent
+        (50_650_000, 50_660_001, "DEL", ["LowSQ", "LowMap"], 1, 99, 0.5),
+        (50_700_000, 50_705_001, "DEL", ["LowSQ"], 2, 99, 0.5),       # CN 2
+        (40_000_000, 40_010_001, "DEL", ["LowSQ"], 1, 99, 0.5),       # no NDD gene
+    ])
+    _sub_vcf(tmp_path, "dad", [])
+    _sub_vcf(tmp_path, "mum", [])
+    _sub_vcf(tmp_path, "stranger", [(50_600_500, 50_610_001, "DEL", ["LowSQ"], 1, 95, 0.2)])
+
+    samples = ["kid", "dad", "mum", "stranger"]
+    cands = subthreshold_candidates(tmp_path, samples)
+    assert {(c["start"], c["cn"]) for c in cands["kid"]} == {
+        (50_731_000, 1), (50_600_000, 1), (40_000_000, 1)}
+
+    def impact(contig, start, end, svtype="DEL"):
+        if start < 50_733_298 and end > 50_674_415:
+            return 0.9, "+0.90 — élevé · DEL exonique SHANK3"
+        if start < 50_620_000 and end > 50_590_000:
+            return 0.9, "+0.90 — élevé · DEL exonique XYZ"
+        return 0.0, "+0.00 — faible"
+
+    nalt = np.zeros((0, 4), dtype=np.int8)
+    _write_all_family_events(tmp_path, {"F1": ["kid", "dad", "mum"], "F2": ["stranger"]},
+                             samples, [], nalt, nalt.astype(np.int16), nalt,
+                             lambda *a: "SHANK3", impact, _FamilySpill(tmp_path / "inh"),
+                             subthreshold=cands)
+    page = (tmp_path / "families" / "F1" / "events.html").read_text()
+    rows = [r for r in page.split("<tr ")[1:] if 'data-site="sub_' in r]
+    assert len(rows) == 1
+    row = rows[0][:rows[0].index("</tr>")]
+    assert 'data-site="sub_kid_chr22_50731000"' in row and 'data-sub="1"' in row
+    assert 'data-pass="0"' in row and "SOUS-SEUIL NDD" in row and "SQ 0.38" in row
+    assert "<td>50,731,001</td><td>50,740,001</td>" in row
+    # visible by default: the sub-threshold box is ticked next to "PASS uniquement"
+    assert 'id="sub" checked' in page

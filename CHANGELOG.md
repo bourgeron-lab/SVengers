@@ -9,6 +9,11 @@
   On PMS and dataset_paper: no segment lost, 2 new segments in each.
 - **report** — the mosaic QC alert gives the segment bounds in Mb with one
   decimal.
+- **report** — sub-threshold tier on the family pages: own calls rejected by
+  the score alone (LowSQ) with a clear copy number (GQ >= 90, >= 1 kb), hitting
+  an established dominant NDD gene and found in no genome outside the family,
+  shown greyed as `SOUS-SEUIL NDD` for IGV review (toggle « + sous le seuil »).
+  PMS: 9 rows over 120 families, 3 of them in SHANK3.
 
 ## v1.0.0 — 2026-10-05
 
