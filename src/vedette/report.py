@@ -1161,7 +1161,7 @@ def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
         if (g["contig"] == e["contig"] and g["svtype"] == e.get("svtype", g["svtype"])
                 and min(g["end"], e["end"]) - max(g["start"], e["pos"] - 1) > 0):
             return [f"mosaïque {round(100 * g['fraction'])} % "
-                    f"{g['contig']}:{g['start'] // 1_000_000}-{g['end'] // 1_000_000} Mb"]
+                    f"{g['contig']}:{g['start'] / 1e6:.1f}-{g['end'] / 1e6:.1f} Mb"]
     return [f"porteur mosaïque ({len(mos)} segment{'s' if len(mos) > 1 else ''})"]
 
 

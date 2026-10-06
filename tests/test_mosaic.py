@@ -77,7 +77,10 @@ def test_mosaic_flags_on_family_rows():
             "fraction": 0.67, "mosaic": True}]
     inside = {"contig": "chr10", "pos": 101_312_001, "end": 103_463_001, "svtype": "DEL"}
     other = {"contig": "chr2", "pos": 1_000, "end": 9_000, "svtype": "DEL"}
-    assert mosaic_flags(seg, inside) == ["mosaïque 67 % chr10:83-133 Mb"]
+    assert mosaic_flags(seg, inside) == ["mosaïque 67 % chr10:83.0-133.0 Mb"]
+    pms = [dict(seg[0], contig="chr22", start=47_730_170, end=50_818_468, fraction=0.38)]
+    row = {"contig": "chr22", "pos": 48_000_001, "end": 50_818_468, "svtype": "DEL"}
+    assert mosaic_flags(pms, row) == ["mosaïque 38 % chr22:47.7-50.8 Mb"]
     assert mosaic_flags(seg, other) == ["porteur mosaïque (1 segment)"]
     assert mosaic_flags([dict(seg[0], mosaic=False)], inside) == []
     assert mosaic_flags([], inside) == []
