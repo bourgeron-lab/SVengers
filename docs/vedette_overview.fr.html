@@ -238,10 +238,10 @@ ci-dessus et alimente les labels d'entraînement du prochain modèle de filtre.<
 vedette call --sample S1 --out-dir out/ --config configs/ghfc.toml \
     --cram S1.cram --depth-bedgraph S1.by1000.bedgraph.gz --vaf-bedgraph S1.vaf.bedgraph.gz
 vedette filter out/S1.vedette.vcf.gz --store out/S1.evidence.zarr \
-    --out out/S1.filtered.vcf.gz --config configs/ghfc.toml --model-dir models/v6</code></pre>
+    --out out/S1.filtered.vcf.gz --config configs/ghfc.toml --model-dir models/v5</code></pre>
 <h3>Une cohorte (Nextflow + SLURM)</h3>
 <pre><code>./launch_driver.sh --manifest cohorte.manifest.tsv --pedigree cohorte.pedigree.tsv \
-    --outdir runs/cohorte --model_dir models/v6 \
+    --outdir runs/cohorte --model_dir models/v5 \
     --steps call,filter,merge,genotype,cohort,ped,report -with-report -resume</code></pre>
 <p class="muted">Le manifest se génère depuis l'arborescence GHFC avec
 <code>vedette manifest discover</code>&nbsp;; <code>vedette report</code> produit la page HTML
@@ -254,8 +254,8 @@ workspaces <code>families/&lt;FID&gt;/</code>.</p>
 <tr><th>callset</th><th>précision</th><th>recall</th><th>F1</th></tr>
 <tr><td>Manta</td><td>0,934</td><td>0,376</td><td>0,536</td></tr>
 <tr><td>DELLY</td><td>0,826</td><td>0,284</td><td>0,423</td></tr>
-<tr class="hl"><td>Vedette SQ≥5 (v6, HG002 exclu de l'entraînement)</td><td>0,870</td><td>0,365</td><td>0,514</td></tr>
-<tr><td>Vedette 1–10 kb (idem)</td><td>0,947</td><td>0,741</td><td>0,831</td></tr>
+<tr class="hl"><td>Vedette SQ≥5 (v5)</td><td>0,951</td><td>0,334</td><td>0,495</td></tr>
+<tr><td>Vedette 1–10 kb (SQ≥7)</td><td>0,980</td><td>0,727</td><td>0,834</td></tr>
 <tr><td>Vedette brut (pré-filtre)</td><td>0,328</td><td>0,413</td><td>—</td></tr>
 </table></div>
 <p class="muted">Le brut montre le réservoir&nbsp;: le meilleur recall du panel, que le filtre

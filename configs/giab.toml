@@ -12,7 +12,7 @@ pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/re
 [extract]
 bin_size = 1000
 
-# Production operating point (models/v6): as configs/ghfc.toml. Without it a
+# Production operating point (models/v5): as configs/ghfc.toml. Without it a
 # GIAB benchmark would score at the model's default threshold, not the one
 # the cohorts run at.
 [filter]

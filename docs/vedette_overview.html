@@ -234,10 +234,10 @@ the Tier 4 flags above and feeds the next filter model's training labels.</p>
 vedette call --sample S1 --out-dir out/ --config configs/ghfc.toml \
     --cram S1.cram --depth-bedgraph S1.by1000.bedgraph.gz --vaf-bedgraph S1.vaf.bedgraph.gz
 vedette filter out/S1.vedette.vcf.gz --store out/S1.evidence.zarr \
-    --out out/S1.filtered.vcf.gz --config configs/ghfc.toml --model-dir models/v6</code></pre>
+    --out out/S1.filtered.vcf.gz --config configs/ghfc.toml --model-dir models/v5</code></pre>
 <h3>A cohort (Nextflow + SLURM)</h3>
 <pre><code>./launch_driver.sh --manifest cohort.manifest.tsv --pedigree cohort.pedigree.tsv \
-    --outdir runs/cohort --model_dir models/v6 \
+    --outdir runs/cohort --model_dir models/v5 \
     --steps call,filter,merge,genotype,cohort,ped,report -with-report -resume</code></pre>
 <p class="muted">The manifest is generated from the GHFC directory layout with
 <code>vedette manifest discover</code>; <code>vedette report</code> produces the HTML page
@@ -250,8 +250,8 @@ vedette filter out/S1.vedette.vcf.gz --store out/S1.evidence.zarr \
 <tr><th>callset</th><th>precision</th><th>recall</th><th>F1</th></tr>
 <tr><td>Manta</td><td>0.934</td><td>0.376</td><td>0.536</td></tr>
 <tr><td>DELLY</td><td>0.826</td><td>0.284</td><td>0.423</td></tr>
-<tr class="hl"><td>Vedette SQ≥5 (v6, HG002 held out of training)</td><td>0.870</td><td>0.365</td><td>0.514</td></tr>
-<tr><td>Vedette 1–10 kb (same)</td><td>0.947</td><td>0.741</td><td>0.831</td></tr>
+<tr class="hl"><td>Vedette SQ≥5 (v5)</td><td>0.951</td><td>0.334</td><td>0.495</td></tr>
+<tr><td>Vedette 1–10 kb (SQ≥7)</td><td>0.980</td><td>0.727</td><td>0.834</td></tr>
 <tr><td>Vedette raw (pre-filter)</td><td>0.328</td><td>0.413</td><td>—</td></tr>
 </table></div>
 <p class="muted">The raw callset shows the reservoir: the best recall of the panel, which the
