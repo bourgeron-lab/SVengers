@@ -96,7 +96,9 @@ class _KnownSites:
     """Reference-cohort lookup: best reciprocal-overlap match of the same type."""
 
     def __init__(self, path: str | Path, min_ro: float = 0.5):
-        self.vcf = pysam.VariantFile(str(path))
+        # INFO and FILTER only: decoding thousands of samples per record made
+        # each lookup cost seconds on a 2670-sample reference
+        self.vcf = pysam.VariantFile(str(path), drop_samples=True)
         self.min_ro = min_ro
         self._contigs = set(self.vcf.header.contigs)
 

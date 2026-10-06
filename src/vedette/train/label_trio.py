@@ -12,6 +12,13 @@ clean, cohort re-genotyping gives near-ground-truth labels without GIAB:
   is an artifact with overwhelming probability (the genuine de novo CNV rate
   is <0.1/genome; wavy children show hundreds to thousands).
 - ambiguous (dropped): no overlapping cohort site, or parents uncertain.
+- common (dropped, with ``known_sites``): the call's site in a reference
+  cohort is flagged as an artefact (CohortArtifact / HighCarrierFrac /
+  CNDiscordant) or carried by >= ``max_ref_carrier_frac`` of it. A recurrent
+  artefact is present in a parent too and would read as "transmitted": on
+  4 wavy children, 99 % of the small junction DUPs labeled TP sat on such
+  sites (TP rate 91 % there, 5-22 % elsewhere, 19 % against GIAB truth), and
+  a model trained on them passed 12-17k calls per genome instead of ~5k.
 
 Matching mirrors the merge compatibility: same svtype, reciprocal overlap
 >= 0.5 against the parent genotype tables from ``vedette genotype``.
@@ -25,6 +32,8 @@ from bisect import bisect_left
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_ARTEFACT_FLAGS = ("CohortArtifact", "HighCarrierFrac", "CNDiscordant")
 
 
 def _load_parent_sites(gt_tsv: str | Path, min_gq: int) -> dict[tuple[str, str], list]:
@@ -67,10 +76,17 @@ def label_by_transmission(
     out_tsv: str | Path,
     min_gq: int = 20,
     min_ro: float = 0.5,
+    known_sites: str | Path | None = None,
+    max_ref_carrier_frac: float = 0.5,
 ) -> dict[str, int]:
     """Label a child's feature rows TP/FP by parental transmission."""
     parents = [_load_parent_sites(p, min_gq) for p in parent_gt_tsvs]
-    counts = {"tp": 0, "fp": 0, "ambiguous": 0}
+    ref = None
+    if known_sites:
+        from ..cohort.metrics import _KnownSites
+
+        ref = _KnownSites(known_sites, min_ro=min_ro)
+    counts = {"tp": 0, "fp": 0, "ambiguous": 0, "common": 0}
     with open(features_tsv) as fin, open(out_tsv, "w", newline="") as fout:
         reader = csv.DictReader(fin, delimiter="\t")
         writer = csv.DictWriter(
@@ -93,6 +109,14 @@ def label_by_transmission(
                     carrier = True
                 if not any(h[1] for h in hits):
                     confident_ref_both = False
+            if (carrier or (any_overlap and confident_ref_both)) and ref is not None:
+                hit = ref.lookup(contig, start, end, svtype)
+                if hit is not None and (
+                    hit["carrier_frac"] >= max_ref_carrier_frac
+                    or any(f in hit["filter"] for f in _ARTEFACT_FLAGS)
+                ):
+                    counts["common"] += 1
+                    continue
             if carrier:
                 r["label"] = 1
                 counts["tp"] += 1
@@ -104,7 +128,7 @@ def label_by_transmission(
                 continue
             writer.writerow(r)
     logger.info(
-        "label-trio %s: %d TP, %d FP, %d ambiguous (dropped)",
-        features_tsv, counts["tp"], counts["fp"], counts["ambiguous"],
+        "label-trio %s: %d TP, %d FP, %d ambiguous, %d common/artefact (dropped)",
+        features_tsv, counts["tp"], counts["fp"], counts["ambiguous"], counts["common"],
     )
     return counts

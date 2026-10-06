@@ -175,6 +175,36 @@ def test_label_by_transmission(tmp_path):
         [tmp_path / "father.gt.tsv", tmp_path / "mother.gt.tsv"],
         tmp_path / "child.labeled.tsv",
     )
-    assert counts == {"tp": 1, "fp": 1, "ambiguous": 2}
+    assert counts == {"tp": 1, "fp": 1, "ambiguous": 2, "common": 0}
     labeled = list(csv.DictReader(open(tmp_path / "child.labeled.tsv"), delimiter="\t"))
     assert {(r["call_id"], r["label"]) for r in labeled} == {("c1", "1"), ("c2", "0")}
+
+    # with a reference cohort: site A is carried by 90 % of it (a recurrent
+    # artefact reads as "transmitted"), site B is a flagged artefact — neither
+    # may teach the model anything
+    import pysam
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr1", length=1_000_000)
+    hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    for k, n, typ in (("SVTYPE", "1", "String"), ("END", "1", "Integer"), ("AF", "A", "Float"),
+                      ("NS", "1", "Integer"), ("NCARRIER", "1", "Integer")):
+        hdr.info.add(k, n, typ, k)
+    hdr.filters.add("CohortArtifact", None, None, "artefact")
+    ref = tmp_path / "ref.vcf.gz"
+    with pysam.VariantFile(str(ref), "wz", header=hdr) as vf:
+        for start, end, ncar, flt in ((10_000, 20_000, 900, None), (50_000, 60_000, 10, "CohortArtifact")):
+            r = vf.new_record(contig="chr1", start=start, stop=end, alleles=("N", "<DEL>"))
+            r.info["SVTYPE"] = "DEL"
+            r.info["AF"] = (ncar / 2000,)
+            r.info["NS"] = 1000
+            r.info["NCARRIER"] = ncar
+            if flt:
+                r.filter.add(flt)
+            vf.write(r)
+    pysam.tabix_index(str(ref), preset="vcf", force=True)
+    counts = label_by_transmission(
+        tmp_path / "child.features.tsv",
+        [tmp_path / "father.gt.tsv", tmp_path / "mother.gt.tsv"],
+        tmp_path / "child.clean.tsv", known_sites=tmp_path / "ref.vcf.gz",
+    )
+    assert counts == {"tp": 0, "fp": 0, "ambiguous": 2, "common": 2}

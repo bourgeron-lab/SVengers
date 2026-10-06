@@ -643,13 +643,24 @@ def label_trio(
     ),
     out: Path = typer.Option(..., help="Output labeled feature TSV"),
     min_gq: int = typer.Option(20, help="Parental GQ required for carrier/confident-ref"),
+    known_sites: Optional[Path] = typer.Option(
+        None, "--known-sites",
+        help="Reference cohort VCF: calls on artefact-flagged or common sites get no label",
+    ),
+    max_ref_carrier_frac: float = typer.Option(
+        0.5, help="With --known-sites: drop calls whose site is carried by >= this fraction",
+    ),
 ) -> None:
     """Transmission labels from clean parents for a truth-less child (wavy training)."""
     from .train.label_trio import label_by_transmission
 
-    counts = label_by_transmission(features, parent_gt, out, min_gq=min_gq)
+    counts = label_by_transmission(
+        features, parent_gt, out, min_gq=min_gq,
+        known_sites=known_sites, max_ref_carrier_frac=max_ref_carrier_frac,
+    )
     typer.echo(
-        f"{counts['tp']} TP, {counts['fp']} FP, {counts['ambiguous']} ambiguous -> {out}"
+        f"{counts['tp']} TP, {counts['fp']} FP, {counts['ambiguous']} ambiguous, "
+        f"{counts['common']} common/artefact -> {out}"
     )
 
 
