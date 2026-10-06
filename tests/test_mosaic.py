@@ -8,13 +8,15 @@ from vedette.mosaic import expected_baf_excess, read_tsv, scan_store, write_tsv
 
 BIN = 10_000            # 100 bins per 1 Mb window: fast, same window logic
 CONTIG_MB = 40
+HET_PER_MB = 600        # a 30x genome has ~1000 heterozygous sites per Mb
 
 
 def _store(tmp_path, events, n_contigs=12, seed=0):
     """Synthetic store: `events` = {contig: (start_mb, end_mb, cn, baf_shift)}.
 
     baf_shift=True gives the segment the allelic imbalance its cell fraction
-    implies; False keeps BAF at 0.5 (a depth artefact)."""
+    implies; False keeps BAF at 0.5 (a depth artefact). Per-site BAF noise
+    grows as 1/sqrt(depth), as read sampling makes it."""
     rng = np.random.default_rng(seed)
     path = tmp_path / "S.evidence.zarr"
     w = EvidenceStoreWriter(path, sample="S", reference_id="x", bin_size=BIN)
@@ -32,9 +34,9 @@ def _store(tmp_path, events, n_contigs=12, seed=0):
                 imb[sl] = expected_baf_excess("DEL" if ev_cn < 2 else "DUP", f)
         corr = (30.0 * cn / 2 + rng.normal(0, 1.5, n_bins)).astype(np.float32)
         w.write_depth(c, corr, corr, np.zeros(n_bins, dtype=bool))
-        pos = np.sort(rng.integers(0, CONTIG_MB * 1_000_000, 40 * CONTIG_MB)).astype(np.uint32)
+        pos = np.sort(rng.integers(0, CONTIG_MB * 1_000_000, HET_PER_MB * CONTIG_MB)).astype(np.uint32)
         side = rng.choice([-1, 1], len(pos))
-        vaf = 0.5 + side * imb[pos // BIN] + rng.normal(0, 0.04, len(pos))
+        vaf = 0.5 + side * imb[pos // BIN] + rng.normal(0, 0.08 * np.sqrt(2 / cn[pos // BIN]))
         w.write_baf(c, pos, np.clip(vaf, 0.12, 0.88).astype(np.float32),
                     np.zeros(len(pos), np.uint16))
     return EvidenceStore(path)
@@ -139,3 +141,18 @@ def test_mosaic_segment_is_a_row_of_the_family_page(tmp_path):
     assert 'data-pass="1"' in row and 'data-own="mosaïque"' in row
     assert "MOSAÏQUE" in row and "mosaïque 38 %" in row
     assert "<td>48,000,001</td><td>50,818,468</td>" in row
+
+
+def test_low_fraction_mosaic_is_judged_on_the_attenuated_baf_shift(tmp_path):
+    """A PMS proband's 22q13 loss at ~20 % of the cells (CN 1.80, seen in IGV):
+    per-site BAF noise hides most of the theoretical shift (0.056 -> ~0.01 on
+    the median), which a fixed 0.03 floor rejected."""
+    st = _store(tmp_path, {"chr8": (31, 40, 1.80, True)})
+    calls = [c for c in scan_store(st) if c.contig == "chr8"]
+    assert len(calls) == 1 and calls[0].mosaic and calls[0].svtype == "DEL"
+    assert calls[0].fraction == pytest.approx(0.20, abs=0.05)
+    assert calls[0].baf_expected < expected_baf_excess("DEL", 0.20)
+    # a depth wave at the same level: the wider BAF spread of a shallower
+    # region is not allelic imbalance
+    (tmp_path / "b").mkdir()
+    assert scan_store(_store(tmp_path / "b", {"chr8": (31, 40, 1.80, False)})) == []

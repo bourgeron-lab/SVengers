@@ -19,6 +19,28 @@ This pass works at chromosomal scale, from the evidence store alone:
    gain (1+f)/(2+f) - 0.5. GC or wave artefacts and pericentromeric repeats
    shift depth without any allelic imbalance, and fail here.
 
+The BAF statistic is the median |BAF - 0.5| of a window's heterozygous sites.
+Two things move it besides a clone (`baf_rise`):
+- per-site sampling noise (sd ~0.08 at 30x) absorbs most of a small shift:
+  at f = 0.2 the theoretical shift is 0.056 but the median moves by ~0.013;
+- depth itself: sampling noise grows as 1/sqrt(depth), so a region read at
+  92 % depth (a GC wave) has a wider BAF spread and a median ~0.0025 higher
+  with no allelic imbalance at all.
+Both expectations are computed on the sample's own heterozygous sites — null:
+noise scaled by the segment's depth; mosaic: the same plus ±(theoretical
+shift) — and the observed excess must cover BAF_SUPPORT of the way from the
+null to the mosaic expectation, BAF_Z window-noise SEs above the null. Only a
+shallower segment widens the noise: not all of it is read sampling, and
+crediting a deeper one with a narrower spread let GC-rich gain waves (BAF
+excess exactly 0) through. Like depth, the BAF shift of a clone is the same
+in every window (BAF_HOMOG_*): a segment whose median rides on one or two
+LOH-like windows (excess 0.05-0.3) is not one.
+
+A fixed floor of 0.03 missed a PMS proband's 20 % 22q13 loss (41.7 Mb to the
+end, observed 0.012, null 0.003, mosaic 0.016, seen in IGV); without the
+depth null, dataset_paper gained ~70 wave segments at CN ~1.83 (chr4, chr13,
+chr19 ...), whose excess (0.003-0.006) is the null's.
+
 Autosomes only: the sex chromosomes need the sample's ploidy, which older
 stores do not record.
 """
@@ -40,10 +62,12 @@ MIN_WINDOWS = 3
 MIN_VALID_FRAC = 0.5       # a window needs half its bins unmasked
 MIN_HET_PER_WINDOW = 20    # heterozygous sites for a window's BAF summary
 SPLIT_T = 6.0              # binary-segmentation split threshold (in noise SDs)
-MIN_CN_SHIFT = 0.2         # |CN - 2| below this is "no change"
+MIN_CN_SHIFT = 0.15        # |CN - 2| below this is "no change"
 MOSAIC_FRAC = (0.15, 0.85)
-BAF_SUPPORT = 0.4          # observed BAF excess must reach this share of the expected
-BAF_MIN_EXCESS = 0.03
+BAF_SUPPORT = 0.5          # share of the way from the depth null to the mosaic expectation
+BAF_Z = 5.0                # ... and this many window-noise SEs above the depth null
+BAF_HOMOG_MAX = 3.0        # a window's excess beyond 3x the expected is not this clone
+BAF_HOMOG_FRAC = 0.5       # share of the windows between the floor and that ceiling
 # A mosaic is a homogeneous intermediate level. A segment that blends windows
 # at different integer levels has the same median and fails here: on PMS, a
 # 3 Mb constitutional 16p13 duplication next to a deleted window (2.9, 2.5,
@@ -80,6 +104,17 @@ def expected_baf_excess(svtype: str, f: float) -> float:
     return (1 + f) / (2 + f) - 0.5
 
 
+def baf_rise(het_dev: np.ndarray, depth_ratio: float, shift: float = 0.0) -> float:
+    """Expected rise of the median |BAF - 0.5| in a segment read at
+    `depth_ratio` of the genome's depth whose heterozygous sites are shifted
+    by ±`shift`, from the sample's own deviations `het_dev` (BAF - 0.5)."""
+    if len(het_dev) == 0:
+        return shift
+    noise = het_dev / np.sqrt(min(max(depth_ratio, 0.05), 1.0))
+    shifted = np.concatenate([np.abs(noise + shift), np.abs(noise - shift)])
+    return float(np.median(shifted) - np.median(np.abs(het_dev)))
+
+
 def homogeneous(win_cn: np.ndarray, cn: float) -> bool:
     """Whether a segment's windows sit at one level (HOMOG_*), as a clone does."""
     return bool(np.mean(np.abs(np.asarray(win_cn) - cn) <= HOMOG_TOL) >= HOMOG_FRAC)
@@ -113,8 +148,8 @@ def _segments(levels: np.ndarray, sd: float, min_len: int, t_split: float) -> li
 
 
 def _windows(store, contig: str):
-    """(starts, ratio level, BAF dev, valid) per 1 Mb window of one contig,
-    ratio not yet normalised."""
+    """(starts, ratio level, BAF dev, length, het BAF - 0.5) per 1 Mb window
+    of one contig, ratio not yet normalised."""
     _, corr, mask = store.depth(contig)
     corr = np.asarray(corr, dtype=np.float64)
     mask = np.asarray(mask, dtype=bool)
@@ -132,12 +167,14 @@ def _windows(store, contig: str):
     if valid.any():
         level[valid] = np.nanmedian(blk[valid], axis=1)
     dev = np.full(n_win, np.nan)
+    het_dev = np.empty(0)
     try:
         baf = store.baf(contig, 0, n_win * WINDOW_BP)
         pos = np.asarray(baf["pos"], dtype=np.int64)
         vaf = np.asarray(baf["vaf"], dtype=np.float64)
         het = (vaf > 0.1) & (vaf < 0.9)
-        pos, a = pos[het], np.abs(vaf[het] - 0.5)
+        pos, het_dev = pos[het], vaf[het] - 0.5
+        a = np.abs(het_dev)
         order = np.argsort(pos, kind="stable")
         pos, a = pos[order], a[order]
         cuts = np.searchsorted(pos, np.arange(n_win + 1) * WINDOW_BP)
@@ -147,7 +184,7 @@ def _windows(store, contig: str):
     except KeyError:
         pass
     starts = np.arange(n_win) * WINDOW_BP
-    return starts, level, dev, (len(corr) - pad) * store.bin_size
+    return starts, level, dev, (len(corr) - pad) * store.bin_size, het_dev
 
 
 def scan_store(store) -> list[MosaicCall]:
@@ -161,13 +198,16 @@ def scan_store(store) -> list[MosaicCall]:
     if not np.isfinite(base) or base <= 0:
         return []
     all_dev = np.concatenate([d[2] for d in data.values()])
-    baf_base = np.nanmedian(all_dev) if np.isfinite(all_dev).any() else np.nan
+    fin_dev = all_dev[np.isfinite(all_dev)]
+    baf_base = np.median(fin_dev) if len(fin_dev) else np.nan
+    baf_sd = max(1.4826 * np.median(np.abs(fin_dev - baf_base)), 1e-3) if len(fin_dev) else np.nan
+    het_dev = np.concatenate([d[4] for d in data.values()])
     # window-level noise: MAD of successive differences, robust to the steps
     diffs = np.concatenate([np.diff(d[1][np.isfinite(d[1])] / base) for d in data.values()])
     sd = 1.4826 * np.median(np.abs(diffs - np.median(diffs))) / np.sqrt(2) if len(diffs) else 0.0
     sd = max(sd, 0.01)
     calls: list[MosaicCall] = []
-    for c, (starts, level, dev, _len) in data.items():
+    for c, (starts, level, dev, _len, _het) in data.items():
         ok = np.isfinite(level)
         if ok.sum() < MIN_WINDOWS:
             continue
@@ -186,8 +226,13 @@ def scan_store(store) -> list[MosaicCall]:
             if not np.isfinite(baf_base) or np.isfinite(d).sum() < 0.5 * len(wins):
                 continue                   # no allelic evidence (repeats, gaps)
             excess = float(np.nanmedian(d) - baf_base)
-            exp = expected_baf_excess(svtype, f)
-            if excess < max(BAF_MIN_EXCESS, BAF_SUPPORT * exp):
+            null = baf_rise(het_dev, cn / 2.0)
+            exp = baf_rise(het_dev, cn / 2.0, expected_baf_excess(svtype, f))
+            lo = null + BAF_SUPPORT * (exp - null)
+            hi = null + BAF_HOMOG_MAX * (exp - null)
+            wd = d[np.isfinite(d)] - baf_base
+            z = (excess - null) / (baf_sd / np.sqrt(len(wd)))
+            if excess < lo or z < BAF_Z or np.mean((wd >= lo) & (wd <= hi)) < BAF_HOMOG_FRAC:
                 continue
             calls.append(MosaicCall(
                 sample=store.sample, contig=c,

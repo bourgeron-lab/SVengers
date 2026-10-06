@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **mosaic** — low-fraction clones (~15-25 % of the cells) are no longer
+  rejected by a fixed BAF floor: the expected BAF shift is measured on the
+  sample's own heterozygous sites, against a depth-aware null (a shallower
+  region has a wider BAF spread), and must be consistent window by window.
+  On PMS and dataset_paper: no segment lost, 2 new segments in each.
+- **report** — the mosaic QC alert gives the segment bounds in Mb with one
+  decimal.
+
 ## v1.0.0 — 2026-10-05
 
 First release. Germline DEL/DUP calling from WGS with post-calling filtering,
