@@ -700,6 +700,8 @@ def _write_all_family_events(
                 _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
         if collapse:
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
+        events += mosaic_events(members, mosaic_by_sample or {}, genes_fn, impact_fn,
+                                segdup_iv, lcr_iv)
         big = big_cnv_counts(events)
         for e in events:
             alerts = []
@@ -1109,6 +1111,40 @@ def big_cnv_counts(events: list[dict]) -> Counter:
             for m in e["carriers"]:
                 n[m] += 1
     return n
+
+
+def mosaic_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
+                  genes_fn=None, impact_fn=None, segdup_iv=None, lcr_iv=None) -> list[dict]:
+    """Family-page rows for the members' mosaic segments (`vedette mosaic`).
+
+    A mosaic loss or gain has no cohort site of its own: the integer CN-HMM
+    either fragments it or, close to CN 2, does not call it at all (a PMS
+    proband's terminal 22q13 loss at CN 1.62 had no call; it was only in the
+    report's mosaic table, so the family page showed nothing there). Each
+    segment becomes one row, carried by its sample, visible by default.
+    """
+    rows = []
+    for m in members:
+        for g in mosaic_by_sample.get(m, []):
+            if not g["mosaic"]:
+                continue
+            frac = round(100 * g["fraction"])
+            e = {
+                "id": f"mosaic_{m}_{g['contig']}_{g['start']}",
+                "contig": g["contig"], "pos": g["start"] + 1, "end": g["end"],
+                "svtype": g["svtype"], "size": g["end"] - g["start"],
+                "filter": "PASS", "rescue": "MOSAÏQUE", "genes": "", "impact": "",
+                "sqmax": "", "cfrac": "", "refcf": "", "lcr": "", "segdup": "",
+                "support": "—", "own": "mosaïque",
+                "inherit": f"mosaïque {frac} % (CN {g['cn']:.2f})",
+                "carriers": [m],
+                "gt": [("mos", f"{frac}%", f"{g['cn']:.2f}") if x == m else ("—", "", "")
+                       for x in members],
+                "n_sites": 1, "_ids": [],
+            }
+            _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
+            rows.append(e)
+    return rows
 
 
 def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
@@ -1618,8 +1654,16 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
                 mosaic_by_sample[s] = _read_mosaic(tsv)
             except (OSError, ValueError, KeyError):
                 pass
+    # segments are window-aligned: the last 1 kb bin of a contig runs past its
+    # end (chr22 50,819,000 for 50,818,468) — bound them to the real length
+    with pysam.VariantFile(str(vcf_path)) as _hdr_vcf:
+        _clen = {c.name: c.length for c in _hdr_vcf.header.contigs.values()}
+    for segs in mosaic_by_sample.values():
+        for g in segs:
+            if _clen.get(g["contig"]):
+                g["end"] = min(g["end"], _clen[g["contig"]])
     mosaic_rows = sorted(
-        ([s, g["contig"], f'{g["start"] // 1_000_000}-{g["end"] // 1_000_000}', g["svtype"],
+        ([s, g["contig"], f'{g["start"] / 1e6:.1f}-{g["end"] / 1e6:.1f}', g["svtype"],
           f'{g["cn"]:.2f}', f'{round(100 * g["fraction"])} %',
           f'{g["baf_dev"]:.3f} / {g["baf_expected"]:.3f}']
          for s, segs in mosaic_by_sample.items() for g in segs if g["mosaic"]),

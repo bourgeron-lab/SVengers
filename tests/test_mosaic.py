@@ -108,3 +108,31 @@ def test_short_terminal_mosaic_reaches_the_contig_end(tmp_path):
     assert len(calls) == 1 and calls[0].mosaic
     assert calls[0].fraction == pytest.approx(0.38, abs=0.06)
     assert calls[0].end == CONTIG_MB * 1_000_000
+
+
+def test_mosaic_segment_is_a_row_of_the_family_page(tmp_path):
+    """A mosaic 22q13 loss at CN 1.62 had no cohort site (no call from the
+    HMM) and so no row on its family page; it must have one, visible by
+    default, flagged as mosaic."""
+    import numpy as np
+
+    from vedette.report import _FamilySpill, _write_all_family_events
+
+    samples = ["kid", "dad", "mum"]
+    sites = [{"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL",
+              "size": 1001, "filter": "PASS", "rescue": "", "idx": 0, "sqmax": None,
+              "carrier_frac": None, "ref_carrier_frac": None}]
+    nalt = np.array([[1, 0, 0]], dtype=np.int8)
+    gq = np.array([[60, 99, 99]], dtype=np.int16)
+    cn = np.array([[1, 2, 2]], dtype=np.int8)
+    mos = {"kid": [{"contig": "chr22", "start": 48_000_000, "end": 50_818_468, "svtype": "DEL",
+                    "cn": 1.62, "fraction": 0.38, "mosaic": True}]}
+    _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
+                             lambda *a: "", lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"),
+                             mosaic_by_sample=mos)
+    page = (tmp_path / "families" / "F1" / "events.html").read_text()
+    row = page[page.index('data-site="mosaic_kid_chr22_48000000"'):]
+    row = row[:row.index("</tr>")]
+    assert 'data-pass="1"' in row and 'data-own="mosaïque"' in row
+    assert "MOSAÏQUE" in row and "mosaïque 38 %" in row
+    assert "<td>48,000,001</td><td>50,818,468</td>" in row
