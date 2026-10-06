@@ -145,6 +145,24 @@ P 0,870 / F1 0,514 (v5 en échantillon : 0,323 / 0,955 / 0,483 ; Manta
 table dès 300 pb (300 pb-1 kb 0,722, 1-10 kb 0,831, 10-100 kb 0,706) ; CMRG
 F1 0,573 (v5 0,531). docs/benchmark_hg002_v6.tsv.
 
+**v6 retiré de la production le 2026-10-06** (mis en production le 05/10,
+annulé avant tout rapport). Au seuil SQ ≥ 5, v6 laisse passer 12-17k appels
+par génome dataset_paper contre 4,7-5,6k avec v5 — surtout des petites DUP de
+jonction < 1 kb (5-8,6k par génome) — et le merge passe de 523k à 1,92M sites
+(cohort-filter tué à 16 Go). Le holdout wavy (P 0,878 / R 0,960 en DUP) était
+trompeur : il ne note que les appels à label de transmission net et écarte
+les ~25k appels « ambigus » par enfant, là où se trouvent ces DUP. HG002 hors
+échantillon le disait déjà (246 FP DUP contre 46, précision DEL 0,870).
+Leçon : un modèle se valide sur le NOMBRE de PASS par génome et sur les
+métriques trios de la cohorte (MVR, de novo apparents) avant la production,
+pas seulement sur un holdout aux labels filtrés.
+À faire pour un v6 utilisable : (1) nettoyer les labels de transmission
+(un artefact récurrent présent chez un parent est « transmis » ; exclure les
+sites communs via `--known-sites`, cf. 1ter) ; (2) calibrer le seuil sur une
+précision cible mesurée sur l'ensemble des appels (HG002 hors échantillon +
+taux de de novo apparents), pas sur les labels nets ; (3) garde-fou au
+déploiement : comparer le nombre de PASS par génome au modèle en place.
+
 Correctif (fait) : **v6** — rappeler HG003/HG004 avec le code v1 (HG002 l'est déjà,
 `resources/giab/hg002_v1/`), recalculer les features, mêmes labels, et
 réentraîner (avec `lcr_ovl` désormais vivante et des grands événements
