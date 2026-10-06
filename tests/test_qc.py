@@ -859,3 +859,24 @@ def test_subthreshold_ndd_call_is_a_row_of_its_family_page(tmp_path):
     assert "<td>50,731,001</td><td>50,740,001</td>" in row
     # visible by default: the sub-threshold box is ticked next to "PASS uniquement"
     assert 'id="sub" checked' in page
+
+
+def test_subthreshold_rows_of_a_noisy_genome_are_masked():
+    """dataset_paper: 71 sub-threshold NDD rows in one genome, 53 in another —
+    noise, not events. Past SUB_MAX_PER_SAMPLE a genome's rows are masked and
+    counted for its QC alert; a genome with one row keeps it."""
+    from vedette.report import SUB_MAX_PER_SAMPLE, SubCalls, subthreshold_events
+
+    sc = SubCalls()
+    n = SUB_MAX_PER_SAMPLE + 1
+    sc.add("noisy", [("chr1", "DEL", 1_000_000 * (k + 1), 1_000_000 * (k + 1) + 9_000, 1, 99, 0.1)
+                     for k in range(n)])
+    sc.add("clean", [("chr2", "DEL", 5_000_000, 5_009_000, 1, 99, 0.4)])
+    sc.freeze()
+
+    def impact(*a):
+        return 0.9, "+0.90 — élevé · DEL exonique NDD1"
+
+    rows, masked = subthreshold_events(["noisy", "clean"], sc, [], None, impact)
+    assert masked == {"noisy": n}
+    assert [r["carriers"] for r in rows] == [["clean"]]

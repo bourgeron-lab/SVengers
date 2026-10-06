@@ -704,9 +704,11 @@ def _write_all_family_events(
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
         events += mosaic_events(members, mosaic_by_sample or {}, genes_fn, impact_fn,
                                 segdup_iv, lcr_iv)
+        sub_masked: dict[str, int] = {}
         if subthreshold:
-            events += subthreshold_events(members, subthreshold, events,
-                                          genes_fn, impact_fn, segdup_iv, lcr_iv)
+            sub_rows, sub_masked = subthreshold_events(members, subthreshold, events,
+                                                       genes_fn, impact_fn, segdup_iv, lcr_iv)
+            events += sub_rows
         if not events:
             continue
         big = big_cnv_counts(events)
@@ -722,6 +724,8 @@ def _write_all_family_events(
                 if big[m] >= BIG_CNV_WARN:
                     fl.append(f"grands CNV {big[m]}")
                 fl += mosaic_flags((mosaic_by_sample or {}).get(m, []), e)
+                if sub_masked.get(m):
+                    fl.append(f"sous le seuil NDD {sub_masked[m]} masqués")
                 if fl:
                     alerts.append(f"{m[-3:]} {', '.join(fl)}")
             e["qc"] = " · ".join(alerts)
@@ -858,8 +862,10 @@ def _write_events_page(
         f'quel que soit son impact. Sous le seuil (rescue « SOUS-SEUIL NDD ») = appel propre '
         f'rejeté par le seul score SQ, avec un CN franc (DEL CN ≤ 1, DUP CN ≥ 3, GQ ≥ 90, ≥ 1 kb), '
         f'touchant un gène NDD établi (impact ≥ 0,90) et absent de tout génome hors de la famille '
-        f'(environ 0,15 par génome sur PMS) : une liste à relire dans IGV, pas des appels validés '
-        f'(case « + sous le seuil » pour les masquer). '
+        f': une liste à relire dans IGV, pas des appels validés '
+        f'(case « + sous le seuil » pour les masquer). Au-delà de 3 par génome, le génome est '
+        f'jugé bruité : ses lignes sont masquées et ses autres lignes portent l\'alerte '
+        f'« sous le seuil NDD n masqués ». '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1167,12 +1173,19 @@ def mosaic_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
 # gene. A PMS proband's 9 kb deletion of the 3' end of SHANK3 (CN 1, RD 0.50,
 # GQ 99, confirmed in IGV) had SQ 0.38 for a threshold of 5: depth-only, no
 # heterozygous site to read a BAF from in the GC-rich 22q13.33, noisy depth —
-# v5's known weak spot on small depth-only deletions. On PMS such calls are
-# 0.15 per genome once private (dataset_paper 0.06): a review list, not a
+# v5's known weak spot on small depth-only deletions. A review list, not a
 # PASS set.
 SUB_MIN_GQ = 90
 SUB_MIN_SIZE = 1_000
 SUB_MIN_IMPACT = 0.90
+# ... but they pile up in a few noisy genomes: without a cap, dataset_paper
+# had 254 rows in 39 families, 71 in one genome (median 89 kb, no QC alert)
+# and 53 in another; PMS 46 rows, 25 of them in one family's parent and
+# child. A real sub-threshold event in an NDD gene is a one-off (per-genome
+# counts on dataset_paper: 27 genomes with 1, 3 with 2, 2 with 3, then 4, 5,
+# 8 ... 71); past SUB_MAX_PER_SAMPLE the genome's rows are masked and its
+# other rows carry a QC alert instead. Left: PMS 8 rows, dataset_paper 39.
+SUB_MAX_PER_SAMPLE = 3
 
 
 class SubCalls:
@@ -1287,13 +1300,16 @@ def subthreshold_candidates(run_dir: Path, samples: list[str]) -> SubCalls:
 
 def subthreshold_events(members: list[str], cands: SubCalls,
                         shown: list[dict], genes_fn=None, impact_fn=None,
-                        segdup_iv=None, lcr_iv=None) -> list[dict]:
-    """Family-page rows for the members' sub-threshold calls (see SUB_*) that
-    hit an established NDD gene (impact >= SUB_MIN_IMPACT), are found in no
-    genome outside the family and are not already on the page."""
+                        segdup_iv=None, lcr_iv=None) -> tuple[list[dict], dict[str, int]]:
+    """(rows, masked): family-page rows for the members' sub-threshold calls
+    (see SUB_*) that hit an established NDD gene (impact >= SUB_MIN_IMPACT),
+    are found in no genome outside the family and are not already on the
+    page; `masked` = {member: n} of the members past SUB_MAX_PER_SAMPLE, whose
+    rows are left out."""
     fam = set(members)
-    rows = []
+    rows, masked = [], {}
     for m in members:
+        mine = []
         for c in cands.calls(m):
             # cheapest test first: ~2,240 candidates per genome, most shared
             others = cands.sharers(m, c["contig"], c["start"], c["end"], c["svtype"])
@@ -1323,8 +1339,12 @@ def subthreshold_events(members: list[str], cands: SubCalls,
                 "n_sites": 1, "_ids": [], "sub": True,
             }
             _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
-            rows.append(e)
-    return rows
+            mine.append(e)
+        if len(mine) > SUB_MAX_PER_SAMPLE:
+            masked[m] = len(mine)
+        else:
+            rows += mine
+    return rows, masked
 
 
 def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
