@@ -163,6 +163,36 @@ précision cible mesurée sur l'ensemble des appels (HG002 hors échantillon +
 taux de de novo apparents), pas sur les labels nets ; (3) garde-fou au
 déploiement : comparer le nombre de PASS par génome au modèle en place.
 
+**v7 (2026-10-06), non retenu non plus.** v6 + labels de transmission
+nettoyés (`label-trio --known-sites` : pas de label sur les sites communs ou
+marqués artefact ; 99 % des petites DUP de jonction « TP » y tombaient).
+Bilan sur quatre critères :
+- PASS par génome (6 génomes dataset_paper) : génomes normaux +12 à +26 %
+  vs v5 (v6 : ×2,5 à ×3,4) ; génome wavy surchargé −40 % ; autre wavy +66 %.
+- holdout wavy (labels nettoyés, sites rares/modérés) : DEL P 0,938 / R 0,870
+  (v5 0,829 / 0,635) ; DUP rares faibles pour tous (v5 P 0,18, v7 0,27 à
+  rappel divisé par deux).
+- HG002 hors échantillon : DEL P 0,883 / R 0,358 / F1 0,509 (v6 0,870 /
+  0,365 / 0,514) ; en échantillon v7 0,945 / 0,345 / 0,506 vs v5 0,955 /
+  0,323 / 0,483 ; DUP (espace INS) précision 0,939 vs 0,885 ; CMRG F1 0,573.
+- MAIS les PASS supplémentaires sur les génomes de cohorte sont des **DEL de
+  profondeur seule ≥ 1 kb ×6 à ×18** (269 → 1679 ; 169 → 3142 chez un wavy),
+  sans support de jonction, 45 % présentes chez les 3 non-apparentés testés
+  (v5 : 28 %) — artefacts de profondeur récurrents très probables. Invisible
+  sur HG002 : la profondeur GIAB vient du CRAM (giab.toml), celle des
+  cohortes du bedgraph 1 kb précalculé. Une fois les labels wavy (seuls
+  exemples « bedgraph ») nettoyés, le modèle apprend la profondeur sur les
+  CRAM et la sert sur des bedgraphs : nouveau décalage entraînement/production,
+  sur les features de profondeur cette fois.
+- Le test de transmission ne tranche pas (90 % présentes chez un parent),
+  pour la même raison que les labels : un artefact récurrent est « hérité ».
+
+Pour un modèle utilisable (v8) : produire pour HG002/3/4 la même profondeur
+que la production (bedgraph 1 kb façon GHFC, appel en fast path), refaire
+features et labels, réentraîner ; critères de déploiement = PASS par génome
+**par type et par source** vs v5, récurrence chez des non-apparentés,
+HG002 hors échantillon, holdout nettoyé.
+
 Correctif (fait) : **v6** — rappeler HG003/HG004 avec le code v1 (HG002 l'est déjà,
 `resources/giab/hg002_v1/`), recalculer les features, mêmes labels, et
 réentraîner (avec `lcr_ovl` désormais vivante et des grands événements
