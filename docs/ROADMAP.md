@@ -111,6 +111,83 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
 **sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
+### 1sexdecies. Second avis par CNN sur les pistes du store — PLAN (2026-10-06)
+
+Question d'Alexandre : faire pour les DEL/DUP ce que DeepVariant fait pour
+les SNV/indels, c.-à-d. classer une « image » de l'événement.
+
+**Constat de départ.** Le filtre (gradient boosting, `filter/schema.py`) ne
+voit que des résumés : `dhffc`, `depth_cv`, `frac_consistent`,
+`n_bins_informative`, `flank_asym`… jamais la *forme* du signal. Cas d'école
+(PMS, 2026-10-06) : délétion de 9 kb de l'extrémité 3' de SHANK3 chez un
+proposant, CN 1, RD 0,50, GQ 99, unique dans la cohorte, confirmée dans IGV
+en une seconde (deux marches nettes à 0,5, flancs plats à 1,0) — SQ 0,38 pour
+un seuil de 5 : profondeur seule, aucun site hétérozygote (22q13.33 riche en
+GC), `depth_cv` 0,30. À l'inverse une vague de GC a une forme ondulante sans
+marche que les résumés distinguent mal (cf. les ~70 vagues CN ~1,83 du scan
+mosaïque de dataset_paper, 1quaterdecies). Le palier « sous le seuil, gènes
+NDD » des pages familles (2026-10-06) rattrape ce cas pour la relecture ; le
+CNN viserait à ce que le score lui-même le voie.
+
+**Littérature.** Samplot-ML (Belyeu et al., GigaScience 2021 : CNN sur images
+samplot de DEL, filtrage de faux positifs) ; Cue (Popic et al., Nat Methods
+2023 : images multi-canaux des signaux d'alignement, détection d'objets) ;
+CNV-espresso (exome : images de profondeur de l'échantillon *et* d'échantillons
+de référence, confirmation in silico) ; DeepSV ; SVision (lectures longues).
+
+**Ce qu'on NE fait PAS : rendre des PNG.** Le signal d'un CNV de quelques kb
+n'est pas à la base près comme celui d'un SNV : il est déjà condensé dans le
+store (`depth`, `baf`, `pe`, `sr`, `ins`, `cig`). Le store *est* l'image ;
+rastériser perd de l'information et coûte cher. Invariant respecté : le
+second avis ne lit que le store, jamais le CRAM.
+
+**Plan.**
+1. *Tenseurs* (`vedette/filter/tensor.py`, nouveau) : pour chaque appel,
+   fenêtre = appel + un flanc de même longueur de chaque côté (bornée, min
+   10 kb), rééchantillonnée à L = 256 points ; canaux :
+   - log2 du ratio de profondeur normalisé diploïde, et masque ;
+   - BAF : densité de sites hétérozygotes et médiane |BAF − 0,5| par point ;
+   - paires discordantes (DEL/DUP orientées), split reads, décalage de taille
+     d'insert (`ins`), indels CIGAR ;
+   - **contexte cohorte** : médiane et MAD du ratio de profondeur des génomes
+     de la cohorte (ou d'un panel de référence) sur les mêmes bins — le levier
+     contre les artefacts systématiques (creux chr16:28-31 Mb de toute la
+     cohorte PMS, vagues GC). Coût : un résumé par bin calculé une fois par
+     cohorte (comme `vedette mosaic`, ~1-4 min), pas par appel ;
+   - canaux scalaires concaténés après la convolution : log10 taille, type,
+     source, `popcov_stdev`, `segdup_ovl`, `lcr_ovl`.
+   Extraction ~ms par appel ; à borner aux appels pré-filtrés (hard filters
+   passés), pas aux ~35k appels bruts par génome.
+2. *Modèle* : CNN 1D léger (3-4 blocs conv + pooling, < 1M paramètres), un
+   par type ou un commun avec le type en entrée ; CPU suffisant à
+   l'inférence. Sortie = `SQ_CNN` calibré (isotonique), écrit en FORMAT à
+   côté de `SQ`. Le schéma de features GBM n'est pas touché (append-only).
+3. *Labels* — le point dur, cf. v6/v7 (1quindecies) :
+   - vérité GIAB HG002/3/4 (Truvari), MAIS avec une profondeur produite comme
+     en production (bedgraph 1 kb façon GHFC) — prérequis commun avec v8 ;
+     sinon on rejoue le décalage CRAM/bedgraph de v7 ;
+   - transmission trio nettoyée (`label-trio --known-sites`) ;
+   - **validations IGV des pages familles** (vrai/faux/incertain, export TSV) :
+     labels humains sur exactement les cas difficiles. Objectif avant
+     entraînement : quelques centaines, dont les appels « sous le seuil ».
+   - augmentation : symétrie gauche/droite, léger jitter des bornes, bruit de
+     profondeur ; pas d'événements synthétiques injectés comme seule source.
+4. *Usage en deux temps* :
+   a. **second avis sur les appels LowSQ seuls** (comme SHANK3) : un appel
+      rejeté par SQ mais SQ_CNN élevé devient « RESCUE_CNN », au rayon
+      d'action limité ;
+   b. si (a) tient : combinaison SQ/SQ_CNN (empilement) pour tous les appels.
+5. *Critères de déploiement* (leçon v6, mémoire « contrôle avant
+   déploiement ») : PASS par génome **par type, source et taille** vs v5 sur
+   ≥ 5 génomes dont des wavy ; récurrence des nouveaux PASS chez des
+   non-apparentés ; HG002 hors échantillon ; holdout nettoyé ; et, pour (a),
+   nombre de rescues par génome (cible ≲ 1) relus dans IGV sur un
+   échantillon.
+
+**Estimation** : tenseurs + contexte cohorte ~2 j ; entraînement/évaluation
+~2 j une fois les labels IGV disponibles et v8 (profondeur façon production
+pour GIAB) faite. Ne pas lancer avant ces deux prérequis.
+
 ### 1quindecies. Décalage entraînement/production sur `gq` — à corriger par v6 (2026-10-05)
 
 Benchmark HG002 de la v1.0.0 (docs/benchmark_hg002_v1.tsv) contre celui du
