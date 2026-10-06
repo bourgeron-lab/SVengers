@@ -833,7 +833,7 @@ def test_subthreshold_ndd_call_is_a_row_of_its_family_page(tmp_path):
 
     samples = ["kid", "dad", "mum", "stranger"]
     cands = subthreshold_candidates(tmp_path, samples)
-    assert {(c["start"], c["cn"]) for c in cands["kid"]} == {
+    assert {(c["start"], c["cn"]) for c in cands.calls("kid")} == {
         (50_731_000, 1), (50_600_000, 1), (40_000_000, 1)}
 
     def impact(contig, start, end, svtype="DEL"):
@@ -844,6 +844,8 @@ def test_subthreshold_ndd_call_is_a_row_of_its_family_page(tmp_path):
         return 0.0, "+0.00 — faible"
 
     nalt = np.zeros((0, 4), dtype=np.int8)
+    assert cands.sharers("kid", "chr22", 50_600_000, 50_610_001, "DEL") == {"stranger"}
+    assert cands.sharers("kid", "chr22", 50_731_000, 50_740_001, "DEL") == set()
     _write_all_family_events(tmp_path, {"F1": ["kid", "dad", "mum"], "F2": ["stranger"]},
                              samples, [], nalt, nalt.astype(np.int16), nalt,
                              lambda *a: "SHANK3", impact, _FamilySpill(tmp_path / "inh"),

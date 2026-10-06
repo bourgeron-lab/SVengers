@@ -578,7 +578,7 @@ def _write_all_family_events(
     wave_scores: dict[str, float | None] | None = None,
     wave_by_contig: dict[str, dict] | None = None,
     mosaic_by_sample: dict[str, list[dict]] | None = None,
-    subthreshold: dict[str, list[dict]] | None = None,
+    subthreshold: SubCalls | None = None,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -596,7 +596,6 @@ def _write_all_family_events(
         for _, i in fam_members[fid]:
             fam_of_col[i] = k
 
-    sub_sharers = subthreshold_sharers(subthreshold) if subthreshold else {}
     ev_spill = _FamilySpill(run_dir / "families" / ".events_tmp")
     for site in sites:
         if pass_only and site["filter"] != "PASS":
@@ -656,7 +655,8 @@ def _write_all_family_events(
     site_idx = _site_index(sites)
     for fid in fids:
         rows = ev_spill.read(fid)
-        if not rows and not any(m in (subthreshold or {}) or m in (mosaic_by_sample or {})
+        if not rows and not any((subthreshold is not None and m in subthreshold)
+                                or m in (mosaic_by_sample or {})
                                 for m, _ in fam_members[fid]):
             continue
         inherit: dict[str, list[tuple[str, str]]] = defaultdict(list)
@@ -705,7 +705,7 @@ def _write_all_family_events(
         events += mosaic_events(members, mosaic_by_sample or {}, genes_fn, impact_fn,
                                 segdup_iv, lcr_iv)
         if subthreshold:
-            events += subthreshold_events(members, subthreshold, sub_sharers, events,
+            events += subthreshold_events(members, subthreshold, events,
                                           genes_fn, impact_fn, segdup_iv, lcr_iv)
         if not events:
             continue
@@ -1175,11 +1175,86 @@ SUB_MIN_SIZE = 1_000
 SUB_MIN_IMPACT = 0.90
 
 
-def subthreshold_candidates(run_dir: Path, samples: list[str]) -> dict[str, list[dict]]:
-    """{sample: [call]} of the calls rejected by the score alone (FILTER is
-    exactly LowSQ) with a clear copy number (DEL CN <= 1, DUP CN >= 3), GQ >=
-    SUB_MIN_GQ and >= SUB_MIN_SIZE, from the published per-sample VCFs."""
-    out: dict[str, list[dict]] = {}
+class SubCalls:
+    """Sub-threshold candidates of a cohort (see `subthreshold_candidates`) in
+    compact arrays. dataset_paper has ~6M of them (2,240 per genome): held as
+    one dict each, plus an up-front sharer map, they took the report past
+    32 GB; here they cost ~25 bytes each and sharers are looked up on demand,
+    for the candidates of the family being written only."""
+
+    _DT = np.dtype([("ci", np.int32), ("dup", np.int8), ("start", np.int64),
+                    ("end", np.int64), ("cn", np.int8), ("gq", np.int16), ("sq", np.float32)])
+
+    def __init__(self):
+        self.samples: list[str] = []
+        self.contigs: list[str] = []
+        self._ci: dict[str, int] = {}
+        self._rows: dict[str, np.ndarray] = {}
+        self._chunks: dict[tuple[int, int], list] = defaultdict(list)
+        self._by: dict[tuple[int, int], tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+
+    def add(self, sample: str, calls: list[tuple]) -> None:
+        """calls: (contig, svtype, start, end, cn, gq, sq) of one sample."""
+        si = len(self.samples)
+        self.samples.append(sample)
+        rows = np.array([(self._ci.setdefault(c, len(self._ci)), t == "DUP", a, b, cn, gq,
+                          np.nan if sq is None else sq)
+                         for c, t, a, b, cn, gq, sq in calls], dtype=self._DT)
+        self._rows[sample] = rows
+        for ci, dup in set(zip(rows["ci"].tolist(), rows["dup"].tolist(), strict=True)):
+            sel = rows[(rows["ci"] == ci) & (rows["dup"] == dup)]
+            self._chunks[(ci, dup)].append((sel["start"], sel["end"], np.full(len(sel), si, np.int32)))
+
+    def freeze(self) -> SubCalls:
+        self.contigs = sorted(self._ci, key=self._ci.get)
+        for k, parts in self._chunks.items():
+            st = np.concatenate([x[0] for x in parts])
+            en = np.concatenate([x[1] for x in parts])
+            sm = np.concatenate([x[2] for x in parts])
+            o = np.argsort(st, kind="stable")
+            self._by[k] = (st[o], en[o], sm[o])
+        self._chunks = defaultdict(list)
+        self._index = {s: i for i, s in enumerate(self.samples)}
+        return self
+
+    def __contains__(self, sample: str) -> bool:
+        return sample in self._rows
+
+    def __bool__(self) -> bool:
+        return bool(self._rows)
+
+    def __len__(self) -> int:
+        return sum(len(r) for r in self._rows.values())
+
+    def calls(self, sample: str) -> list[dict]:
+        return [{"sample": sample, "contig": self.contigs[r["ci"]],
+                 "svtype": "DUP" if r["dup"] else "DEL", "start": int(r["start"]),
+                 "end": int(r["end"]), "cn": int(r["cn"]), "gq": int(r["gq"]),
+                 "sq": None if np.isnan(r["sq"]) else float(r["sq"])}
+                for r in self._rows.get(sample, ())]
+
+    def sharers(self, sample: str, contig: str, start: int, end: int, svtype: str,
+                min_ro: float = 0.5) -> set[str]:
+        """Other samples with a candidate at reciprocal overlap >= min_ro."""
+        entry = self._by.get((self._ci.get(contig, -1), svtype == "DUP"))
+        if entry is None:
+            return set()
+        st, en, sm = entry
+        length = end - start
+        # RO >= 0.5 bounds a match to at most twice the call's length
+        i = np.searchsorted(st, start - length, "left")
+        j = np.searchsorted(st, end, "right")
+        s_, e_, x_ = st[i:j], en[i:j], sm[i:j]
+        ov = np.minimum(e_, end) - np.maximum(s_, start)
+        hit = (ov > 0) & (ov >= min_ro * np.maximum(length, e_ - s_)) & (x_ != self._index[sample])
+        return {self.samples[k] for k in np.unique(x_[hit])}
+
+
+def subthreshold_candidates(run_dir: Path, samples: list[str]) -> SubCalls:
+    """The calls rejected by the score alone (FILTER is exactly LowSQ) with a
+    clear copy number (DEL CN <= 1, DUP CN >= 3), GQ >= SUB_MIN_GQ and >=
+    SUB_MIN_SIZE, from the published per-sample VCFs."""
+    out = SubCalls()
     for s in samples:
         vcf_path = run_dir / "samples" / s / f"{s}.filtered.vcf.gz"
         if not vcf_path.exists():
@@ -1201,43 +1276,16 @@ def subthreshold_candidates(run_dir: Path, samples: list[str]) -> dict[str, list
                     end = min(rec.stop, lengths.get(rec.contig) or rec.stop)
                     if end - rec.start < SUB_MIN_SIZE:
                         continue
-                    calls.append({"sample": s, "contig": rec.contig, "start": rec.start,
-                                  "end": end, "svtype": svtype, "cn": int(cn), "gq": int(gq),
-                                  "sq": fmt.get("SQ")})
+                    calls.append((rec.contig, svtype, rec.start, end, min(int(cn), 127),
+                                  min(int(gq), 32767), fmt.get("SQ")))
         except (OSError, ValueError):  # a report must survive a missing VCF
             continue
         if calls:
-            out[s] = calls
-    return out
+            out.add(s, calls)
+    return out.freeze()
 
 
-def subthreshold_sharers(cands: dict[str, list[dict]], min_ro: float = 0.5) -> dict:
-    """{(sample, contig, start, svtype): {other samples with a candidate at RO >=
-    min_ro}}: a sub-threshold call shared beyond the family is an artefact."""
-    by: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    for calls in cands.values():
-        for c in calls:
-            by[(c["contig"], c["svtype"])].append(c)
-    out: dict[tuple, set] = {}
-    for lst in by.values():
-        lst.sort(key=lambda c: c["start"])
-        starts = [c["start"] for c in lst]
-        for c in lst:
-            length = c["end"] - c["start"]
-            i = bisect.bisect_left(starts, c["start"] - length)
-            j = bisect.bisect_right(starts, c["end"])
-            others = set()
-            for d in lst[i:j]:
-                if d["sample"] == c["sample"]:
-                    continue
-                ov = min(c["end"], d["end"]) - max(c["start"], d["start"])
-                if ov > 0 and ov / max(length, d["end"] - d["start"]) >= min_ro:
-                    others.add(d["sample"])
-            out[(c["sample"], c["contig"], c["start"], c["svtype"])] = others
-    return out
-
-
-def subthreshold_events(members: list[str], cands: dict[str, list[dict]], sharers: dict,
+def subthreshold_events(members: list[str], cands: SubCalls,
                         shown: list[dict], genes_fn=None, impact_fn=None,
                         segdup_iv=None, lcr_iv=None) -> list[dict]:
     """Family-page rows for the members' sub-threshold calls (see SUB_*) that
@@ -1246,16 +1294,17 @@ def subthreshold_events(members: list[str], cands: dict[str, list[dict]], sharer
     fam = set(members)
     rows = []
     for m in members:
-        for c in cands.get(m, []):
-            others = sharers.get((m, c["contig"], c["start"], c["svtype"]), set())
+        for c in cands.calls(m):
+            # cheapest test first: ~2,240 candidates per genome, most shared
+            others = cands.sharers(m, c["contig"], c["start"], c["end"], c["svtype"])
             if others - fam:
                 continue
             pos, end = c["start"] + 1, c["end"]
+            if impact_fn is None or impact_fn(c["contig"], c["start"], end, c["svtype"])[0] < SUB_MIN_IMPACT:
+                continue
             if any(e["contig"] == c["contig"] and e["svtype"] == c["svtype"]
                    and min(e["end"], end) - max(e["pos"], pos) > 0.5 * max(e["end"] - e["pos"], end - pos)
                    for e in shown):
-                continue
-            if impact_fn is None or impact_fn(c["contig"], c["start"], end, c["svtype"])[0] < SUB_MIN_IMPACT:
                 continue
             also = sorted(x[-3:] for x in others & fam)
             sq = "" if c["sq"] is None else f"{c['sq']:.2f}"
@@ -1825,7 +1874,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{h
         sub_cands = subthreshold_candidates(run_dir, samples) if subthreshold else None
         if sub_cands is not None:
             logger.info("events: %d appels sous le seuil candidats (%d échantillons)",
-                        sum(len(v) for v in sub_cands.values()), len(sub_cands))
+                        len(sub_cands), len(sub_cands.samples))
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
