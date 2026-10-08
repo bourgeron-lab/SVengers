@@ -111,6 +111,47 @@ site qui dépasse son événement de 21 %. Un test de CN sur les bords du site
 (premier et dernier 10 %) signalerait ce recouvrement partiel pour les porteurs
 **sans appel propre PASS**, que le correctif du report ne peut pas couvrir.
 
+### 1septdecies. `wave_score` : v5 inonde les génomes ondulés ; v5n ; v8 non retenu (2026-10-08)
+
+**Pistes de production reproduites** pour GIAB : `by1000.bedgraph` =
+`mosdepth -n -m -x -Q 40 --by 1000` (médiane, mode rapide, MAPQ ≥ 40 :
+64 445/64 445 bins identiques sur le chr20 d'un génome GHFC) ; `vaf.bedgraph`
+= DeepVariant 1.9.0 (`run_deepvariant --model_type WGS`, paramètres = ceux de
+`ghfc-ngs`), sites PASS, QUAL ≥ 30, DP ≥ 10 (0 en trop, 0 manquant).
+
+**Découverte en route : v5 a appris une marche sur `wave_score`** (feature
+par génome) entre 0,10 et 0,13. Mêmes appels, mêmes features, seule la wave
+change : génome PMS 4 794 → 29 444 appels à SQ ≥ 5 (wave 0,10 → 0,13) ;
+HG002 pistes de production (wave 0,164) 42 082 ; un génome dataset_paper
+forcé à 0,16 : 5 070 → 42 764. Production touchée :
+- PMS (stores schéma 0.4, wave présente) : 102/319 génomes ≥ 0,12, PASS
+  médian 12 600 contre 5 500 ;
+- dataset_paper : 2 517 stores en schéma 0.3 (wave absente = −1, d'où un v5
+  « sain » par accident), mais 153 en 0.4 dont **97 ≥ 0,12** — très
+  probablement les ~81 génomes « charge ≥ 5× » des rapports.
+HG002 avec pistes de production, v5 : DEL P 0,456 / R 0,327.
+
+**v5n** (`models/v5n`, commit 21ab8bc) = estimateurs v5 inchangés, `wave_score`
+neutralisée à −1 au scoring (`neutral_features` du manifeste ; `vedette train
+--neutralize`). Identique à v5 sur tout génome sans wave ou sous la marche.
+PASS par génome : génomes normaux identiques ; génomes ondulés 10-18k → 3,3-6k
+(DUP de jonction < 1 kb 10-11k → 0,4-0,9k). HG002 pistes de production :
+DEL P 0,859 / R 0,367 / F1 0,515 (v5 : 0,381) ; CMRG DEL F1 0,563.
+
+**v8 non retenu.** v5-like + GIAB sur pistes de production + labels wavy
+nettoyés + `wave_score` neutralisée. Par rapport à v5n :
+- PASS par génome 2,8-5,4k (v5n 3,3-5,6k) ; DUP de jonction < 1 kb divisées
+  par ~2 ; DEL de profondeur ≥ 1 kb stables (pas l'explosion de v7), sauf un
+  génome PMS ondulé (457 contre 119, 17 % récurrentes) ;
+- holdout wavy nettoyé : DEL P 0,970 / R 0,585 (v5n 0,829 / 0,635) ; DUP
+  P 0,802 / R 0,163 (v5n 0,179 / 0,831) ;
+- HG002 hors échantillon, pistes de production : DEL P 0,898 / R 0,290 /
+  F1 0,439 contre v5n 0,515 ; CMRG DEL F1 0,472 contre 0,563.
+Plus précis, mais le rappel perdu sur HG002 hors échantillon et CMRG
+l'emporte. À creuser avant un v9 : la part de la neutralisation de la wave
+(qui portait peut-être un vrai signal pour les génomes ondulés) et celle des
+labels GIAB refaits.
+
 ### 1sexdecies. Second avis par CNN sur les pistes du store — PLAN (2026-10-06)
 
 Question d'Alexandre : faire pour les DEL/DUP ce que DeepVariant fait pour
