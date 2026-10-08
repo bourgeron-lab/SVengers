@@ -91,7 +91,7 @@ _EXPECTED_CONSTANT: dict[str, set[str]] = {
 }
 
 
-def constant_features(X: np.ndarray, svtype: str) -> dict[str, str]:
+def constant_features(X: np.ndarray, svtype: str, skip: set[str] | frozenset = frozenset()) -> dict[str, str]:
     """Unexpectedly constant (or all-missing) feature columns -> why.
 
     A feature with no variance carries no information: the trees never split
@@ -100,7 +100,7 @@ def constant_features(X: np.ndarray, svtype: str) -> dict[str, str]:
     calls are UCSC, so the overlap was always 0 (see docs/ROADMAP.md) — and
     nothing in the pipeline complained. This guard makes that fail loudly.
     """
-    expected = _EXPECTED_CONSTANT.get(svtype, {"is_dup"})
+    expected = _EXPECTED_CONSTANT.get(svtype, {"is_dup"}) | set(skip)
     dead: dict[str, str] = {}
     for i, name in enumerate(FEATURES):
         if name in expected:
@@ -115,10 +115,11 @@ def constant_features(X: np.ndarray, svtype: str) -> dict[str, str]:
 
 
 def check_feature_variance(
-    X: np.ndarray, svtype: str, allow_constant: bool = False
+    X: np.ndarray, svtype: str, allow_constant: bool = False,
+    skip: set[str] | frozenset = frozenset(),
 ) -> dict[str, str]:
     """Raise on unexpectedly constant features unless explicitly allowed."""
-    dead = constant_features(X, svtype)
+    dead = constant_features(X, svtype, skip)
     if not dead:
         return dead
     detail = ", ".join(f"{k} ({v})" for k, v in sorted(dead.items()))
@@ -217,12 +218,22 @@ def train_models(
     model_version: str = "v1",
     training_data_desc: str = "",
     allow_constant_features: bool = False,
+    neutral_features: dict[str, float] | None = None,
 ) -> dict:
+    """`neutral_features` ({name: value}) are pinned to a constant here and,
+    through the manifest, at scoring (see filter/model.py)."""
     import joblib
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     data = load_labeled(labeled_tsvs)
+    neutral = dict(neutral_features or {})
+    unknown = set(neutral) - set(FEATURES)
+    if unknown:
+        raise ValueError(f"neutral features absent from the schema: {sorted(unknown)}")
+    for d in data.values():
+        for name, value in neutral.items():
+            d["X"][:, FEATURES.index(name)] = value
     manifest = {
         "model_version": model_version,
         "vedette_version": __version__,
@@ -232,10 +243,13 @@ def train_models(
         "training_data": training_data_desc,
         "metrics": {},
     }
+    if neutral:
+        manifest["neutral_features"] = neutral
     # fail before any expensive fitting if a feature carries no signal
     for svtype in ("DEL", "DUP"):
         dead = check_feature_variance(
-            data[svtype]["X"], svtype, allow_constant=allow_constant_features
+            data[svtype]["X"], svtype, allow_constant=allow_constant_features,
+            skip=set(neutral),
         )
         if dead:
             manifest.setdefault("constant_features", {})[svtype] = sorted(dead)

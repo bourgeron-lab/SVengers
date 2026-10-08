@@ -674,13 +674,21 @@ def train(
         False, "--allow-constant-features",
         help="Train even if a feature has no variance (default: refuse — a constant feature usually means broken extraction, as lcr_ovl was through v5)",
     ),
+    neutralize: list[str] = typer.Option(
+        [], "--neutralize",
+        help="NAME=VALUE: pin a feature to a constant at training and scoring (e.g. wave_score=-1; see filter/model.py)",
+    ),
 ) -> None:
     """Train the calibrated DEL/DUP filter models (HistGB + isotonic, chrom-CV)."""
     from .train.train import train_models
 
+    neutral = {}
+    for item in neutralize:
+        name, _, value = item.partition("=")
+        neutral[name.strip()] = float(value)
     manifest = train_models(
         labeled, out, model_version, training_data,
-        allow_constant_features=allow_constant_features,
+        allow_constant_features=allow_constant_features, neutral_features=neutral,
     )
     for svtype, metrics in manifest["metrics"].items():
         typer.echo(f"{svtype}: PR-AUC(OOF) {metrics['pr_auc_oof']}, n={metrics['n']}")

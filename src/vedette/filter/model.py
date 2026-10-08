@@ -3,7 +3,15 @@
 A trained model directory contains:
     model_del.joblib / model_dup.joblib   sklearn estimators with predict_proba
     manifest.json                         {model_version, schema_hash, features,
-                                           calibration, training_data, thresholds}
+                                           calibration, training_data, thresholds,
+                                           neutral_features}
+
+`neutral_features` ({name: value}) pins features to a constant at training
+and scoring alike. `wave_score` is pinned in v5n/v8: v5 learned a step on
+it between 0.10 and 0.13 — the same calls of a PMS genome went from 4,794
+to 29,444 at SQ >= 5 with wave 0.10 vs 0.13 — so every genome past the step
+was flooded with PASS calls (a third of PMS). dataset_paper escaped only
+because its stores predate the feature (-1).
 
 Scoring refuses to run on a feature-schema mismatch. Until a trained model
 ships, `vedette filter` runs Tier-1 only and leaves SQ absent.
@@ -49,6 +57,16 @@ class FilterModel:
         self.manifest = manifest
         self.version = manifest.get("model_version", "unknown")
         self.features = manifest.get("features") or list(FEATURES)
+        self.neutral = {
+            self.features.index(name): float(value)
+            for name, value in (manifest.get("neutral_features") or {}).items()
+            if name in self.features
+        }
+
+    def _neutralize(self, x: np.ndarray) -> np.ndarray:
+        for i, value in self.neutral.items():
+            x[:, i] = value
+        return x
 
     @classmethod
     def load(cls, model_dir: str | Path) -> "FilterModel":
@@ -75,9 +93,9 @@ class FilterModel:
 
     def score(self, features: dict[str, float], svtype: str) -> float:
         """Phred-scaled calibrated P(true call)."""
-        x = np.array(
+        x = self._neutralize(np.array(
             [[features[name] for name in self.features]], dtype=np.float64
-        )
+        ))
         model = self.model_dup if svtype == "DUP" else self.model_del
         p_true = float(model.predict_proba(x)[0, 1])
         p_true = min(max(p_true, 1e-10), 1 - 10 ** (-MAX_SQ / 10))
@@ -92,10 +110,10 @@ class FilterModel:
         (~5 h/genome with v5); one batched pass is ~100x faster and returns
         bit-identical SQ values.
         """
-        x = np.array(
+        x = self._neutralize(np.array(
             [[row[name] for name in self.features] for row in feature_rows],
             dtype=np.float64,
-        )
+        ))
         types = np.array(svtypes)
         sq = np.zeros(len(feature_rows), dtype=np.float64)
         cap = 1 - 10 ** (-MAX_SQ / 10)

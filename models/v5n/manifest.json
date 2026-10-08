@@ -1,0 +1,146 @@
+{
+  "model_version": "v5n",
+  "vedette_version": "0.1.0.dev0",
+  "schema_hash": "f89b9e8890da996f",
+  "features": [
+    "size_log10",
+    "is_dup",
+    "precise",
+    "src_both",
+    "src_junction",
+    "maskfrac",
+    "dhffc",
+    "fc_chrom",
+    "fc_residual",
+    "depth_cv",
+    "frac_consistent",
+    "n_bins_informative",
+    "flank_asym",
+    "pe",
+    "sr",
+    "cig",
+    "ins_z",
+    "ins_pairs",
+    "evidence_ratio",
+    "homlen",
+    "baf_n",
+    "baf_dev",
+    "segdup_ovl",
+    "lcr_ovl",
+    "exclude_ovl",
+    "popcov_stdev",
+    "gq",
+    "cn",
+    "cnq",
+    "wave_score"
+  ],
+  "created": "2026-09-17T18:50:56",
+  "training_data": "GIAB HG002/3/4 (v4 labels) + 16 wavy GHFC children (transmission labels from clean parents), 30-feature schema | v5n = v5 models unchanged, wave_score pinned to -1 at scoring (v5 learned a step at 0.10-0.13 that flooded wavy genomes with PASS calls)",
+  "metrics": {
+    "DEL": {
+      "n": 96007,
+      "n_tp": 79071,
+      "n_labeled_oof": 96007,
+      "pr_auc_oof": 0.9959,
+      "roc_auc_oof": 0.983,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 81235,
+          "fdr": 0.0404,
+          "recall": 0.9859
+        },
+        {
+          "sq": 7,
+          "kept": 76064,
+          "fdr": 0.0191,
+          "recall": 0.9436
+        },
+        {
+          "sq": 10,
+          "kept": 71236,
+          "fdr": 0.0089,
+          "recall": 0.8929
+        },
+        {
+          "sq": 13,
+          "kept": 67379,
+          "fdr": 0.0053,
+          "recall": 0.8476
+        },
+        {
+          "sq": 17,
+          "kept": 64100,
+          "fdr": 0.0037,
+          "recall": 0.8077
+        },
+        {
+          "sq": 20,
+          "kept": 59500,
+          "fdr": 0.0027,
+          "recall": 0.7505
+        },
+        {
+          "sq": 30,
+          "kept": 13780,
+          "fdr": 0.0001,
+          "recall": 0.1742
+        }
+      ]
+    },
+    "DUP": {
+      "n": 64652,
+      "n_tp": 43490,
+      "n_labeled_oof": 64652,
+      "pr_auc_oof": 0.9873,
+      "roc_auc_oof": 0.9758,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 44840,
+          "fdr": 0.0684,
+          "recall": 0.9606
+        },
+        {
+          "sq": 7,
+          "kept": 38323,
+          "fdr": 0.0267,
+          "recall": 0.8577
+        },
+        {
+          "sq": 10,
+          "kept": 35384,
+          "fdr": 0.0179,
+          "recall": 0.799
+        },
+        {
+          "sq": 13,
+          "kept": 30889,
+          "fdr": 0.0097,
+          "recall": 0.7034
+        },
+        {
+          "sq": 17,
+          "kept": 25425,
+          "fdr": 0.0042,
+          "recall": 0.5822
+        },
+        {
+          "sq": 20,
+          "kept": 22554,
+          "fdr": 0.0027,
+          "recall": 0.5172
+        },
+        {
+          "sq": 30,
+          "kept": 9127,
+          "fdr": 0.0001,
+          "recall": 0.2098
+        }
+      ]
+    }
+  },
+  "neutral_features": {
+    "wave_score": -1.0
+  }
+}

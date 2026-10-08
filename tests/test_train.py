@@ -144,3 +144,24 @@ def test_constant_feature_guard():
     X[:, i_lcr] = rng.random(200)
     X[:, i_cig] = np.nan
     assert constant_features(X, "DEL")["cig"] == "aucune valeur finie"
+
+
+def test_neutral_feature_is_pinned_at_training_and_scoring(tmp_path):
+    """v5 learned a step on the per-genome wave_score (same calls of a PMS
+    genome: 4,794 vs 29,444 PASS-level calls at wave 0.10 vs 0.13). A neutral
+    feature is constant in training and overridden at scoring, so a genome's
+    wave can no longer move any call's SQ."""
+    tsv = _synthetic_labeled_tsv(tmp_path)
+    out = tmp_path / "models"
+    manifest = train_models([tsv], out, model_version="test",
+                            neutral_features={"wave_score": -1.0})
+    assert manifest["neutral_features"] == {"wave_score": -1.0}
+    model = FilterModel.load(out)
+    call = {name: 0.3 for name in FEATURES}
+    call.update(dhffc=0.6, sr=3.0, pe=2.0)
+    scores = {w: model.score(dict(call, wave_score=w), "DEL") for w in (-1.0, 0.1, 0.16)}
+    assert len(set(scores.values())) == 1
+    batch = model.score_batch([dict(call, wave_score=w) for w in (-1.0, 0.16)], ["DEL", "DEL"])
+    assert batch[0] == batch[1] == scores[-1.0]
+    with pytest.raises(ValueError, match="neutral"):
+        train_models([tsv], tmp_path / "bad", neutral_features={"nope": 0.0})
