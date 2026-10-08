@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **filter** — production model `models/v5n`: the v5 estimators with the
+  per-genome `wave_score` pinned to -1 (`neutral_features`, `vedette train
+  --neutralize`). v5 had learned a step on it: genomes with wave >= ~0.12
+  passed 10-18k calls instead of ~5k (a third of PMS, 97 dataset_paper
+  genomes). Identical to v5 on every other genome.
 - **mosaic** — low-fraction clones (~15-25 % of the cells) are no longer
   rejected by a fixed BAF floor: the expected BAF shift is measured on the
   sample's own heterozygous sites, against a depth-aware null (a shallower
