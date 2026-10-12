@@ -880,3 +880,13 @@ def test_subthreshold_rows_of_a_noisy_genome_are_masked():
     rows, masked = subthreshold_events(["noisy", "clean"], sc, [], None, impact)
     assert masked == {"noisy": n}
     assert [r["carriers"] for r in rows] == [["clean"]]
+
+
+def test_large_family_gets_no_dead_events_link():
+    """A 38-member dataset_paper pedigree had a link to an events page that
+    is never written (pages stop at _EVENTS_MAX_MEMBERS members)."""
+    from vedette.report import _EVENTS_MAX_MEMBERS, _events_link
+
+    assert 'href="families/F1/events.html"' in _events_link("F1", 3)
+    big = _events_link("F2", _EVENTS_MAX_MEMBERS + 18)
+    assert "href" not in big and f"{_EVENTS_MAX_MEMBERS + 18} membres" in big

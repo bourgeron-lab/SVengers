@@ -284,6 +284,16 @@ class _FamilySpill:
 _EVENTS_MAX_MEMBERS = 20  # no events page for catch-all pseudo-families
 
 
+def _events_link(fid: str, n_members: int) -> str:
+    """The family summary's link to its events page — or why there is none:
+    dataset_paper's 38-member pedigree got a link to a page never written."""
+    if n_members > _EVENTS_MAX_MEMBERS:
+        return (f" · pas de page d'événements : {n_members} membres "
+                f"(au-delà de {_EVENTS_MAX_MEMBERS} par page)")
+    return (f' · <a href="families/{html.escape(fid)}/events.html">'
+            f"tous les événements (filtres chr/type)</a>")
+
+
 def own_call_index(run_dir: Path, members: list[str]) -> dict:
     """{(contig, svtype): [(start, stop, is_pass, member)]} of the family's OWN calls.
 
@@ -1820,7 +1830,7 @@ def generate_report(
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
 {len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
-workspace : <code>families/{html.escape(fid)}/</code>{f' · <a href="families/{html.escape(fid)}/events.html">tous les événements (filtres chr/type)</a>' if family_events else ""}</p>
+workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(members)) if family_events else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {dn_cut:.0f} candidats de novo ({DENOVO_REL:g}× la médiane de la cohorte) — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
