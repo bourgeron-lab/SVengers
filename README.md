@@ -20,7 +20,7 @@ interactive page per family.
   wavy coverage).
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM.
 
-Status: **v1.0.0**, in production at the GHFC lab (Institut Pasteur) on cohorts of
+Status: **v1.1.0**, in production at the GHFC lab (Institut Pasteur) on cohorts of
 300 to 2,700 genomes. Not yet on PyPI or Bioconda; install from source (below).
 
 ## Contents
@@ -194,7 +194,8 @@ families/<FID>/events.html          one interactive page per family
 ```
 
 The **family pages** list every event carried by a member, with:
-- bounds taken from the carrier's own calls, so they match IGV;
+- bounds taken from the carrier's own calls and, from 50 kb, set on the carriers'
+  depth against the rest of the family, so they match IGV;
 - genes and an ACMG/ClinGen-style **impact score** (dosage-sensitive and established
   neurodevelopmental genes, gene count);
 - inheritance, whether the member has an own call or only a re-genotyped one, and carrier

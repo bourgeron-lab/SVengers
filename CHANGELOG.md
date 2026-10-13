@@ -1,36 +1,55 @@
 # Changelog
 
-## Unreleased
+## v1.1.0 — 2026-10-13
 
-- **qc** — `vedette wave` writes the wave QC score into evidence stores called
-  before schema 0.4 (recomputed from the stored depth, exact to float32). On
-  dataset_paper, 2,517 stores had none; 476 of the 2,670 genomes are wavy.
-- **report** — from an IGV review of 138 rows: no sub-threshold rows for wavy
-  genomes or for older, lower-quality genomes (`--low-quality-prefix`, IP at
-  the GHFC: 1/10 and 1/13 true vs 15/28 elsewhere); de novo rows flagged
-  « < 1 kb » and « récurrent » below 10 kb (the 7 false, none of the 56 true).
-- **report** — the de novo tables list events, not cohort sites: a child's
-  sites take its own bounds and nested or bridged sites become one row (a
-  PMS proband's 8.2 Mb 22q13 deletion was 61 rows).
-- **filter** — production model `models/v5n`: the v5 estimators with the
-  per-genome `wave_score` pinned to -1 (`neutral_features`, `vedette train
-  --neutralize`). v5 had learned a step on it: genomes with wave >= ~0.12
-  passed 10-18k calls instead of ~5k (a third of PMS, 97 dataset_paper
-  genomes). Identical to v5 on every other genome.
-- **mosaic** — low-fraction clones (~15-25 % of the cells) are no longer
-  rejected by a fixed BAF floor: the expected BAF shift is measured on the
-  sample's own heterozygous sites, against a depth-aware null (a shallower
-  region has a wider BAF spread), and must be consistent window by window.
-  On PMS and dataset_paper: no segment lost, 2 new segments in each.
-- **report** — the mosaic QC alert gives the segment bounds in Mb with one
-  decimal.
-- **report** — sub-threshold tier on the family pages: own calls rejected by
-  the score alone (LowSQ) with a clear copy number (GQ >= 90, >= 1 kb), hitting
-  an established dominant NDD gene and found in no genome outside the family,
-  shown greyed as `SOUS-SEUIL NDD` for IGV review (toggle « + sous le seuil »).
-  Past 3 such rows a genome is deemed noisy: its rows are masked and its other
-  rows carry a QC alert. PMS: 8 rows (3 in SHANK3); dataset_paper: 39 rows in
-  32 genomes.
+Production model, mosaic detection and a report reworked after an IGV review
+of 138 rows by the GHFC lab. Same evidence-store and feature schemas as
+v1.0.0: existing stores and calls stay valid.
+
+### Filtering
+
+- **Production model `models/v5n`**: the v5 estimators with the per-genome
+  `wave_score` pinned to -1. v5 had learned a step on that feature: genomes
+  with wave >= ~0.12 passed 10-18k calls instead of ~5k (a third of PMS, 97
+  dataset_paper genomes). Identical to v5 on every other genome. On PMS:
+  cohort sites 215,867 -> 104,498, median apparent de novo per child
+  273 -> 67; on dataset_paper: 522,992 -> 361,359 sites, 559 -> 194.
+- `neutral_features` in the model manifest and `vedette train --neutralize
+  NAME=VALUE` pin a feature to a constant at training and scoring.
+
+### Mosaics
+
+- Low-fraction clones (~15-25 % of the cells) are no longer rejected by a
+  fixed BAF floor: the expected BAF shift is measured on the sample's own
+  heterozygous sites, against a depth-aware null (a shallower region has a
+  wider BAF spread), and must hold window by window. PMS and dataset_paper:
+  no segment lost, 2 new in each (a 20 % 22q13 loss confirmed in IGV).
+
+### QC
+
+- `vedette wave` writes the coverage-wave score into evidence stores called
+  before schema 0.4, recomputed from the stored depth (exact to float32).
+  dataset_paper: 2,517 stores had none; 476 of its 2,670 genomes are wavy.
+
+### Report
+
+- **Row bounds set on the carriers' depth** for events of 50 kb and more,
+  compared with the family's non-carriers: on the reviewed rows, the start
+  error went from 0.3-10 Mb to a few kb (e.g. 50,435,001 -> 49,884,001 for
+  49,883,222 in IGV).
+- **De novo tables list events, not cohort sites**: a PMS proband's 8.2 Mb
+  22q13 deletion was 61 rows.
+- **De novo alerts** « < 1 kb » and « récurrent » below 10 kb: the 7 false
+  high-impact de novo rows of the review, none of the 56 true ones.
+- **Sub-threshold NDD tier**: calls rejected by the score alone with a clear
+  copy number in an established NDD gene, private to the family, shown
+  greyed for review; none for wavy genomes or for older, lower-quality
+  genomes (`--low-quality-prefix`), at most 3 per genome.
+- Mosaic segments are rows of the family pages; the mosaic alert gives the
+  bounds in Mb with one decimal.
+- No dead link for families above the per-page member limit.
+- Lower memory: sub-threshold candidates held in compact arrays (dataset_paper
+  went past 32 GB).
 
 ## v1.0.0 — 2026-10-05
 
