@@ -1468,6 +1468,41 @@ def denovo_alerts(size: int, n_families: int) -> list[str]:
     return out
 
 
+def collapse_denovo(rows: list[dict], own_idx_of=None, site_idx=None) -> list[dict]:
+    """A family's de novo candidate sites as events, one per child and event.
+
+    In a cohort ascertained for a locus, the merge makes one site per
+    breakpoint cluster, and a child carrying the largest deletion is
+    re-genotyped as carrier of every site nested in it: a PMS proband's
+    8.2 Mb terminal 22q13 deletion filled the report's de novo table with 61
+    sites. Each site first takes the child's own bounds (`own_span`, as on the
+    family pages), then sites of the same child and type that overlap or
+    bridge (`_bridges`, the family pages' rule) become one event, with the
+    union of their bounds."""
+    by: dict[tuple, list] = defaultdict(list)
+    for r in rows:
+        pos, end = int(r["start"]) + 1, int(r["end"])
+        if own_idx_of is not None:
+            idx = own_idx_of(r["child"])
+            span = own_span(idx, r["contig"], pos, end, r["svtype"], {r["child"]})
+            if span is not None:
+                pos, end = span
+        by[(r["child"], r["contig"], r["svtype"])].append((pos, end, r))
+    out = []
+    for (child, contig, svtype), items in by.items():
+        items.sort(key=lambda t: t[0])
+        cur = None
+        for pos, end, r in items:
+            if cur is not None and _bridges(cur["pos"], cur["end"], pos, end):
+                cur["end"] = max(cur["end"], end)
+                cur["sites"].append(r)
+            else:
+                cur = {"child": child, "contig": contig, "svtype": svtype,
+                       "pos": pos, "end": end, "sites": [r]}
+                out.append(cur)
+    return out
+
+
 def denovo_family_counts(denovo_by_family: dict[str, list[dict]]) -> dict[str, int]:
     """{site_id: families with a de novo candidate at that site}."""
     fams: dict[str, set] = defaultdict(set)
@@ -1836,8 +1871,24 @@ def generate_report(
         for s in samples:
             families[fam_of.get(s, "sans_famille")].append(s)
 
+        # de novo table: each child's sites take its own bounds (own_span)
+        site_idx = _site_index(sites)
+        _own_cache: dict[str, dict] = {}
+
+        def _own_idx_of(child: str) -> dict:
+            if child not in _own_cache:
+                raw = own_call_index(run_dir, [child])
+                _own_cache[child] = {
+                    k: [(op, oe, ok, who,
+                         _cohort_site_pass(site_idx, k[0], op, oe, k[1]) if ok else None)
+                        for op, oe, ok, who in v]
+                    for k, v in raw.items()
+                }
+            return _own_cache[child]
+
         for fid in sorted(families):
             members = families[fid]
+            _own_cache.clear()  # a child belongs to one family: keep one family's calls
             fam_dir = run_dir / "families" / fid
             fam_viol = viol_by_family.get(fid, [])
             n_viol = viol_counts.get(fid, 0)
@@ -1867,20 +1918,27 @@ def generate_report(
                         writer.writeheader()
                         writer.writerows(fam_viol + denovo)
 
-            dn_rows = [
-                [r["site_id"], f'{r["contig"]}:{int(r["start"]) + 1}-{r["end"]}',
-                 r["svtype"], int(r["end"]) - int(r["start"]),
-                 _genes(r["contig"], int(r["start"]), int(r["end"])),
-                 _impact(r["contig"], int(r["start"]), int(r["end"]), r["svtype"])[1],
-                 r["child"], r["child_gq"], r["dnq"],
-                 ", ".join(denovo_alerts(int(r["end"]) - int(r["start"]),
-                                         dn_families.get(r["site_id"], 0))) or "—"]
-                for r in denovo
-            ]
+            def _num_max(vals):
+                nums = [float(v) for v in vals if v not in ("", None, ".")]
+                return f"{max(nums):g}" if nums else ""
+
+            dn_rows = []
+            for ev in collapse_denovo(denovo, _own_idx_of, site_idx):
+                ids = [r["site_id"] for r in ev["sites"]]
+                size = ev["end"] - ev["pos"] + 1
+                dn_rows.append([
+                    ids[0] + (f" (+{len(ids) - 1} sites)" if len(ids) > 1 else ""),
+                    f'{ev["contig"]}:{ev["pos"]}-{ev["end"]}', ev["svtype"], size,
+                    _genes(ev["contig"], ev["pos"] - 1, ev["end"]),
+                    _impact(ev["contig"], ev["pos"] - 1, ev["end"], ev["svtype"])[1],
+                    ev["child"], _num_max(r["child_gq"] for r in ev["sites"]),
+                    _num_max(r["dnq"] for r in ev["sites"]),
+                    ", ".join(denovo_alerts(size, max(dn_families.get(i, 0) for i in ids))) or "—",
+                ])
             dn_rows.sort(key=lambda row: -_impact_points(row[5]))
             family_sections.append(f"""
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
-{len(denovo)} de novo (PASS, GQ≥{min_denovo_gq}), {n_viol} violations</summary>
+{len(dn_rows)} de novo (PASS, GQ≥{min_denovo_gq}; {len(denovo)} sites), {n_viol} violations</summary>
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(members)) if family_events else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {dn_cut:.0f} candidats de novo ({DENOVO_REL:g}× la médiane de la cohorte) — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}

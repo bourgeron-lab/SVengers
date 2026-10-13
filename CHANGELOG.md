@@ -9,6 +9,9 @@
   genomes or for older, lower-quality genomes (`--low-quality-prefix`, IP at
   the GHFC: 1/10 and 1/13 true vs 15/28 elsewhere); de novo rows flagged
   « < 1 kb » and « récurrent » below 10 kb (the 7 false, none of the 56 true).
+- **report** — the de novo tables list events, not cohort sites: a child's
+  sites take its own bounds and nested or bridged sites become one row (a
+  PMS proband's 8.2 Mb 22q13 deletion was 61 rows).
 - **filter** — production model `models/v5n`: the v5 estimators with the
   per-genome `wave_score` pinned to -1 (`neutral_features`, `vedette train
   --neutralize`). v5 had learned a step on it: genomes with wave >= ~0.12

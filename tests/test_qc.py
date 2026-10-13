@@ -946,3 +946,28 @@ def test_no_subthreshold_rows_for_low_quality_or_wavy_genomes():
     rows, _ = subthreshold_events(["old_genome", "wavy", "good"], sc, [], None, impact,
                                   skip={"old_genome", "wavy"})
     assert [r["carriers"] for r in rows] == [["good"]]
+
+
+def test_nested_de_novo_sites_of_one_child_are_one_event():
+    """A PMS proband's 8.2 Mb terminal deletion was carried at 61 nested
+    cohort sites (one per breakpoint cluster of other probands), each listed
+    as a de novo row; the child's own calls chain them into one event."""
+    from vedette.report import collapse_denovo
+
+    def row(site, start, end, child="kid"):
+        return {"site_id": site, "contig": "chr22", "start": str(start), "end": str(end),
+                "svtype": "DEL", "child": child}
+
+    rows = [row("s1", 42_559_000, 46_859_002), row("s2", 48_992_000, 50_800_002),
+            row("s3", 50_669_805, 50_750_857), row("s4", 10_000_000, 10_050_000),
+            row("s6", 42_761_000, 50_750_857),  # another proband's deletion, spanning the join
+            row("s5", 48_992_000, 50_800_002, child="sib")]
+    # the child's own PASS calls: five pieces 2 kb apart, 42.56-50.80 Mb
+    pieces = [(42_559_001, 46_859_001), (46_861_001, 48_986_001), (48_991_001, 49_384_001),
+              (49_386_001, 50_344_001), (50_346_001, 50_799_001)]
+    idx = {("chr22", "DEL"): [(a, b, True, "kid", True) for a, b in pieces]}
+    evs = collapse_denovo(rows, own_idx_of=lambda c: idx if c == "kid" else {})
+    kid = sorted((e for e in evs if e["child"] == "kid"), key=lambda e: e["pos"])
+    assert [(e["pos"], e["end"], len(e["sites"])) for e in kid] == [
+        (10_000_001, 10_050_000, 1), (42_559_001, 50_799_001, 4)]
+    assert [len(e["sites"]) for e in evs if e["child"] == "sib"] == [1]
