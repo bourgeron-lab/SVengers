@@ -971,3 +971,52 @@ def test_nested_de_novo_sites_of_one_child_are_one_event():
     assert [(e["pos"], e["end"], len(e["sites"])) for e in kid] == [
         (10_000_001, 10_050_000, 1), (42_559_001, 50_799_001, 4)]
     assert [len(e["sites"]) for e in evs if e["child"] == "sib"] == [1]
+
+
+def _cn_store(run_dir, sample, segments, n_bins=3_000, masked=(), depth=40.0, seed=0):
+    """Store with chr22 at CN 2 except `segments` [(start_bin, end_bin, cn)]."""
+    from vedette.extract.store import EvidenceStoreWriter
+
+    rng = np.random.default_rng(seed)
+    cn = np.full(n_bins, 2.0)
+    for a, b, c in segments:
+        cn[a:b] = c
+    corr = (depth * cn / 2 + rng.normal(0, 1.5, n_bins)).astype(np.float32)
+    mask = np.zeros(n_bins, dtype=bool)
+    for a, b in masked:
+        mask[a:b] = True
+    d = run_dir / "samples" / sample
+    d.mkdir(parents=True, exist_ok=True)
+    w = EvidenceStoreWriter(d / f"{sample}.evidence.zarr", sample=sample, reference_id="x", bin_size=1000)
+    w.write_depth("chr22", corr, corr, mask)
+    w.set_meta(mean_depth=depth, ploidy={"chr22": 2})
+
+
+def test_row_bounds_follow_the_carriers_depth(tmp_path):
+    """IGV review (2026-10-13): row starts off by 0.3-1.4 Mb — a cohort site
+    from another proband's breakpoints, a chain cut at one piece. The child's
+    deletion runs 1,000-2,800 kb here, crossing a masked stretch."""
+    from vedette.report import _DepthCache, refine_bounds
+
+    _cn_store(tmp_path, "kid", [(1_000, 2_800, 1.0)], masked=[(1_500, 1_560)])
+    _cn_store(tmp_path, "dad", [], seed=1)
+    _cn_store(tmp_path, "mum", [], seed=2)
+    depth = _DepthCache(tmp_path)
+    # row starting after the masked stretch, as when the chain was cut there
+    pos, end = refine_bounds(depth, "chr22", 1_600_001, 2_800_000, "DEL", ["kid"], ["dad", "mum"])
+    assert abs(pos - 1_000_001) <= 3_000 and abs(end - 2_800_000) <= 3_000
+    # row starting 300 kb too early (another proband's site)
+    pos, _ = refine_bounds(depth, "chr22", 700_001, 2_800_000, "DEL", ["kid"], ["dad", "mum"])
+    assert abs(pos - 1_000_001) <= 3_000
+
+
+def test_row_bounds_do_not_swallow_an_event_the_parent_carries(tmp_path):
+    """The child's de novo deletion (1,500-2,000 kb) abuts a deletion it
+    inherited with the mother (1,000-1,500 kb): the de novo row stays put."""
+    from vedette.report import _DepthCache, refine_bounds
+
+    _cn_store(tmp_path, "kid", [(1_000, 2_000, 1.0)])
+    _cn_store(tmp_path, "mum", [(1_000, 1_500, 1.0)], seed=1)
+    _cn_store(tmp_path, "dad", [], seed=2)
+    depth = _DepthCache(tmp_path)
+    assert refine_bounds(depth, "chr22", 1_500_001, 2_000_000, "DEL", ["kid"], ["mum", "dad"]) is None

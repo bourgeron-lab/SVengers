@@ -347,6 +347,180 @@ def own_call_status(idx: dict, contig: str, pos: int, end: int, svtype: str,
     return best
 
 
+# Depth refinement of large rows (refine_bounds). Alexandre's IGV bounds for
+# 15 rows (2026-10-13) showed row ends off by 0.15-10 Mb for three reasons the
+# call chaining could not fix one by one: a cohort site from another
+# proband's breakpoints taken as the row's start (46.07 vs 46.38 Mb), a chain
+# cut where one piece's cohort site does not match (50.44 vs 49.88 Mb), a
+# sub-threshold row showing one LowSQ piece of a ten-piece deletion (50.50 vs
+# 49.28 Mb). The carriers' own depth says where the event is in all three.
+REFINE_MIN_SIZE = 50_000
+REFINE_WIN = 10_000            # window of the walk; bounds are then set per bin
+REFINE_MAX_UNKNOWN = 250_000   # masked/no-data stretch the walk may cross
+REFINE_DELTA = 0.6             # |CN - normal| for the event state
+REFINE_NORMAL = 0.4            # |CN - normal| for the normal state
+REFINE_MAX_NOISE = 2           # isolated off-state windows the walk may cross
+
+
+class _DepthCache:
+    """Per-sample, per-contig copy number (1 kb bins, NaN where masked) and
+    the contig's normal copy number, read from the evidence stores."""
+
+    def __init__(self, run_dir: Path):
+        self.run_dir = Path(run_dir)
+        self._cn: dict[tuple[str, str], tuple | None] = {}
+
+    def clear(self) -> None:
+        self._cn.clear()
+
+    def get(self, sample: str, contig: str):
+        key = (sample, contig)
+        if key not in self._cn:
+            self._cn[key] = None
+            path = self.run_dir / "samples" / sample / f"{sample}.evidence.zarr"
+            try:
+                from .extract.store import EvidenceStore
+
+                st = EvidenceStore(path)
+                normal = int((st.meta.get("ploidy") or {}).get(contig, 2))
+                mean_depth = float(st.meta.get("mean_depth") or 0)
+                if normal > 0 and mean_depth > 0 and st.has_contig(contig):
+                    _, corr, mask = st.depth(contig)
+                    cn = 2.0 * np.asarray(corr, dtype=np.float64) / mean_depth
+                    cn[np.asarray(mask, dtype=bool)] = np.nan
+                    self._cn[key] = (cn, normal, st.bin_size)
+            except Exception:  # a report must survive a missing or foreign store
+                pass
+        return self._cn[key]
+
+
+def refine_bounds(depth: _DepthCache, contig: str, pos: int, end: int, svtype: str,
+                  carriers, others):
+    """(pos, end) of a large DEL/DUP row set on its carriers' depth, or None.
+
+    Each window compares the carriers' copy number with the family's
+    non-carriers (their median; the contig's normal copy number when there
+    are none): a dip the whole family shares — subtelomeric chr22, a parent's
+    coverage wave — is coverage, not the event. The walk goes out from each
+    end while every carrier with data is REFINE_DELTA away from that
+    reference (masked stretches up to REFINE_MAX_UNKNOWN are crossed), and an
+    end where the carriers match the reference is trimmed inward. A non-carrier
+    sharing the event leaves the window "normal" and stops the walk, so a row
+    is not stretched over a neighbouring event other members carry."""
+    if svtype not in ("DEL", "DUP") or end - pos + 1 < REFINE_MIN_SIZE:
+        return None
+    tracks = [depth.get(s, contig) for s in carriers]
+    if not tracks or any(t is None for t in tracks):
+        return None
+    bin_size = tracks[0][2]
+    ref_tracks = [t for t in (depth.get(s, contig) for s in others) if t is not None]
+    if not ref_tracks:
+        # no family reference: in low-coverage stretches (acrocentric p arms)
+        # an absolute CN 2 reference let singletons' rows grow by 0.7 Mb
+        return None
+    n_bins = min(len(t[0]) for t in tracks + ref_tracks)
+    nb = max(1, REFINE_WIN // bin_size)
+    sign = -1.0 if svtype == "DEL" else 1.0
+
+    def value(cn, sl, min_n):
+        x = cn[sl]
+        x = x[np.isfinite(x)]
+        return float(np.median(x)) if len(x) >= min_n else float("nan")
+
+    def status_of(sl, min_n):
+        ref_vals = [value(t[0], sl, min_n) for t in ref_tracks]
+        ref_vals = [v for v in ref_vals if np.isfinite(v)]
+        if not ref_vals or abs(float(np.median(ref_vals)) - tracks[0][1]) >= REFINE_DELTA:
+            return "unknown"   # no family data, or the whole family is off: no information
+        known = []
+        for cn, _normal, _ in tracks:
+            v = value(cn, sl, min_n)
+            if not np.isfinite(v):
+                continue
+            ref = float(np.median(ref_vals))
+            d = (v - ref) * sign
+            known.append("event" if d >= REFINE_DELTA
+                         else "normal" if abs(v - ref) <= REFINE_NORMAL else "other")
+        if not known:
+            return "unknown"
+        if all(k == "event" for k in known):
+            return "event"
+        return "normal" if all(k == "normal" for k in known) else "other"
+
+    def status(k):
+        if k < 0 or (k + 1) * nb > n_bins:
+            return "edge"
+        return status_of(slice(k * nb, (k + 1) * nb), nb // 2)
+
+    def walk(k0, step):
+        """Last event window reached from k0 moving by `step`."""
+        last, unknown, noise, k = k0, 0, 0, k0 + step
+        while True:
+            st = status(k)
+            if st == "event":
+                last, unknown, noise = k, 0, 0
+            elif st == "unknown":
+                unknown += 1
+                if unknown * REFINE_WIN > REFINE_MAX_UNKNOWN:
+                    break
+            elif st == "other":   # one noisy window inside a deletion is not its end
+                noise += 1
+                if noise > REFINE_MAX_NOISE:
+                    break
+            else:
+                break
+            k += step
+        return last
+
+    ks, ke = (pos - 1) // REFINE_WIN, (end - 1) // REFINE_WIN
+    mid = (ks + ke) // 2
+    # an end window without information (a dip the whole family shares, a
+    # partly masked bin) says nothing: decide from the next one inward
+    for _ in range(2):
+        if status(ks) in ("unknown", "other") and ks < mid:
+            ks += 1
+        if status(ke) in ("unknown", "other") and ke > mid:
+            ke -= 1
+    s_ks, s_ke = status(ks), status(ke)
+    if s_ks == "event":
+        new_ks = walk(ks, -1)
+    elif s_ks == "normal":   # trim: first event window with two more behind it
+        new_ks = next((k for k in range(ks, mid + 1)
+                       if all(status(k + j) == "event" for j in range(3))), ks)
+    else:
+        new_ks = ks
+    if s_ke == "event":
+        new_ke = walk(ke, 1)
+    elif s_ke == "normal":
+        new_ke = next((k for k in range(ke, mid - 1, -1)
+                       if all(status(k - j) == "event" for j in range(3))), ke)
+    else:
+        new_ke = ke
+
+    def edge_bin(k, first, keep):
+        """Outermost bin, in window k and its outer neighbour, from which the
+        carriers' 5-bin median is at the event's copy number; `keep` when the
+        window was not moved."""
+        if keep is not None:
+            return keep
+        lo, hi = max(0, (k - 1) * nb), min(n_bins, (k + 2) * nb)
+        rng = range(lo, hi) if first else range(hi - 1, lo - 1, -1)
+        for b in rng:
+            if status_of(slice(max(0, b - 2), b + 3), 3) == "event":
+                return b
+        return k * nb if first else min(n_bins, (k + 1) * nb) - 1
+
+    b_start = edge_bin(new_ks, True, (pos - 1) // bin_size if new_ks == ks else None)
+    b_end = edge_bin(new_ke, False, (end - 1) // bin_size if new_ke == ke else None)
+    new_pos, new_end = b_start * bin_size + 1, (b_end + 1) * bin_size
+    if new_end - new_pos + 1 < 0.5 * (end - pos + 1):
+        return None   # never let the depth walk eat most of a called event
+    if abs(new_pos - pos) <= REFINE_WIN and abs(new_end - end) <= REFINE_WIN:
+        return None
+    return (new_pos if new_ks != ks else pos), (new_end if new_ke != ke else end)
+
+
+
 def own_span(idx: dict, contig: str, pos: int, end: int, svtype: str,
              carriers, min_ro: float = 0.5, min_call_frac: float = 0.1):
     """The carriers' own breakpoints for a cohort site, or None.
@@ -609,6 +783,7 @@ def _write_all_family_events(
             fam_of_col[i] = k
 
     ev_spill = _FamilySpill(run_dir / "families" / ".events_tmp")
+    depth = _DepthCache(run_dir)
     for site in sites:
         if pass_only and site["filter"] != "PASS":
             continue
@@ -729,6 +904,30 @@ def _write_all_family_events(
             events += sub_rows
         if not events:
             continue
+        # large rows: bounds set on the carriers' depth (refine_bounds), then
+        # rows that now cover the same event are merged again
+        depth.clear()
+        for e in events:
+            if e.get("own") == "mosaïque" or not e["carriers"]:
+                continue
+            span = refine_bounds(depth, e["contig"], e["pos"], e["end"], e["svtype"],
+                                 e["carriers"], [m for m in members if m not in e["carriers"]])
+            if span is not None:
+                e["pos"], e["end"] = span
+                e["size"] = e["end"] - e["pos"]
+                _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
+        plain = [e for e in events if not e.get("sub") and e.get("own") != "mosaïque"]
+        others_rows = [e for e in events if e.get("sub") or e.get("own") == "mosaïque"]
+        if collapse:
+            plain = collapse_events(plain, genes_fn, impact_fn, segdup_iv, lcr_iv)
+        events = plain + [
+            e for e in others_rows
+            if not e.get("sub") or not any(
+                p["contig"] == e["contig"] and p["svtype"] == e["svtype"]
+                and min(p["end"], e["end"]) - max(p["pos"], e["pos"])
+                > 0.5 * max(p["end"] - p["pos"], e["end"] - e["pos"])
+                for p in plain)
+        ]
         big = big_cnv_counts(events)
         for e in events:
             alerts = []
@@ -892,7 +1091,10 @@ def _write_events_page(
         f'configurés, IP au GHFC) : relecture IGV du 13/10, 1 vraie sur 10 chez les IP et 1 sur '
         f'13 chez les ondulés, contre 15 sur 28 ailleurs. Alertes de novo : « de novo < 1 kb » et '
         f'« de novo récurrent (n familles) » sous 10 kb — les 7 faux de novo de la relecture, '
-        f'aucun des 56 vrais. '
+        f'aucun des 56 vrais. Bornes des lignes d\'au moins 50 kb : ajustées sur la profondeur '
+        f'des porteurs, comparée à celle des autres membres de la famille, comme on le fait à '
+        f'l\'œil dans IGV (relecture du 13/10 : erreur au début de 0,5 Mb en médiane ramenée à '
+        f'2 kb). '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1874,6 +2076,7 @@ def generate_report(
         # de novo table: each child's sites take its own bounds (own_span)
         site_idx = _site_index(sites)
         _own_cache: dict[str, dict] = {}
+        dn_depth = _DepthCache(run_dir)
 
         def _own_idx_of(child: str) -> dict:
             if child not in _own_cache:
@@ -1923,7 +2126,12 @@ def generate_report(
                 return f"{max(nums):g}" if nums else ""
 
             dn_rows = []
+            dn_depth.clear()
             for ev in collapse_denovo(denovo, _own_idx_of, site_idx):
+                span = refine_bounds(dn_depth, ev["contig"], ev["pos"], ev["end"], ev["svtype"],
+                                     [ev["child"]], [m for m in members if m != ev["child"]])
+                if span is not None:
+                    ev["pos"], ev["end"] = span
                 ids = [r["site_id"] for r in ev["sites"]]
                 size = ev["end"] - ev["pos"] + 1
                 dn_rows.append([
