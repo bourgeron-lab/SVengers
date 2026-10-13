@@ -936,13 +936,13 @@ def test_no_subthreshold_rows_for_low_quality_or_wavy_genomes():
     from vedette.report import SubCalls, subthreshold_events
 
     sc = SubCalls()
-    for s in ("IP00AAA", "wavy", "good"):
+    for s in ("old_genome", "wavy", "good"):
         sc.add(s, [("chr2", "DEL", 5_000_000, 5_009_000, 1, 99, 0.4)])
     sc.freeze()
 
     def impact(*a):
         return 0.9, "+0.90 — élevé · DEL exonique NDD1"
 
-    rows, _ = subthreshold_events(["IP00AAA", "wavy", "good"], sc, [], None, impact,
-                                  skip={"IP00AAA", "wavy"})
+    rows, _ = subthreshold_events(["old_genome", "wavy", "good"], sc, [], None, impact,
+                                  skip={"old_genome", "wavy"})
     assert [r["carriers"] for r in rows] == [["good"]]
