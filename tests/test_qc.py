@@ -890,3 +890,59 @@ def test_large_family_gets_no_dead_events_link():
     assert 'href="families/F1/events.html"' in _events_link("F1", 3)
     big = _events_link("F2", _EVENTS_MAX_MEMBERS + 18)
     assert "href" not in big and f"{_EVENTS_MAX_MEMBERS + 18} membres" in big
+
+
+def test_wave_backfill_on_a_store_without_score(tmp_path):
+    """Stores called before schema 0.4 carry no wave_score (2,517 of 2,670 on
+    dataset_paper): the backfill recomputes it from the stored depth, equal to
+    what the call computes, and leaves an existing score alone."""
+    from vedette.extract.store import EvidenceStore, EvidenceStoreWriter
+    from vedette.qc import backfill_wave, sample_wave_score
+
+    rng = np.random.default_rng(0)
+    path = tmp_path / "S.evidence.zarr"
+    w = EvidenceStoreWriter(path, sample="S", reference_id="x", bin_size=10_000)
+    ratio, mask = {}, {}
+    for k in range(1, 13):
+        n = 2_000
+        x = 1.0 + 0.05 * np.sin(np.arange(n) / 40) + rng.normal(0, 0.02, n)
+        ratio[f"chr{k}"], mask[f"chr{k}"] = x, np.zeros(n, dtype=bool)
+        w.write_depth(f"chr{k}", (30 * x).astype(np.float32), (30 * x).astype(np.float32), mask[f"chr{k}"])
+    expected, _ = sample_wave_score(ratio, mask, 10_000)
+    assert "wave_score" not in EvidenceStore(path).meta
+    score, written = backfill_wave(path)
+    assert written and score == pytest.approx(expected, abs=1e-6)
+    meta = EvidenceStore(path).meta
+    assert meta["wave_score"] == pytest.approx(expected, abs=1e-6) and len(meta["wave_by_contig"]) == 12
+    assert backfill_wave(path) == (pytest.approx(score), False)
+
+
+def test_denovo_alerts_split_the_reviewed_false_from_the_true():
+    """IGV review (2026-10-13): the 7 false high-impact de novo rows were
+    177 bp - 3.1 kb, one 3.1 kb site in 3 families; true ones >= 10.5 kb,
+    including 22q13 deletions shared by up to 40 PMS families."""
+    from vedette.report import denovo_alerts
+
+    for size, n_fam in ((177, 2), (250, 1), (313, 4), (447, 2), (3131, 3)):
+        assert denovo_alerts(size, n_fam)
+    for size, n_fam in ((10_511, 1), (81_051, 40), (365_000, 30), (623_000, 2), (8_905_000, 2)):
+        assert denovo_alerts(size, n_fam) == []
+    assert denovo_alerts(3131, 3) == ["de novo récurrent (3 familles)"]
+
+
+def test_no_subthreshold_rows_for_low_quality_or_wavy_genomes():
+    """Sub-threshold rows were true 1/10 on old IP genomes and 1/13 on wavy
+    ones (IGV review 2026-10-13): their candidates are skipped."""
+    from vedette.report import SubCalls, subthreshold_events
+
+    sc = SubCalls()
+    for s in ("IP00AAA", "wavy", "good"):
+        sc.add(s, [("chr2", "DEL", 5_000_000, 5_009_000, 1, 99, 0.4)])
+    sc.freeze()
+
+    def impact(*a):
+        return 0.9, "+0.90 — élevé · DEL exonique NDD1"
+
+    rows, _ = subthreshold_events(["IP00AAA", "wavy", "good"], sc, [], None, impact,
+                                  skip={"IP00AAA", "wavy"})
+    assert [r["carriers"] for r in rows] == [["good"]]

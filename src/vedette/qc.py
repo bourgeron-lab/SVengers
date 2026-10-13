@@ -86,3 +86,40 @@ def sample_wave_score(
     if len(per_contig) < min_contigs:
         return None, per_contig
     return float(np.mean(list(per_contig.values()))), per_contig
+
+
+def store_wave_score(store) -> tuple[float | None, dict[str, float]]:
+    """`sample_wave_score` recomputed from an evidence store.
+
+    The store keeps the corrected depth and the mask the call computed the
+    score from (after the PoN, when one is used); the score is a spectral
+    fraction, blind to the depth scale, so it comes back exact to float32
+    rounding (1e-8 on two 0.4 stores)."""
+    ratio, mask = {}, {}
+    for contig in store.contigs:
+        _, corr, m = store.depth(contig)
+        ratio[contig] = np.asarray(corr, dtype=np.float64)
+        mask[contig] = np.asarray(m, dtype=bool)
+    return sample_wave_score(ratio, mask, store.bin_size)
+
+
+def backfill_wave(path, force: bool = False) -> tuple[float | None, bool]:
+    """(wave score, written) for one store: stores called before schema 0.4
+    (2,517 of dataset_paper's 2,670) carry no wave_score, which leaves every
+    wavy genome among them invisible to the report's QC. Writes wave_score and
+    wave_by_contig into the store attributes, as a 0.4 call does; the schema
+    version is left alone (no array changes)."""
+    import zarr
+
+    from .extract.store import EvidenceStore
+
+    store = EvidenceStore(path)
+    if store.meta.get("wave_score") is not None and not force:
+        return float(store.meta["wave_score"]), False
+    score, per_contig = store_wave_score(store)
+    zarr.open_group(str(path), mode="r+").attrs.update(
+        wave_score=score,
+        wave_by_contig={k: round(v, 4) for k, v in per_contig.items()},
+        wave_backfilled=True,
+    )
+    return score, True

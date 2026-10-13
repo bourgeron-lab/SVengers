@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **qc** — `vedette wave` writes the wave QC score into evidence stores called
+  before schema 0.4 (recomputed from the stored depth, exact to float32). On
+  dataset_paper, 2,517 stores had none; 476 of the 2,670 genomes are wavy.
+- **report** — from an IGV review of 138 rows: no sub-threshold rows for wavy
+  genomes or for older, lower-quality genomes (`--low-quality-prefix`, IP at
+  the GHFC: 1/10 and 1/13 true vs 15/28 elsewhere); de novo rows flagged
+  « < 1 kb » and « récurrent » below 10 kb (the 7 false, none of the 56 true).
 - **filter** — production model `models/v5n`: the v5 estimators with the
   per-genome `wave_score` pinned to -1 (`neutral_features`, `vedette train
   --neutralize`). v5 had learned a step on it: genomes with wave >= ~0.12

@@ -589,6 +589,8 @@ def _write_all_family_events(
     wave_by_contig: dict[str, dict] | None = None,
     mosaic_by_sample: dict[str, list[dict]] | None = None,
     subthreshold: SubCalls | None = None,
+    denovo_families: dict[str, int] | None = None,
+    low_quality_prefixes: tuple[str, ...] = (),
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -716,8 +718,14 @@ def _write_all_family_events(
                                 segdup_iv, lcr_iv)
         sub_masked: dict[str, int] = {}
         if subthreshold:
+            # IGV review (2026-10-13): sub-threshold rows were true 1/10 on old
+            # IP genomes and 1/13 on wavy ones, 15/28 elsewhere
+            skip = {m for m in members
+                    if (low_quality_prefixes and m.startswith(tuple(low_quality_prefixes)))
+                    or ((wave_scores or {}).get(m) or -1.0) >= WAVE_WARN}
             sub_rows, sub_masked = subthreshold_events(members, subthreshold, events,
-                                                       genes_fn, impact_fn, segdup_iv, lcr_iv)
+                                                       genes_fn, impact_fn, segdup_iv, lcr_iv,
+                                                       skip=skip)
             events += sub_rows
         if not events:
             continue
@@ -738,6 +746,10 @@ def _write_all_family_events(
                     fl.append(f"sous le seuil NDD {sub_masked[m]} masqués")
                 if fl:
                     alerts.append(f"{m[-3:]} {', '.join(fl)}")
+            if "de novo" in (e.get("inherit") or ""):
+                ids = [e.get("id")] + list(e.get("_ids") or [])
+                n_fam = max((denovo_families or {}).get(i, 0) for i in ids)
+                alerts += denovo_alerts(e["size"], n_fam)
             e["qc"] = " · ".join(alerts)
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
@@ -875,7 +887,12 @@ def _write_events_page(
         f': une liste à relire dans IGV, pas des appels validés '
         f'(case « + sous le seuil » pour les masquer). Au-delà de 3 par génome, le génome est '
         f'jugé bruité : ses lignes sont masquées et ses autres lignes portent l\'alerte '
-        f'« sous le seuil NDD n masqués ». '
+        f'« sous le seuil NDD n masqués ». Pas de ligne sous le seuil pour les génomes ondulés '
+        f'(wave ≥ {WAVE_WARN}) ni pour les génomes anciens de moindre qualité (préfixes de barcode '
+        f'configurés, IP au GHFC) : relecture IGV du 13/10, 1 vraie sur 10 chez les IP et 1 sur '
+        f'13 chez les ondulés, contre 15 sur 28 ailleurs. Alertes de novo : « de novo < 1 kb » et '
+        f'« de novo récurrent (n familles) » sous 10 kb — les 7 faux de novo de la relecture, '
+        f'aucun des 56 vrais. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1310,7 +1327,8 @@ def subthreshold_candidates(run_dir: Path, samples: list[str]) -> SubCalls:
 
 def subthreshold_events(members: list[str], cands: SubCalls,
                         shown: list[dict], genes_fn=None, impact_fn=None,
-                        segdup_iv=None, lcr_iv=None) -> tuple[list[dict], dict[str, int]]:
+                        segdup_iv=None, lcr_iv=None,
+                        skip: set[str] | frozenset = frozenset()) -> tuple[list[dict], dict[str, int]]:
     """(rows, masked): family-page rows for the members' sub-threshold calls
     (see SUB_*) that hit an established NDD gene (impact >= SUB_MIN_IMPACT),
     are found in no genome outside the family and are not already on the
@@ -1319,6 +1337,8 @@ def subthreshold_events(members: list[str], cands: SubCalls,
     fam = set(members)
     rows, masked = [], {}
     for m in members:
+        if m in skip:
+            continue
         mine = []
         for c in cands.calls(m):
             # cheapest test first: ~2,240 candidates per genome, most shared
@@ -1427,6 +1447,34 @@ def denovo_event_count(rows: list[dict]) -> int:
 # (family runs), where a median says nothing.
 DENOVO_REL = 5.0
 DENOVO_REL_MIN_CHILDREN = 20
+
+
+# De novo row alerts, from Alexandre's IGV review of 63 high-impact de novo
+# rows (2026-10-13): all 7 false ones were small (177 bp - 3.1 kb; one 3.1 kb
+# site in 3 unrelated families), the smallest true one 10.5 kb. Recurrence
+# alone is no sign of artefact: PMS's true 22q13 deletions share sites across
+# up to 40 families, dataset_paper's SHANK2 and 16p11.2 across 2-3. Flagging
+# < 1 kb, and recurrent below 10 kb, catches the 7 and none of the 56 true.
+DENOVO_SMALL = 1_000
+DENOVO_RECURRENT_MAX = 10_000
+
+
+def denovo_alerts(size: int, n_families: int) -> list[str]:
+    out = []
+    if size < DENOVO_SMALL:
+        out.append("de novo < 1 kb")
+    if n_families >= 2 and size < DENOVO_RECURRENT_MAX:
+        out.append(f"de novo récurrent ({n_families} familles)")
+    return out
+
+
+def denovo_family_counts(denovo_by_family: dict[str, list[dict]]) -> dict[str, int]:
+    """{site_id: families with a de novo candidate at that site}."""
+    fams: dict[str, set] = defaultdict(set)
+    for fid, rows in denovo_by_family.items():
+        for r in rows:
+            fams[r["site_id"]].add(fid)
+    return {k: len(v) for k, v in fams.items()}
 
 
 def denovo_counts(denovo_by_family: dict[str, list[dict]]) -> dict[str, int]:
@@ -1636,6 +1684,7 @@ def generate_report(
     min_carrier_gq: int = 20,
     mosaic_dir: str | Path | None = None,
     subthreshold: bool = True,
+    low_quality_prefixes: tuple[str, ...] = (),
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -1713,6 +1762,7 @@ def generate_report(
                 ):
                     denovo_by_family[r["family_id"]].append(r)
 
+    dn_families = denovo_family_counts(denovo_by_family)
     # ---- de novo per-child guard: technical outliers leave the family tables
     dn_counts = denovo_counts(denovo_by_family)
     dn_cut = denovo_cutoff(dn_counts, max_denovo_per_child)
@@ -1822,7 +1872,9 @@ def generate_report(
                  r["svtype"], int(r["end"]) - int(r["start"]),
                  _genes(r["contig"], int(r["start"]), int(r["end"])),
                  _impact(r["contig"], int(r["start"]), int(r["end"]), r["svtype"])[1],
-                 r["child"], r["child_gq"], r["dnq"]]
+                 r["child"], r["child_gq"], r["dnq"],
+                 ", ".join(denovo_alerts(int(r["end"]) - int(r["start"]),
+                                         dn_families.get(r["site_id"], 0))) or "—"]
                 for r in denovo
             ]
             dn_rows.sort(key=lambda row: -_impact_points(row[5]))
@@ -1832,7 +1884,7 @@ def generate_report(
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(members)) if family_events else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {dn_cut:.0f} candidats de novo ({DENOVO_REL:g}× la médiane de la cohorte) — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
-{_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ"], dn_rows, limit=20)
+{_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ", "alerte"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
 
@@ -1912,6 +1964,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             min_carrier_gq=min_carrier_gq, sample_qc=sample_qc,
             wave_scores=wave_scores, wave_by_contig=wave_by_contig,
             mosaic_by_sample=mosaic_by_sample, subthreshold=sub_cands,
+            denovo_families=dn_families, low_quality_prefixes=tuple(low_quality_prefixes),
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

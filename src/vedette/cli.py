@@ -283,6 +283,42 @@ def mosaic(
     typer.echo(f"{len(calls)} segments ({sum(c.mosaic for c in calls)} mosaic) -> {out}")
 
 
+@app.command()
+def wave(
+    stores: list[Path] = typer.Argument(None, help="Evidence stores (.zarr)"),
+    run_dir: Optional[Path] = typer.Option(
+        None, "--run-dir", help="Every samples/<S>/<S>.evidence.zarr of a run"
+    ),
+    force: bool = typer.Option(False, "--force", help="Recompute even where a score exists"),
+    jobs: int = typer.Option(1, "--jobs", help="Stores processed in parallel"),
+) -> None:
+    """Write the wave QC score into stores that lack it (called before schema 0.4)."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    from .qc import WAVE_WARN, backfill_wave
+
+    paths = list(stores or [])
+    if run_dir is not None:
+        paths += [d / f"{d.name}.evidence.zarr" for d in sorted((run_dir / "samples").iterdir())
+                  if (d / f"{d.name}.evidence.zarr").exists()]
+    if not paths:
+        raise typer.BadParameter("give STORE(s) or --run-dir")
+    n_written = n_wavy = n_failed = 0
+    with ProcessPoolExecutor(max_workers=max(1, jobs)) as pool:
+        futures = {pool.submit(backfill_wave, p, force): p for p in paths}
+        for fut, p in futures.items():
+            try:
+                score, written = fut.result()
+            except Exception as exc:  # one unreadable store must not stop the batch
+                typer.echo(f"{p}: skipped ({exc})", err=True)
+                n_failed += 1
+                continue
+            n_written += written
+            n_wavy += score is not None and score >= WAVE_WARN
+    typer.echo(f"{len(paths)} stores: {n_written} scores written, {n_wavy} >= {WAVE_WARN} "
+               f"(wavy), {n_failed} failed")
+
+
 @app.command("cohort-filter")
 def cohort_filter(
     sites: Path = typer.Argument(..., help="Sites VCF from `vedette merge`"),
@@ -577,6 +613,10 @@ def report(
         False, "--events-pass-only",
         help="Restrict the family events pages to PASS sites (cohort scale: non-PASS artifacts are carried by nearly every family and make the pages unusable)",
     ),
+    low_quality_prefix: list[str] = typer.Option(
+        [], "--low-quality-prefix",
+        help="Sample-ID prefix of older, lower-quality genomes (repeatable; IP at the GHFC): no sub-threshold rows for them",
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .ped import parse_ped
@@ -599,6 +639,7 @@ def report(
         collapse_family_events=not no_collapse_events,
         min_carrier_gq=min_carrier_gq,
         mosaic_dir=mosaic_dir,
+        low_quality_prefixes=tuple(low_quality_prefix),
     )
     typer.echo(f"rapport -> {path}")
 
