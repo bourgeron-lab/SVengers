@@ -1020,3 +1020,24 @@ def test_row_bounds_do_not_swallow_an_event_the_parent_carries(tmp_path):
     _cn_store(tmp_path, "dad", [], seed=2)
     depth = _DepthCache(tmp_path)
     assert refine_bounds(depth, "chr22", 1_500_001, 2_000_000, "DEL", ["kid"], ["mum", "dad"]) is None
+
+
+def test_no_bound_refinement_for_duplications_or_very_wavy_carriers(tmp_path):
+    """Second IGV review (2026-10-14): both refined DUPs were wrong (a wave
+    read as a gain, 112 kb -> 23 Mb) and refinement was a coin toss on
+    carriers with wave >= 0.2."""
+    from vedette.report import REFINE_MAX_WAVE, _DepthCache, refine_bounds
+
+    _cn_store(tmp_path, "kid", [(1_000, 2_800, 3.0)])
+    _cn_store(tmp_path, "dad", [], seed=1)
+    _cn_store(tmp_path, "mum", [], seed=2)
+    assert refine_bounds(_DepthCache(tmp_path), "chr22", 1_600_001, 2_800_000, "DUP",
+                         ["kid"], ["dad", "mum"]) is None
+    import zarr
+
+    _cn_store(tmp_path / "w", "kid", [(1_000, 2_800, 1.0)])
+    _cn_store(tmp_path / "w", "dad", [], seed=1)
+    zarr.open_group(str(tmp_path / "w" / "samples" / "kid" / "kid.evidence.zarr"), mode="r+").attrs[
+        "wave_score"] = REFINE_MAX_WAVE + 0.05
+    assert refine_bounds(_DepthCache(tmp_path / "w"), "chr22", 1_600_001, 2_800_000, "DEL",
+                         ["kid"], ["dad"]) is None

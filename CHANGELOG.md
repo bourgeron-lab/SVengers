@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **report** — row bounds are no longer set on depth for duplications or for
+  carriers with wave >= 0.2: a second IGV review of 39 adjusted rows found the
+  adjustment right 7/7 on carriers below wave 0.128, 9/18 above 0.2, and both
+  adjusted duplications wrong (a coverage wave read as a 23 Mb gain).
+
 ## v1.1.0 — 2026-10-13
 
 Production model, mosaic detection and a report reworked after an IGV review

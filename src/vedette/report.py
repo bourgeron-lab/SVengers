@@ -360,6 +360,12 @@ REFINE_MAX_UNKNOWN = 250_000   # masked/no-data stretch the walk may cross
 REFINE_DELTA = 0.6             # |CN - normal| for the event state
 REFINE_NORMAL = 0.4            # |CN - normal| for the normal state
 REFINE_MAX_NOISE = 2           # isolated off-state windows the walk may cross
+# Second IGV review (2026-10-14, 39 adjusted rows): right 7/7 on carriers with
+# wave < 0.128, 9/12 at 0.128-0.2, 9/18 above 0.2 (a coin toss); both DUPs
+# (stretched from 112 kb to 23 Mb and from 134 kb to 72 Mb on a wave-0.127
+# genome) were wrong. Deletions only, and not on very wavy carriers.
+REFINE_MAX_WAVE = 0.2
+REFINE_TYPES = ("DEL",)
 
 
 class _DepthCache:
@@ -369,9 +375,24 @@ class _DepthCache:
     def __init__(self, run_dir: Path):
         self.run_dir = Path(run_dir)
         self._cn: dict[tuple[str, str], tuple | None] = {}
+        self._wave: dict[str, float | None] = {}
 
     def clear(self) -> None:
         self._cn.clear()
+        self._wave.clear()
+
+    def wave(self, sample: str) -> float | None:
+        """The sample's wave QC score (store meta), None when unknown."""
+        if sample not in self._wave:
+            self._wave[sample] = None
+            try:
+                from .extract.store import EvidenceStore
+
+                w = EvidenceStore(self.run_dir / "samples" / sample / f"{sample}.evidence.zarr").meta.get("wave_score")
+                self._wave[sample] = None if w is None else float(w)
+            except Exception:  # a report must survive a missing or foreign store
+                pass
+        return self._wave[sample]
 
     def get(self, sample: str, contig: str):
         key = (sample, contig)
@@ -396,7 +417,8 @@ class _DepthCache:
 
 def refine_bounds(depth: _DepthCache, contig: str, pos: int, end: int, svtype: str,
                   carriers, others):
-    """(pos, end) of a large DEL/DUP row set on its carriers' depth, or None.
+    """(pos, end) of a large deletion row set on its carriers' depth, or None
+    (duplications and carriers with wave >= REFINE_MAX_WAVE keep their bounds).
 
     Each window compares the carriers' copy number with the family's
     non-carriers (their median; the contig's normal copy number when there
@@ -407,7 +429,9 @@ def refine_bounds(depth: _DepthCache, contig: str, pos: int, end: int, svtype: s
     end where the carriers match the reference is trimmed inward. A non-carrier
     sharing the event leaves the window "normal" and stops the walk, so a row
     is not stretched over a neighbouring event other members carry."""
-    if svtype not in ("DEL", "DUP") or end - pos + 1 < REFINE_MIN_SIZE:
+    if svtype not in REFINE_TYPES or end - pos + 1 < REFINE_MIN_SIZE:
+        return None
+    if any((depth.wave(s) or 0.0) >= REFINE_MAX_WAVE for s in carriers):
         return None
     tracks = [depth.get(s, contig) for s in carriers]
     if not tracks or any(t is None for t in tracks):
@@ -1091,10 +1115,11 @@ def _write_events_page(
         f'configurés, IP au GHFC) : relecture IGV du 13/10, 1 vraie sur 10 chez les IP et 1 sur '
         f'13 chez les ondulés, contre 15 sur 28 ailleurs. Alertes de novo : « de novo < 1 kb » et '
         f'« de novo récurrent (n familles) » sous 10 kb — les 7 faux de novo de la relecture, '
-        f'aucun des 56 vrais. Bornes des lignes d\'au moins 50 kb : ajustées sur la profondeur '
+        f'aucun des 56 vrais. Bornes des délétions d\'au moins 50 kb : ajustées sur la profondeur '
         f'des porteurs, comparée à celle des autres membres de la famille, comme on le fait à '
         f'l\'œil dans IGV (relecture du 13/10 : erreur au début de 0,5 Mb en médiane ramenée à '
-        f'2 kb). '
+        f'2 kb) ; pas pour les duplications ni sur les génomes très ondulés (wave ≥ {REFINE_MAX_WAVE}), '
+        f'où la seconde relecture l\'a trouvé juste une fois sur deux. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
