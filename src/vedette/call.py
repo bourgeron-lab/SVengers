@@ -151,6 +151,18 @@ def run_call(
     ratio = {n: corr[n] / mean_depth for n in call_names}
     ploidy = estimate_sex_ploidy(ratio, mask, by_name)
 
+    # ---- wave QC (megabase-scale coverage oscillations surviving GC
+    #      correction), on the depth as sequenced: every threshold built on
+    #      wave_score (QC alerts, sub-threshold tier, row bounds) is calibrated
+    #      on it. With a PoN the corrected depth is scored too (wave_score_pon):
+    #      on PMS a founder panel took the median from 0.088 to 0.020.
+    from .qc import sample_wave_score
+
+    wave_score, wave_by_contig = sample_wave_score(ratio, mask, bin_size)
+    if wave_score is not None:
+        logger.info("%s: wave score %.3f", sample, wave_score)
+    wave_score_pon = None
+
     # ---- panel-of-normals normalization (divides out residual systematic bias
     #      and masks population-variable bins)
     if pon_path:
@@ -169,13 +181,9 @@ def run_call(
             corr[name] = (ratio[name] * mean_depth).astype(np.float32)
             n_new_masked += int(mask[name].sum()) - before
         logger.info("PoN: applied (%s), %d additional bins masked", sex, n_new_masked)
-
-    # ---- wave QC (megabase-scale coverage oscillations surviving GC correction)
-    from .qc import sample_wave_score
-
-    wave_score, wave_by_contig = sample_wave_score(ratio, mask, bin_size)
-    if wave_score is not None:
-        logger.info("%s: wave score %.3f", sample, wave_score)
+        wave_score_pon, _ = sample_wave_score(ratio, mask, bin_size)
+        if wave_score_pon is not None:
+            logger.info("%s: wave score after PoN %.3f", sample, wave_score_pon)
 
     # ---- BAF
     baf: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
@@ -202,6 +210,8 @@ def run_call(
         insert_n_pairs=insert.n_pairs,
         wave_score=wave_score,
         wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
+        wave_score_pon=wave_score_pon,
+        pon=str(pon_path) if pon_path else None,
     )
     for name in call_names:
         writer.write_depth(name, raw[name], corr[name], mask[name])

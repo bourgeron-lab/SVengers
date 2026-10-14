@@ -92,9 +92,10 @@ def store_wave_score(store) -> tuple[float | None, dict[str, float]]:
     """`sample_wave_score` recomputed from an evidence store.
 
     The store keeps the corrected depth and the mask the call computed the
-    score from (after the PoN, when one is used); the score is a spectral
-    fraction, blind to the depth scale, so it comes back exact to float32
-    rounding (1e-8 on two 0.4 stores)."""
+    score from; the score is a spectral fraction, blind to the depth scale,
+    so it comes back exact to float32 rounding (1e-8 on two 0.4 stores). A
+    store called with a PoN keeps the PoN-corrected depth: what comes back is
+    then its wave_score_pon (schema 0.5 records both at call time)."""
     ratio, mask = {}, {}
     for contig in store.contigs:
         _, corr, m = store.depth(contig)

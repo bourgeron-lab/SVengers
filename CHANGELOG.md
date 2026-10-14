@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **call** — the wave QC score is measured on the depth as sequenced, before
+  any panel of normals (every wave threshold is calibrated on it); with a PoN
+  the corrected depth is scored too (`wave_score_pon`). Evidence-store schema
+  0.5 (0.1-0.4 still read).
 - **report** — row bounds are no longer set on depth for duplications or for
   carriers with wave >= 0.2: a second IGV review of 39 adjusted rows found the
   adjustment right 7/7 on carriers below wave 0.128, 9/18 above 0.2, and both

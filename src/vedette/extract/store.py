@@ -29,10 +29,12 @@ from typing import Any
 import numpy as np
 import zarr
 
-SCHEMA_VERSION = "0.4"
+SCHEMA_VERSION = "0.5"
 # 0.2 adds optional sr clip sequences; 0.3 adds large CIGAR deletions (cig/);
 # 0.4 adds wave QC meta (wave_score, wave_by_contig — absent on older stores)
-SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4"}
+# 0.5: wave_score is measured before the PoN; wave_score_pon (after it) and
+# pon (the panel's path) are added — None without a PoN
+SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4", "0.5"}
 
 PE_DEL, PE_DUP, PE_INV, PE_INTER = 0, 1, 2, 3
 SR_LEFT_CLIP, SR_RIGHT_CLIP = 0, 1
