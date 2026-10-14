@@ -1041,3 +1041,28 @@ def test_no_bound_refinement_for_duplications_or_very_wavy_carriers(tmp_path):
         "wave_score"] = REFINE_MAX_WAVE + 0.05
     assert refine_bounds(_DepthCache(tmp_path / "w"), "chr22", 1_600_001, 2_800_000, "DEL",
                          ["kid"], ["dad"]) is None
+
+
+def test_mosaic_fragments_fold_into_the_mosaic_row(tmp_path):
+    """Second IGV review: a clonal genome's arm-level losses were spread over
+    CN 1 fragment rows beside the mosaic row. Fragments of the sample alone at
+    the mosaic's level fold in; a deeper deletion inside the mosaic, and an
+    event the parent also carries, stay rows of their own."""
+    from vedette.report import _DepthCache, fold_mosaic_fragments
+
+    _cn_store(tmp_path, "kid", [(1_000, 2_500, 1.33), (1_800, 1_900, 1.0)])
+    mosaic = {"own": "mosaïque", "carriers": ["kid"], "contig": "chr22", "svtype": "DEL",
+              "pos": 1_000_001, "end": 2_500_000, "mosaic_cn": 1.33, "n_sites": 1,
+              "inherit": "mosaïque 67 % (CN 1.33)", "id": "mosaic_kid"}
+
+    def row(i, a, b, carriers=("kid",)):
+        return {"own": "PASS", "carriers": list(carriers), "contig": "chr22", "svtype": "DEL",
+                "pos": a, "end": b, "id": i}
+
+    rows = [mosaic, row("frag1", 1_100_001, 1_300_000), row("frag2", 1_400_001, 1_700_000),
+            row("deep", 1_800_001, 1_900_000), row("shared", 2_000_001, 2_200_000, ("kid", "mum")),
+            row("outside", 2_600_001, 2_700_000)]
+    out = fold_mosaic_fragments(rows, _DepthCache(tmp_path))
+    assert [e["id"] for e in out] == ["mosaic_kid", "deep", "shared", "outside"]
+    assert out[0]["n_sites"] == 3 and "2 fragments regroupés" in out[0]["inherit"]
+    assert {"frag1", "frag2"} <= set(out[0]["_ids"])

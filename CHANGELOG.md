@@ -6,6 +6,10 @@
   carriers with wave >= 0.2: a second IGV review of 39 adjusted rows found the
   adjustment right 7/7 on carriers below wave 0.128, 9/18 above 0.2, and both
   adjusted duplications wrong (a coverage wave read as a 23 Mb gain).
+- **report** — fragments of a mosaic segment (same lone carrier, inside the
+  segment, at its copy number) are folded into the mosaic row; a deeper
+  event inside it stays a row. A clonal dataset_paper genome went from 120
+  fragment rows to its 12 mosaic rows.
 
 ## v1.1.0 — 2026-10-13
 

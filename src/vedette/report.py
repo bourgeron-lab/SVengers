@@ -952,6 +952,7 @@ def _write_all_family_events(
                 > 0.5 * max(p["end"] - p["pos"], e["end"] - e["pos"])
                 for p in plain)
         ]
+        events = fold_mosaic_fragments(events, depth)
         big = big_cnv_counts(events)
         for e in events:
             alerts = []
@@ -1119,7 +1120,9 @@ def _write_events_page(
         f'des porteurs, comparée à celle des autres membres de la famille, comme on le fait à '
         f'l\'œil dans IGV (relecture du 13/10 : erreur au début de 0,5 Mb en médiane ramenée à '
         f'2 kb) ; pas pour les duplications ni sur les génomes très ondulés (wave ≥ {REFINE_MAX_WAVE}), '
-        f'où la seconde relecture l\'a trouvé juste une fois sur deux. '
+        f'où la seconde relecture l\'a trouvé juste une fois sur deux. Les fragments d\'une mosaïque '
+        f'(même porteur seul, dans le segment, au même niveau de copie) sont regroupés dans sa ligne '
+        f'(colonne sites) ; un événement plus profond à l\'intérieur reste une ligne à part. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1388,6 +1391,51 @@ def big_cnv_counts(events: list[dict]) -> Counter:
     return n
 
 
+# A clone carrying an arm-level loss comes back from the integer CN-HMM as
+# a string of CN 1 fragments; the family page showed them as rows beside the
+# mosaic row (second IGV review, 2026-10-14: a clonal genome's 6p, 10q, 12p
+# and 17p losses spread over 9 rows). A fragment carried by the mosaic's
+# sample alone, lying in the segment and at the segment's copy number, is
+# folded into the mosaic row; a deeper event inside it (a constitutional
+# deletion within a mosaic one, CN 1.0 inside CN 1.3, also reviewed) stays.
+FOLD_MIN_INSIDE = 0.5
+FOLD_CN_TOL = 0.25
+
+
+def fold_mosaic_fragments(events: list[dict], depth=None) -> list[dict]:
+    """Rows folded into the mosaic row that contains them (see FOLD_*)."""
+    mos = [e for e in events if e.get("own") == "mosaïque"]
+    if not mos:
+        return events
+    folded: set[int] = set()
+    for m in mos:
+        carrier = m["carriers"][0]
+        n_in = 0
+        for k, e in enumerate(events):
+            if (e is m or e.get("own") == "mosaïque" or k in folded
+                    or e["carriers"] != [carrier] or e["contig"] != m["contig"]
+                    or e["svtype"] != m["svtype"]):
+                continue
+            inside = min(e["end"], m["end"]) - max(e["pos"], m["pos"])
+            if inside < FOLD_MIN_INSIDE * max(e["end"] - e["pos"], 1):
+                continue
+            if depth is not None and m.get("mosaic_cn") is not None:
+                t = depth.get(carrier, e["contig"])
+                if t is not None:
+                    cn, _normal, bs = t
+                    x = cn[(e["pos"] - 1) // bs:e["end"] // bs]
+                    x = x[np.isfinite(x)]
+                    if len(x) and abs(float(np.median(x)) - m["mosaic_cn"]) > FOLD_CN_TOL:
+                        continue   # its own level: a distinct event inside the mosaic
+            folded.add(k)
+            n_in += 1
+            m.setdefault("_ids", []).extend([e.get("id")] + list(e.get("_ids") or []))
+        if n_in:
+            m["n_sites"] = m.get("n_sites", 1) + n_in
+            m["inherit"] += f" · {n_in} fragment{'s' if n_in > 1 else ''} regroupé{'s' if n_in > 1 else ''}"
+    return [e for k, e in enumerate(events) if k not in folded]
+
+
 def mosaic_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
                   genes_fn=None, impact_fn=None, segdup_iv=None, lcr_iv=None) -> list[dict]:
     """Family-page rows for the members' mosaic segments (`vedette mosaic`).
@@ -1412,6 +1460,7 @@ def mosaic_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
                 "sqmax": "", "cfrac": "", "refcf": "", "lcr": "", "segdup": "",
                 "support": "—", "own": "mosaïque",
                 "inherit": f"mosaïque {frac} % (CN {g['cn']:.2f})",
+                "mosaic_cn": float(g["cn"]),
                 "carriers": [m],
                 "gt": [("mos", f"{frac}%", f"{g['cn']:.2f}") if x == m else ("—", "", "")
                        for x in members],
