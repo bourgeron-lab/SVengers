@@ -8,10 +8,10 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Ruff
@@ -20,10 +20,10 @@ jobs:
           ruff check src tests
 
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: mamba-org/setup-micromamba@v2
+      - uses: actions/checkout@v7
+      - uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: containers/environment.yml
           environment-name: ci
@@ -40,10 +40,10 @@ jobs:
         run: pytest tests/ -q
 
   container:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build Docker image
         run: docker build -f containers/Dockerfile -t vedette:ci .
       - name: Smoke test
