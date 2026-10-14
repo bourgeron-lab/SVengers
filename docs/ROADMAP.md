@@ -49,6 +49,40 @@ Priorités :
 4. Article dataset_paper : chiffres hors échantillon, comparaison aux
    autres callers sur les métriques trios, figures.
 
+### Plan de publication (2026-10-14) — pas la priorité
+
+Décision d'Alexandre : d'abord un outil au top, la publication ensuite. Ce
+qu'il faudra pour la soumettre, des verrous aux finitions :
+
+1. **Évaluation hors échantillon (verrou).** Le chiffre phare (HG002, P 0,95)
+   est en échantillon : HG002 est dans l'entraînement de v5. Chiffre principal
+   avec le modèle de production réentraîné sans HG002 ; vérités publiques
+   supplémentaires : échantillons HGSVC (variants issus d'assemblages) avec
+   leurs données Illumina 30x publiques (1000 Genomes, NYGC), HG002 Q100.
+2. **Comparaisons (verrou).** Outils CNV par profondeur en plus des callers
+   SV : CNVnator, GATK-gCNV, Canvas (et DRAGEN si accessible) à côté de
+   Manta, DELLY, dysgu ; mêmes données, réglages par défaut ; sur GIAB
+   (Truvari) et sur une cohorte (taux de de novo, violations mendéliennes).
+3. **Validation orthogonale.** Les ~180 validations IGV (runs/validation,
+   non suivi) ; résultats d'une autre technique (puce, ACPA, MLPA, rapports
+   cliniques), en particulier les délétions SHANK3 connues de PMS, pour une
+   sensibilité réelle.
+4. **Vagues.** Une méthode (panel of normals + SVD, en cours) évaluée
+   avant/après, plutôt que la neutralisation et les exclusions actuelles.
+5. **Cadrage.** DUP nettement moins bonnes que les DEL : les présenter telles
+   quelles ou centrer l'article sur les délétions. Ablations (types
+   d'indices, filtre appris, re-génotypage de cohorte). Mosaïques : fractions
+   simulées et cas confirmés. Coûts (CPU et stockage par génome, 2 670
+   génomes).
+6. **Reproductibilité hors GHFC (verrou éditeur).** Config générique et
+   paquet de ressources GRCh38 téléchargeable (masques, GC, popCovStdev) ;
+   modèle entraîné uniquement sur données publiques (v5 utilise 16 enfants
+   GHFC privés) ou déclaration d'accès ; pipeline de benchmark public qui
+   refait les figures ; version archivée avec DOI (Zenodo), conteneur
+   public ; Bioconda/PyPI seulement avec l'accord d'Alexandre.
+7. **Rédaction.** Note d'application (moins de comparaisons) ou article
+   complet : à décider ; méthodes, figures, éthique des cohortes.
+
 ### 0. (archive) Production : models/v5 + seuil SQ>=5 (2026-09-18)
 v5 = GIAB + 16 trios wavy GHFC (labels par transmission, `vedette label-trio`).
 Holdout 8 enfants wavy : DUP PR-AUC 0,908 (v4) -> 0,988 ; DEL 0,989 -> 0,997.
