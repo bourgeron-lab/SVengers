@@ -6,7 +6,50 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
-### 0. Production : models/v5 + seuil SQ>=5 (2026-09-18)
+### État au 2026-10-14 (v1.1.0 publiée) et priorités
+
+En production : `models/v5n` (v5 avec `wave_score` neutralisée, 1septdecies),
+SQ >= 5, rapport v1.1.0. Deux relectures IGV par Alexandre (138 + 44 cas,
+`runs/validation/`, non suivi) ont fixé les règles du rapport :
+
+- palier « sous le seuil NDD » : vrai 1/10 chez les génomes IP (anciens, de
+  moindre qualité), 1/13 chez les ondulés, 15/28 ailleurs → exclus pour IP
+  (`--low-quality-prefix`) et wave >= 0,128 ; au plus 3 par génome ;
+- de novo à fort impact : 56/63 vrais ; les 7 faux font 177 pb à 3,1 kb
+  (dont un site de 3,1 kb dans 3 familles) → alertes « < 1 kb » et
+  « récurrent » sous 10 kb ; tableaux de novo par événement, plus par site ;
+- bornes : ajustées sur la profondeur des porteurs contre les non-porteurs
+  de la famille (`refine_bounds`) — erreur au début de 0,5 Mb en médiane
+  ramenée à quelques kb sur la 1re relecture ; 2e relecture : juste 7/7 sous
+  wave 0,128, 9/18 au-dessus de 0,2, les 2 DUP fausses → délétions seules,
+  pas au-dessus de wave 0,2 ;
+- fragments de mosaïque regroupés sous leur segment ; un événement plus
+  profond à l'intérieur reste à part.
+- `vedette wave` a rempli la `wave_score` des stores anciens : 476/2 670
+  génomes ondulés sur dataset_paper (97 visibles avant), ~100/319 sur PMS.
+
+Relecture assistée : page HTML par série avec export TSV, graphiques de
+profondeur porteur/famille (même 44 cas : 30 vrais dans IGV, 38 avec les
+graphiques — les graphiques montrent le signal que suit l'algorithme, ils
+ne sont pas un contrôle indépendant dans les génomes ondulés).
+
+Priorités :
+1. **Vagues à la source** (en cours, PMS d'abord) : les génomes ondulés
+   portent l'essentiel des faux positifs restants dans toutes les relectures
+   et ont fait échouer v6 à v8. Panel of normals de fondateurs non apparentés
+   (dataset_paper) + débruitage SVD (déjà codé, jamais validé, cf. 4), test
+   d'abord hors appel (wave_score avant/après, délétions 22q13 intactes),
+   puis PMS rappelé avec `--pon` et comparé à v5n (PASS par génome selon la
+   wave, sites, de novo, MVR). Métadonnées de séquençage (lot, kit, date)
+   demandées pour une normalisation par lot.
+2. v9 et second avis CNN (1sexdecies) : après 1 ; ~180 labels IGV, pistes
+   GIAB identiques à la production (1septdecies).
+3. Mosaïques complexes : mosaïque coupée par une délétion plus profonde
+   (chr13), remaniement gain/perte en 7q11.23.
+4. Article dataset_paper : chiffres hors échantillon, comparaison aux
+   autres callers sur les métriques trios, figures.
+
+### 0. (archive) Production : models/v5 + seuil SQ>=5 (2026-09-18)
 v5 = GIAB + 16 trios wavy GHFC (labels par transmission, `vedette label-trio`).
 Holdout 8 enfants wavy : DUP PR-AUC 0,908 (v4) -> 0,988 ; DEL 0,989 -> 0,997.
 HG002 : non-régression (SQ5 : P 0,951 / R 0,334 vs v4 0,953 / 0,337).
