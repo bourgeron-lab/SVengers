@@ -19,3 +19,7 @@ logs/
 models/*.joblib.tmp
 runs/
 genetrek-data-*.tsv
+
+# local assistant files (kept on disk, not in the repository)
+CLAUDE.md
+.claude/
