@@ -131,7 +131,7 @@ forcé à 0,16 : 5 070 → 42 764. Production touchée :
   probablement les ~81 génomes « charge ≥ 5× » des rapports.
 HG002 avec pistes de production, v5 : DEL P 0,456 / R 0,327.
 
-**v5n** (`models/v5n`, commit 21ab8bc) = estimateurs v5 inchangés, `wave_score`
+**v5n** (`models/v5n`, commit e4c58b1) = estimateurs v5 inchangés, `wave_score`
 neutralisée à −1 au scoring (`neutral_features` du manifeste ; `vedette train
 --neutralize`). Identique à v5 sur tout génome sans wave ou sous la marche.
 PASS par génome : génomes normaux identiques ; génomes ondulés 10-18k → 3,3-6k
@@ -241,7 +241,7 @@ seule feature change pour les 104 candidats appariés : `gq` (+10 en
 médiane)** ; remettre l'ancien `gq` sur les features v1 rend PASS 95 des 104
 (SQ médian 4,35 → 5,16).
 
-Origine : `fd1f49e` (09-09 17:34) remplace la vraisemblance de Poisson du
+Origine : `384b25a` (09-09 17:34) remplace la vraisemblance de Poisson du
 nombre de lectures de jonction par une binomiale négative. Les appels GIAB
 HG002/3/4 qui ont servi à entraîner v3 → v5 datent du 09-09 matin (Poisson) ;
 tous les appels de production (cohortes GHFC, HG002 v1) sont postérieurs
@@ -424,11 +424,11 @@ recalibrer contre les labels du wave-detector (docs/wave_qc_validation.md).
   jusqu'à 1 kb après la fin de leur contig (chrX 156,041,002 pour
   156,040,895 ; chr12 133,276,002 pour 133,275,309) : le dernier bin de 1 kb
   d'un segment de profondeur n'était pas borné à la longueur du contig. 1362
-  lignes des pages familles en héritent (identique avant et après `ea8a8e3`).
-  Correctifs : `447ad86` borne la fin à l'écriture (`vcfout.clamp_end`,
+  lignes des pages familles en héritent (identique avant et après `78fe242`).
+  Correctifs : `f8174eb` borne la fin à l'écriture (`vcfout.clamp_end`,
   partagé par `write_vcf` et `run_merge` ; borne interne `length - 1` car
   htslib écrit END = POS + |SVLEN|, cf. (f) : l'END écrit tombe sur la
-  dernière base du contig) ; `04d63af` borne les appels propres lus par le
+  dernière base du contig) ; `a0d65be` borne les appels propres lus par le
   report (`own_call_index`) ; `_read_cohort_vcf` borne aussi les sites, pour
   les lignes sans appel propre. Reste : re-merge de dataset_paper et PMS
   (`sites.vcf.gz` et `cohort.vcf.gz` publiés débordent encore). Les VCF
