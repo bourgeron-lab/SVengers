@@ -29,8 +29,25 @@ _NEW_INFO = [
     ("MODEL_VER", "1", "String", "Vedette filter model version"),
     ("SQ_OVERRIDE", "1", "String",
      "Reason the calibrated SQ was overridden (LARGE_DEL_DEPTH: deletion beyond the "
-     "model's training size range whose chromosome-level depth confirms a copy loss)"),
+     "model's training size range whose chromosome-level depth confirms a copy loss; "
+     "LARGE_DUP_BAF: large duplication whose heterozygous sites show the allelic "
+     "imbalance of a copy gain)"),
 ]
+
+
+def sq_override(svtype: str, size: int, feats: dict, cf) -> str | None:
+    """Why a low SQ does not reject this call, or None (see FilterConfig)."""
+    if (svtype == "DEL" and size >= cf.large_del_rescue_size
+            and feats["fc_chrom"] < cf.large_del_rescue_fc_chrom
+            and feats["maskfrac"] < cf.large_del_rescue_max_mask):
+        return "LARGE_DEL_DEPTH"
+    if (svtype == "DUP" and size >= cf.large_dup_rescue_size and feats["cn"] >= 3
+            and feats["baf_n"] >= cf.large_dup_rescue_min_baf_n
+            and feats["baf_dev"] >= cf.large_dup_rescue_min_baf_dev
+            and feats["segdup_ovl"] < cf.large_dup_rescue_max_segdup
+            and feats["maskfrac"] < cf.large_dup_rescue_max_mask):
+        return "LARGE_DUP_BAF"
+    return None
 
 
 def run_filter(
@@ -135,17 +152,12 @@ def run_filter(
                     new_rec.samples[sample]["SQ"] = round(sq, 2)
                     new_rec.info["MODEL_VER"] = model.version
                     cf = config.filter
-                    override = (
-                        svtypes[i] == "DEL"
-                        and (rec.stop - rec.start) >= cf.large_del_rescue_size
-                        and feats["fc_chrom"] < cf.large_del_rescue_fc_chrom
-                        and feats["maskfrac"] < cf.large_del_rescue_max_mask
-                    )
+                    override = sq_override(svtypes[i], rec.stop - rec.start, feats, cf)
                     if sq < cf.low_sq_threshold and not override:
                         all_tags.append("LowSQ")
                         counts["low_sq"] += 1
                     elif override and sq < cf.low_sq_threshold:
-                        new_rec.info["SQ_OVERRIDE"] = "LARGE_DEL_DEPTH"
+                        new_rec.info["SQ_OVERRIDE"] = override
                         counts["sq_override"] += 1
 
                 new_rec.filter.clear()
@@ -168,6 +180,6 @@ def run_filter(
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info(
         "filter: %(total)d calls, %(pass)d PASS, %(hard_filtered)d hard-filtered, "
-        "%(low_sq)d LowSQ, %(sq_override)d large-DEL SQ overrides", counts,
+        "%(low_sq)d LowSQ, %(sq_override)d large-event SQ overrides", counts,
     )
     return counts

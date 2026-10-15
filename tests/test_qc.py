@@ -1066,3 +1066,44 @@ def test_mosaic_fragments_fold_into_the_mosaic_row(tmp_path):
     assert [e["id"] for e in out] == ["mosaic_kid", "deep", "shared", "outside"]
     assert out[0]["n_sites"] == 3 and "2 fragments regroupés" in out[0]["inherit"]
     assert {"frag1", "frag2"} <= set(out[0]["_ids"])
+
+
+def test_large_duplication_keeps_pass_when_the_allelic_balance_shows_a_gain():
+    """A trisomy 21, a 15q11-q13 duplication, a 7q11.23 duplication and a
+    trisomy 13 were all LowSQ (SQ 0.01-0.09): the model never saw a real large
+    depth-only gain. Their heterozygous sites sit at 1/3-2/3 (mean |VAF - 0.5|
+    ~0.14); a coverage wave leaves them at 0.5, and segmental duplications
+    fake the imbalance, so those stay rejected."""
+    from vedette.config import load_config
+    from vedette.filter.pipeline import sq_override
+
+    f = load_config(None).filter
+    gain = {"cn": 3, "baf_n": 260, "baf_dev": 0.142, "segdup_ovl": 0.0, "maskfrac": 0.0,
+            "fc_chrom": 1.4}
+    assert sq_override("DUP", 994_000, gain, f) == "LARGE_DUP_BAF"
+    assert sq_override("DUP", 994_000, dict(gain, baf_dev=0.06), f) is None   # a wave
+    assert sq_override("DUP", 994_000, dict(gain, segdup_ovl=0.8), f) is None  # paralogs
+    assert sq_override("DUP", 994_000, dict(gain, baf_n=12), f) is None        # too few hets
+    assert sq_override("DUP", 60_000, gain, f) is None                         # model's range
+    assert sq_override("DUP", 994_000, dict(gain, cn=2), f) is None
+    assert sq_override("DEL", 6_427_000, dict(gain, fc_chrom=0.528, cn=1), f) == "LARGE_DEL_DEPTH"
+
+
+def test_constitutional_segments_are_rows_unless_calls_cover_them():
+    """A trisomy 21 came back as LowSQ pieces and was on no family page: the
+    scan's whole-copy segment becomes a row. A PMS terminal deletion already
+    shown by PASS rows keeps those rows (finer bounds than 1 Mb windows)."""
+    from vedette.report import constitutional_events
+
+    seg = {"contig": "chr21", "start": 15_000_000, "end": 46_000_000, "svtype": "DUP",
+           "cn": 3.07, "fraction": 1.0, "mosaic": False}
+    deletion = {"contig": "chr22", "start": 46_000_000, "end": 50_818_468, "svtype": "DEL",
+                "cn": 1.06, "fraction": 0.94, "mosaic": False}
+    pass_row = {"contig": "chr22", "svtype": "DEL", "pos": 46_100_001, "end": 50_800_000,
+                "filter": "PASS", "carriers": ["kid"], "own": "PASS"}
+    rows = constitutional_events(["kid", "mum"], {"kid": [seg, deletion]}, [pass_row])
+    assert [r["contig"] for r in rows] == ["chr21"]
+    r = rows[0]
+    assert r["rescue"] == "CHROMOSOMIQUE" and r["own"] == "chromosomique"
+    assert r["filter"] == "PASS" and "gain constitutionnel (CN 3.07" in r["inherit"]
+    assert (r["pos"], r["end"]) == (15_000_001, 46_000_000)

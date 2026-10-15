@@ -120,6 +120,21 @@ class FilterConfig:
     large_del_rescue_size: int = 200_000
     large_del_rescue_fc_chrom: float = 0.75
     large_del_rescue_max_mask: float = 0.5
+    # Large duplications fare worse: GIAB's depth-only DUPs are artefacts, so
+    # the model scores every depth-only gain near 0 — a trisomy 21, a 15q11-q13
+    # duplication, a 7q11.23 duplication and a trisomy 13 were all LowSQ with
+    # SQ 0.01-0.09 (2026-10-15). Coverage waves mimic gains, so depth cannot
+    # vouch for them; the allelic balance can: at CN 3 the heterozygous sites
+    # sit at 1/3 and 2/3. DUP pieces inside the scan-confirmed constitutional
+    # gains had mean |VAF - 0.5| 0.116-0.153 (91 % >= 0.12) against 0.053-0.09
+    # elsewhere; segmental duplications fake that imbalance (paralogous
+    # variants), so they are excluded. Rescues one DUP per genome in median
+    # (p90 2), the extremes being the real gains.
+    large_dup_rescue_size: int = 100_000
+    large_dup_rescue_min_baf_n: int = 30
+    large_dup_rescue_min_baf_dev: float = 0.12
+    large_dup_rescue_max_segdup: float = 0.5
+    large_dup_rescue_max_mask: float = 0.5
 
 
 @dataclass(frozen=True)

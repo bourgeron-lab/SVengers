@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **filter** — large duplications (>= 100 kb, CN >= 3) whose heterozygous
+  sites show the allelic imbalance of a copy gain (mean |VAF - 0.5| >= 0.12,
+  >= 30 sites, < 50 % segmental duplication) keep PASS whatever their SQ
+  (`SQ_OVERRIDE=LARGE_DUP_BAF`). The model scored every large depth-only gain
+  near 0: a trisomy 21, two 15q11-q13 duplications, a 7q11.23 duplication, a
+  trisomy 13 and a trisomy X were LowSQ. One rescue per genome in median.
+- **report** — « Anomalies chromosomiques constitutionnelles »: the mosaic
+  scan's whole-copy segments (aneuploidies, arm-level and large gains or
+  losses, BAF-confirmed) get a table, and a family-page row when no PASS row
+  covers them; fragments fold into it.
 - **call** — the wave QC score is measured on the depth as sequenced, before
   any panel of normals (every wave threshold is calibrated on it); with a PoN
   the corrected depth is scored too (`wave_score_pon`). Evidence-store schema

@@ -952,6 +952,8 @@ def _write_all_family_events(
                 > 0.5 * max(p["end"] - p["pos"], e["end"] - e["pos"])
                 for p in plain)
         ]
+        events += constitutional_events(members, mosaic_by_sample or {}, events,
+                                        genes_fn, impact_fn, segdup_iv, lcr_iv)
         events = fold_mosaic_fragments(events, depth)
         big = big_cnv_counts(events)
         for e in events:
@@ -1123,6 +1125,9 @@ def _write_events_page(
         f'où la seconde relecture l\'a trouvé juste une fois sur deux. Les fragments d\'une mosaïque '
         f'(même porteur seul, dans le segment, au même niveau de copie) sont regroupés dans sa ligne '
         f'(colonne sites) ; un événement plus profond à l\'intérieur reste une ligne à part. '
+        f'Rescue « CHROMOSOMIQUE » = gain ou perte d\'au moins 3 Mb à un nombre de copies entier '
+        f'(aneuploïdie, bras, grande région), confirmé par la BAF (vedette mosaic) et qu\'aucun '
+        f'appel PASS ne couvrait : à confirmer par caryotype ou ACPA. '
         f'Le lien IGV envoie le locus (±20 %) à un IGV desktop ouvert sur cette machine '
         f'(View → Preferences → Advanced → « Enable port » 60151, CRAM de la famille chargés) ; '
         f'un onglet « OK » peut s\'ouvrir la première fois. Les cases vrai/faux/incertain sont '
@@ -1404,7 +1409,7 @@ FOLD_CN_TOL = 0.25
 
 def fold_mosaic_fragments(events: list[dict], depth=None) -> list[dict]:
     """Rows folded into the mosaic row that contains them (see FOLD_*)."""
-    mos = [e for e in events if e.get("own") == "mosaïque"]
+    mos = [e for e in events if e.get("own") in ("mosaïque", "chromosomique")]
     if not mos:
         return events
     folded: set[int] = set()
@@ -1412,7 +1417,7 @@ def fold_mosaic_fragments(events: list[dict], depth=None) -> list[dict]:
         carrier = m["carriers"][0]
         n_in = 0
         for k, e in enumerate(events):
-            if (e is m or e.get("own") == "mosaïque" or k in folded
+            if (e is m or e.get("own") in ("mosaïque", "chromosomique") or k in folded
                     or e["carriers"] != [carrier] or e["contig"] != m["contig"]
                     or e["svtype"] != m["svtype"]):
                 continue
@@ -1434,6 +1439,56 @@ def fold_mosaic_fragments(events: list[dict], depth=None) -> list[dict]:
             m["n_sites"] = m.get("n_sites", 1) + n_in
             m["inherit"] += f" · {n_in} fragment{'s' if n_in > 1 else ''} regroupé{'s' if n_in > 1 else ''}"
     return [e for k, e in enumerate(events) if k not in folded]
+
+
+def constitutional_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
+                          shown: list[dict], genes_fn=None, impact_fn=None,
+                          segdup_iv=None, lcr_iv=None) -> list[dict]:
+    """Family-page rows for the scan's whole-copy segments (aneuploidies,
+    arm-level and large constitutional gains or losses) that no PASS row of
+    the carrier already covers by half: a trisomy 21 and a trisomy 13 came
+    back from the integer HMM as dozens of LowSQ pieces and were on no page.
+    A segment the PASS rows do cover (a PMS terminal deletion) keeps the
+    calls' bounds, which are finer than the scan's 1 Mb windows."""
+    rows = []
+    for m in members:
+        for g in mosaic_by_sample.get(m, []):
+            if g["mosaic"]:
+                continue
+            pos, end = g["start"] + 1, g["end"]
+            covered = sum(
+                max(0, min(e["end"], end) - max(e["pos"], pos))
+                for e in shown
+                if e["contig"] == g["contig"] and e["svtype"] == g["svtype"]
+                and e.get("filter") == "PASS" and m in e["carriers"]
+                and e.get("own") not in ("mosaïque", "chromosomique")
+            )
+            if covered >= 0.5 * (end - pos):
+                continue
+            also = sorted(
+                x[-3:] for x in members if x != m and any(
+                    h["contig"] == g["contig"] and h["svtype"] == g["svtype"]
+                    and min(h["end"], end) - max(h["start"] + 1, pos) > 0.5 * (end - pos)
+                    for h in mosaic_by_sample.get(x, []))
+            )
+            kind = "gain" if g["svtype"] == "DUP" else "perte"
+            e = {
+                "id": f"chrom_{m}_{g['contig']}_{g['start']}",
+                "contig": g["contig"], "pos": pos, "end": end,
+                "svtype": g["svtype"], "size": end - g["start"],
+                "filter": "PASS", "rescue": "CHROMOSOMIQUE", "genes": "", "impact": "",
+                "sqmax": "", "cfrac": "", "refcf": "", "lcr": "", "segdup": "",
+                "support": "fort", "own": "chromosomique",
+                "inherit": f"{kind} constitutionnel (CN {g['cn']:.2f}, BAF)"
+                           + (f" · aussi chez {', '.join(also)}" if also else ""),
+                "mosaic_cn": float(g["cn"]),
+                "carriers": [m],
+                "gt": [("chr", "", f"{g['cn']:.2f}") if x == m else ("—", "", "") for x in members],
+                "n_sites": 1, "_ids": [],
+            }
+            _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
+            rows.append(e)
+    return rows
 
 
 def mosaic_events(members: list[str], mosaic_by_sample: dict[str, list[dict]],
@@ -2288,6 +2343,24 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
         mosaic_section = "<p>Aucun segment mosaïque.</p>"
     else:
         mosaic_section = "<p>Scan non lancé (<code>vedette mosaic --run-dir</code>).</p>"
+    # whole-copy segments of the same scan: aneuploidies and large constitutional
+    # gains/losses, which the integer HMM calls in pieces the filter may reject
+    # (a trisomy 21 and a trisomy 13 were nowhere in the reports, 2026-10-15)
+    constit_rows = sorted(
+        ([s, g["contig"], f'{g["start"] / 1e6:.1f}-{g["end"] / 1e6:.1f}', g["svtype"],
+          f'{g["cn"]:.2f}', f'{g["baf_dev"]:.3f} / {g["baf_expected"]:.3f}']
+         for s, segs in mosaic_by_sample.items() for g in segs if not g["mosaic"]),
+        key=lambda r: (r[0], r[1]),
+    )
+    if constit_rows:
+        mosaic_section += (
+            "<h3>Anomalies chromosomiques constitutionnelles</h3>"
+            "<p>Segments ≥ 3 Mb à un nombre de copies entier (aneuploïdie, gain ou perte "
+            "d'un bras ou d'une grande région), confirmés par le déséquilibre allélique "
+            "(|BAF − 0,5| observé au-delà du bruit / attendu). Autosomes seulement. Constat "
+            "technique à confirmer par une méthode clinique (caryotype, ACPA).</p>"
+            + _table(["échantillon", "chr", "Mb", "type", "CN", "BAF obs. / att."], constit_rows)
+        )
 
     # ---- family events pages: one sweep of the matrices, never a per-family
     # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
