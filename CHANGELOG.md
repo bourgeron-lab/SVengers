@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **production** — the Nextflow pipeline calls with a panel of normals: the
+  per-bin median of 300 unrelated dataset_paper founders (no SVD). PMS
+  re-called with it: cohort sites 104,498 -> 75,335, median apparent de novo
+  per child 67 -> 52, Mendelian violations 3.13 % -> 2.61 %, all 79 SHANK3
+  families kept, the reviewed 22q13 deletions fully PASS. Common CNVs leave
+  the depth channel (they stay detectable through junctions).
 - **filter** — large duplications (>= 100 kb, CN >= 3) whose heterozygous
   sites show the allelic imbalance of a copy gain (mean |VAF - 0.5| >= 0.12,
   >= 30 sites, < 50 % segmental duplication) keep PASS whatever their SQ
