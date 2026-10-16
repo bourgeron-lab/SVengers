@@ -34,8 +34,11 @@ graphiques — les graphiques montrent le signal que suit l'algorithme, ils
 ne sont pas un contrôle indépendant dans les génomes ondulés).
 
 Priorités :
-1. **Vagues à la source** (PMS en production avec PoN médiane sans SVD
-   le 2026-10-15 ; dataset_paper rappelé, comparaison en cours) : les génomes ondulés
+1. **Vagues à la source** — FAIT : PoN médiane sans SVD en production sur
+   PMS (2026-10-15) et dataset_paper (2026-10-16 : sites 361 359 -> 264 386,
+   de novo médian par enfant 194 -> 112, violations mendéliennes 4,02 % ->
+   3,15 %, grands événements vrais de la relecture IGV PASS 25 -> 28, faux
+   PASS 6 -> 4, CNDiscordant 58 588 -> 12). Historique : les génomes ondulés
    portent l'essentiel des faux positifs restants dans toutes les relectures
    et ont fait échouer v6 à v8. Panel of normals de fondateurs non apparentés
    (dataset_paper) + débruitage SVD (déjà codé, jamais validé, cf. 4), test
