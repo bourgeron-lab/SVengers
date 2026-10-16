@@ -34,31 +34,18 @@ def _qual_of(rec, sample: str, field: str) -> float:
     return float(val) if val is not None else 0.0
 
 
-def sweep(
-    cohort_vcf: str | Path,
-    pedigree: Pedigree,
-    thresholds: list[float] = (0, 3, 7, 10, 13, 17, 20, 30),
-    field: str = "GQ",
-    out_tsv: str | Path | None = None,
-    pass_only: bool = False,
-    exclude_rescue: bool = False,
-) -> list[dict]:
-    trios = pedigree.trios()
-    thresholds = sorted(thresholds)
-    # single streaming pass: per (site, trio) update every threshold <= min GQ
-    # (storing all trio genotypes first costs tens of GB at 2676 x 80k sites)
+def _sweep_region(task) -> list[dict[str, int]]:
+    from ..parallel import fetch_region
+
+    cohort_vcf, region, usable, thresholds, field, pass_only, exclude_rescue = task
     counters = [
         {"n_geno": 0, "n_carrier": 0, "n_viol": 0, "n_opp": 0, "n_trans": 0, "n_denovo": 0}
         for _ in thresholds
     ]
     with pysam.VariantFile(str(cohort_vcf)) as vcf:
-        vcf_samples = set(vcf.header.samples)
-        usable = [t for t in trios if all(i.sample_id in vcf_samples for i in t)]
-        if not usable:
-            raise ValueError("No complete trio present in the cohort VCF")
-        if field not in vcf.header.formats:
-            raise ValueError(f"FORMAT/{field} absent from {cohort_vcf}")
-        for rec in vcf:
+        vcf.subset_samples(sorted({i.sample_id for t in usable for i in t}))
+        records = fetch_region(vcf, region) if region is not None else vcf
+        for rec in records:
             if pass_only and set(rec.filter.keys()) - {"PASS"}:
                 continue
             if exclude_rescue and rec.info.get("RESCUE"):
@@ -89,6 +76,46 @@ def sweep(
                     if inheritance == "denovo":
                         c["n_denovo"] += 1
                     c["n_opp"] += opp
+    return counters
+
+
+def sweep(
+    cohort_vcf: str | Path,
+    pedigree: Pedigree,
+    thresholds: list[float] = (0, 3, 7, 10, 13, 17, 20, 30),
+    field: str = "GQ",
+    out_tsv: str | Path | None = None,
+    pass_only: bool = False,
+    exclude_rescue: bool = False,
+    jobs: int = 1,
+) -> list[dict]:
+    from ..parallel import has_index, pmap, vcf_regions
+
+    trios = pedigree.trios()
+    thresholds = sorted(thresholds)
+    # single streaming pass: per (site, trio) update every threshold <= min GQ
+    # (storing all trio genotypes first costs tens of GB at 2676 x 80k sites);
+    # with jobs > 1, one pass per region in parallel, counters summed
+    with pysam.VariantFile(str(cohort_vcf)) as vcf:
+        vcf_samples = set(vcf.header.samples)
+        usable = [t for t in trios if all(i.sample_id in vcf_samples for i in t)]
+        if not usable:
+            raise ValueError("No complete trio present in the cohort VCF")
+        if field not in vcf.header.formats:
+            raise ValueError(f"FORMAT/{field} absent from {cohort_vcf}")
+    regions = vcf_regions(cohort_vcf) if jobs > 1 and has_index(cohort_vcf) else [None]
+    tasks = [
+        (str(cohort_vcf), region, usable, thresholds, field, pass_only, exclude_rescue)
+        for region in regions
+    ]
+    counters = [
+        {"n_geno": 0, "n_carrier": 0, "n_viol": 0, "n_opp": 0, "n_trans": 0, "n_denovo": 0}
+        for _ in thresholds
+    ]
+    for part in pmap(_sweep_region, tasks, jobs):
+        for c, p in zip(counters, part, strict=True):
+            for k, v in p.items():
+                c[k] += v
 
     rows = []
     for th, c in zip(thresholds, counters, strict=True):

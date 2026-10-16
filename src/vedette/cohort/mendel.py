@@ -83,54 +83,44 @@ def classify_trio(
     return "maternal", violation
 
 
-def run_ped_annotate(
-    cohort_vcf: str | Path,
-    pedigree: Pedigree,
-    out_report: str | Path,
-    out_summary: str | Path | None = None,
-    min_denovo_child_gq: int = 30,
-    min_denovo_parent_gq: int = 20,
-) -> list[TrioStats]:
-    trios = pedigree.trios()
-    stats = {
-        t[0].sample_id: TrioStats(t[0].family_id, t[0].sample_id) for t in trios
-    }
-    with (
-        pysam.VariantFile(str(cohort_vcf)) as vcf,
-        open(out_report, "w", newline="") as fh,
-    ):
-        vcf_samples = set(vcf.header.samples)
-        usable = [
-            t for t in trios
-            if all(ind.sample_id in vcf_samples for ind in t)
-        ]
-        logger.info("ped: %d/%d trios present in the VCF", len(usable), len(trios))
+def _ped_region(task) -> tuple[dict[str, list[int]], str]:
+    """One region of the cohort VCF: per-child counters (n_genotyped,
+    n_child_carrier, n_denovo, n_violation, n_transmit_opportunity,
+    n_transmitted) and the report rows written to ``part`` (no header)."""
+    from ..parallel import fetch_region
+
+    (cohort_vcf, region, usable, part,
+     min_denovo_child_gq, min_denovo_parent_gq) = task
+    counters = {child.sample_id: [0, 0, 0, 0, 0, 0] for child, _f, _m in usable}
+    with pysam.VariantFile(str(cohort_vcf)) as vcf, open(part, "w", newline="") as fh:
+        # decode only the trio members' genotypes
+        vcf.subset_samples(sorted({ind.sample_id for t in usable for ind in t}))
         writer = csv.DictWriter(fh, fieldnames=REPORT_COLUMNS, delimiter="\t")
-        writer.writeheader()
-        for rec in vcf:
+        records = fetch_region(vcf, region) if region is not None else vcf
+        for rec in records:
             for child, father, mother in usable:
                 cgt, cgq = _gt_of(rec, child.sample_id)
                 fgt, fgq = _gt_of(rec, father.sample_id)
                 mgt, mgq = _gt_of(rec, mother.sample_id)
                 if cgt is None or fgt is None or mgt is None:
                     continue
-                st = stats[child.sample_id]
-                st.n_genotyped += 1
+                st = counters[child.sample_id]
+                st[0] += 1
                 inheritance, violation = classify_trio(cgt, fgt, mgt)
                 if sum(cgt) > 0:
-                    st.n_child_carrier += 1
+                    st[1] += 1
                 if violation:
-                    st.n_violation += 1
+                    st[3] += 1
                 # transmission: each het parent gives one opportunity
                 for pgt in (fgt, mgt):
                     if sum(pgt) == 1:
-                        st.n_transmit_opportunity += 1
+                        st[4] += 1
                         if sum(cgt) > 0:
-                            st.n_transmitted += 1
+                            st[5] += 1
                 dnq = ""
                 if inheritance == "denovo":
                     if cgq >= min_denovo_child_gq and min(fgq, mgq) >= min_denovo_parent_gq:
-                        st.n_denovo += 1
+                        st[2] += 1
                         dnq = str(min(cgq, fgq, mgq))
                     else:
                         inheritance = "denovo_lowconf"
@@ -147,6 +137,60 @@ def run_ped_annotate(
                     "inheritance": inheritance,
                     "violation": int(violation), "dnq": dnq,
                 })
+    return counters, part
+
+
+def run_ped_annotate(
+    cohort_vcf: str | Path,
+    pedigree: Pedigree,
+    out_report: str | Path,
+    out_summary: str | Path | None = None,
+    min_denovo_child_gq: int = 30,
+    min_denovo_parent_gq: int = 20,
+    jobs: int = 1,
+) -> list[TrioStats]:
+    """``jobs`` > 1 (indexed VCF) annotates position-ordered regions in
+    parallel and joins their rows in file order: same report as serial."""
+    import shutil
+    import tempfile
+
+    from ..parallel import concat_text, has_index, pmap, vcf_regions
+
+    trios = pedigree.trios()
+    stats = {
+        t[0].sample_id: TrioStats(t[0].family_id, t[0].sample_id) for t in trios
+    }
+    with pysam.VariantFile(str(cohort_vcf)) as vcf:
+        vcf_samples = set(vcf.header.samples)
+    usable = [
+        t for t in trios
+        if all(ind.sample_id in vcf_samples for ind in t)
+    ]
+    logger.info("ped: %d/%d trios present in the VCF", len(usable), len(trios))
+    regions = vcf_regions(cohort_vcf) if jobs > 1 and has_index(cohort_vcf) else [None]
+    tmp = tempfile.mkdtemp(prefix=".ped_parts_", dir=Path(out_report).parent)
+    try:
+        tasks = [
+            (str(cohort_vcf), region, usable, f"{tmp}/part{k:05d}.tsv",
+             min_denovo_child_gq, min_denovo_parent_gq)
+            for k, region in enumerate(regions)
+        ]
+        parts = [f"{tmp}/header.tsv"]
+        with open(parts[0], "w", newline="") as fh:
+            csv.DictWriter(fh, fieldnames=REPORT_COLUMNS, delimiter="\t").writeheader()
+        for counters, part in pmap(_ped_region, tasks, jobs):
+            parts.append(part)
+            for child, c in counters.items():
+                st = stats[child]
+                st.n_genotyped += c[0]
+                st.n_child_carrier += c[1]
+                st.n_denovo += c[2]
+                st.n_violation += c[3]
+                st.n_transmit_opportunity += c[4]
+                st.n_transmitted += c[5]
+        concat_text(parts, out_report)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     result = [stats[t[0].sample_id] for t in usable]
     if out_summary:

@@ -13,6 +13,7 @@ process VEDETTE_MERGE {
     """
     ls -1 ${filtered_vcfs} > vcf_list.txt
     ${params.vedette_bin} merge @vcf_list.txt \\
+        --jobs ${task.cpus} \\
         --out sites.vcf.gz \\
         --fasta ${params.fasta}
     """

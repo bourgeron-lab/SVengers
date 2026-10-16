@@ -21,6 +21,7 @@ import csv
 import html
 import io
 import logging
+import os
 import re
 import time
 from collections import Counter, defaultdict
@@ -766,6 +767,15 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
     return out
 
 
+# the page writer of the running _write_all_family_events, reached by its
+# forked workers (a closure over the genotype matrices: shared, not pickled)
+_FAMILY_PAGE = None
+
+
+def _run_family_page(fid: str) -> int:
+    return _FAMILY_PAGE(fid)
+
+
 def _write_all_family_events(
     run_dir: Path,
     families: dict[str, list[str]],
@@ -789,10 +799,15 @@ def _write_all_family_events(
     subthreshold: SubCalls | None = None,
     denovo_families: dict[str, int] | None = None,
     low_quality_prefixes: tuple[str, ...] = (),
+    jobs: int = 1,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
-    36 h trap on 1207-family cohorts). Returns the number of pages written."""
+    36 h trap on 1207-family cohorts). Returns the number of pages written.
+
+    The pages are independent: with ``jobs`` > 1 forked workers write them
+    (own calls, depth bounds and collapsing were ~40 % of the report on one
+    core)."""
     sample_idx = {s: i for i, s in enumerate(samples)}
     fam_members: dict[str, list[tuple[str, int]]] = {
         fid: [(m, sample_idx[m]) for m in members if m in sample_idx]
@@ -862,14 +877,14 @@ def _write_all_family_events(
             ev_spill.add(fid, base + "\t" + ("fort" if strong else "faible") + "\t" + cells)
     ev_spill.flush()
 
-    n_pages = 0
     site_idx = _site_index(sites)
-    for fid in fids:
+
+    def _family_page(fid: str) -> int:
         rows = ev_spill.read(fid)
         if not rows and not any((subthreshold is not None and m in subthreshold)
                                 or m in (mosaic_by_sample or {})
                                 for m, _ in fam_members[fid]):
-            continue
+            return 0
         inherit: dict[str, list[tuple[str, str]]] = defaultdict(list)
         for site_id, child, inh in inh_spill.read(fid):
             inherit[site_id].append((child, inh))
@@ -927,7 +942,7 @@ def _write_all_family_events(
                                                        skip=skip)
             events += sub_rows
         if not events:
-            continue
+            return 0
         # large rows: bounds set on the carriers' depth (refine_bounds), then
         # rows that now cover the same event are merged again
         depth.clear()
@@ -980,7 +995,16 @@ def _write_all_family_events(
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
-        n_pages += 1
+        return 1
+
+    from .parallel import pmap
+
+    global _FAMILY_PAGE
+    _FAMILY_PAGE = _family_page
+    try:
+        n_pages = sum(pmap(_run_family_page, fids, jobs))
+    finally:
+        _FAMILY_PAGE = None
     ev_spill.cleanup()
     return n_pages
 
@@ -1167,8 +1191,9 @@ class _GeneIndex:
     """Overlap lookup of genes/exons in a tabix-indexed Ensembl GTF/GFF."""
 
     def __init__(self, gff_path: str | Path, ndd_tsv: str | Path | None = None):
-        self.tbx = pysam.TabixFile(str(gff_path))
-        self._contigs = set(self.tbx.contigs)
+        self._gff_path = str(gff_path)
+        self._tbx, self._tbx_pid = pysam.TabixFile(self._gff_path), os.getpid()
+        self._contigs = set(self._tbx.contigs)
         # GeneTrek gene annotations, keyed by ENSG and by symbol
         self.gt: dict[str, _GeneTrek] = {}
         if ndd_tsv:
@@ -1180,6 +1205,16 @@ class _GeneIndex:
                     for key in (row.get("ensg", ""), row.get("hgnc_symbol", "")):
                         if key:
                             self.gt[key] = g
+
+    @property
+    def tbx(self) -> pysam.TabixFile:
+        """The GFF handle of THIS process: the family pages are written by
+        forked workers, and an inherited htslib handle shares its file offset
+        with the parent's and the siblings' (concurrent fetches would read
+        each other's blocks)."""
+        if self._tbx_pid != os.getpid():
+            self._tbx, self._tbx_pid = pysam.TabixFile(self._gff_path), os.getpid()
+        return self._tbx
 
     def _hits(self, contig: str, start: int, end: int):
         """[(name, ensg, coding, exon_overlap, gene_start, gene_end)] of genes
@@ -1621,36 +1656,45 @@ class SubCalls:
         return {self.samples[k] for k in np.unique(x_[hit])}
 
 
-def subthreshold_candidates(run_dir: Path, samples: list[str]) -> SubCalls:
+def _sample_subthreshold(vcf_path: Path) -> list[tuple] | None:
+    """One genome's sub-threshold candidates (see subthreshold_candidates);
+    None when its VCF is missing or unreadable."""
+    if not vcf_path.exists():
+        return None
+    calls = []
+    try:
+        with pysam.VariantFile(str(vcf_path)) as vf:
+            lengths = {c.name: c.length for c in vf.header.contigs.values()}
+            for rec in vf:
+                if list(rec.filter.keys()) != ["LowSQ"]:
+                    continue
+                svtype = rec.info.get("SVTYPE")
+                fmt = rec.samples[0]
+                cn, gq = fmt.get("CN"), fmt.get("GQ")
+                if cn is None or gq is None or gq < SUB_MIN_GQ:
+                    continue
+                if not ((svtype == "DEL" and cn <= 1) or (svtype == "DUP" and cn >= 3)):
+                    continue
+                end = min(rec.stop, lengths.get(rec.contig) or rec.stop)
+                if end - rec.start < SUB_MIN_SIZE:
+                    continue
+                calls.append((rec.contig, svtype, rec.start, end, min(int(cn), 127),
+                              min(int(gq), 32767), fmt.get("SQ")))
+    except (OSError, ValueError):  # a report must survive a missing VCF
+        return None
+    return calls
+
+
+def subthreshold_candidates(run_dir: Path, samples: list[str], jobs: int = 1) -> SubCalls:
     """The calls rejected by the score alone (FILTER is exactly LowSQ) with a
     clear copy number (DEL CN <= 1, DUP CN >= 3), GQ >= SUB_MIN_GQ and >=
-    SUB_MIN_SIZE, from the published per-sample VCFs."""
+    SUB_MIN_SIZE, from the published per-sample VCFs (read in parallel with
+    ``jobs`` > 1, added in sample order)."""
+    from .parallel import pmap
+
     out = SubCalls()
-    for s in samples:
-        vcf_path = run_dir / "samples" / s / f"{s}.filtered.vcf.gz"
-        if not vcf_path.exists():
-            continue
-        calls = []
-        try:
-            with pysam.VariantFile(str(vcf_path)) as vf:
-                lengths = {c.name: c.length for c in vf.header.contigs.values()}
-                for rec in vf:
-                    if list(rec.filter.keys()) != ["LowSQ"]:
-                        continue
-                    svtype = rec.info.get("SVTYPE")
-                    fmt = rec.samples[0]
-                    cn, gq = fmt.get("CN"), fmt.get("GQ")
-                    if cn is None or gq is None or gq < SUB_MIN_GQ:
-                        continue
-                    if not ((svtype == "DEL" and cn <= 1) or (svtype == "DUP" and cn >= 3)):
-                        continue
-                    end = min(rec.stop, lengths.get(rec.contig) or rec.stop)
-                    if end - rec.start < SUB_MIN_SIZE:
-                        continue
-                    calls.append((rec.contig, svtype, rec.start, end, min(int(cn), 127),
-                                  min(int(gq), 32767), fmt.get("SQ")))
-        except (OSError, ValueError):  # a report must survive a missing VCF
-            continue
+    paths = [run_dir / "samples" / s / f"{s}.filtered.vcf.gz" for s in samples]
+    for s, calls in zip(samples, pmap(_sample_subthreshold, paths, jobs), strict=True):
         if calls:
             out.add(s, calls)
     return out.freeze()
@@ -1875,15 +1919,12 @@ def denovo_outliers(
     return {c: n for c, n in counts.items() if n > cut}
 
 
-def _read_cohort_vcf(path: Path, with_cn: bool = False):
-    """One dict per site + compact genotype matrices.
+def _read_cohort_region(task):
+    """Sites and genotype rows of one region (all of the file when the
+    region is None) — see _read_cohort_vcf."""
+    from .parallel import fetch_region
 
-    Dict-of-dicts genotypes cost ~80 bytes/genotype and OOM-killed the report
-    on 238k sites x 2670 samples (635M genotypes); nalt/gq live in two numpy
-    matrices (int8+int16 = 3 bytes/genotype, ~1.9 GB at that scale) and each
-    site carries its row index. ``with_cn`` adds an int8 copy-number matrix
-    (family events pages show GT:GQ:CN; 1 byte/genotype more).
-    """
+    path, region, with_cn = task
     sites = []
     nalt_rows, gq_rows, cn_rows = [], [], []
     with pysam.VariantFile(str(path)) as vcf:
@@ -1899,7 +1940,8 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False):
         has_carrier_frac = "CARRIER_FRAC" in vcf.header.info
         has_ref_carrier_frac = "REF_CARRIER_FRAC" in vcf.header.info
         lengths = {c.name: c.length for c in vcf.header.contigs.values()}
-        for rec in vcf:
+        records = fetch_region(vcf, region) if region is not None else vcf
+        for rec in records:
             # sites merged before merge clamped END run up to one depth bin
             # past the contig end, and family rows without an own span keep
             # the site's ends (same bound as own_call_index)
@@ -1932,17 +1974,43 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False):
                 "sqmax": rec.info.get("SQMAX") if has_sqmax else None,
                 "carrier_frac": rec.info.get("CARRIER_FRAC") if has_carrier_frac else None,
                 "ref_carrier_frac": rec.info.get("REF_CARRIER_FRAC") if has_ref_carrier_frac else None,
-                "idx": len(sites),
             })
             nalt_rows.append(nalt)
             gq_rows.append(gq)
             if with_cn:
                 cn_rows.append(cn)
-    nalt_m = np.vstack(nalt_rows) if nalt_rows else np.zeros((0, len(samples)), np.int8)
-    gq_m = np.vstack(gq_rows) if gq_rows else np.zeros((0, len(samples)), np.int16)
+    nalt_m = np.vstack(nalt_rows) if nalt_rows else np.zeros((0, n), np.int8)
+    gq_m = np.vstack(gq_rows) if gq_rows else np.zeros((0, n), np.int16)
     cn_m = (
-        np.vstack(cn_rows) if cn_rows else np.zeros((0, len(samples)), np.int8)
+        np.vstack(cn_rows) if cn_rows else np.zeros((0, n), np.int8)
     ) if with_cn else None
+    return samples, sites, nalt_m, gq_m, cn_m
+
+
+def _read_cohort_vcf(path: Path, with_cn: bool = False, jobs: int = 1):
+    """One dict per site + compact genotype matrices.
+
+    Dict-of-dicts genotypes cost ~80 bytes/genotype and OOM-killed the report
+    on 238k sites x 2670 samples (635M genotypes); nalt/gq live in two numpy
+    matrices (int8+int16 = 3 bytes/genotype, ~1.9 GB at that scale) and each
+    site carries its row index. ``with_cn`` adds an int8 copy-number matrix
+    (family events pages show GT:GQ:CN; 1 byte/genotype more).
+
+    ``jobs`` > 1 (indexed VCF) decodes position-ordered regions in parallel
+    — one core spent ~1.5 h in this loop on 2670 samples — and stacks them
+    in file order.
+    """
+    from .parallel import has_index, pmap, vcf_regions
+
+    regions = vcf_regions(path) if jobs > 1 and has_index(path) else [None]
+    parts = list(pmap(_read_cohort_region, [(str(path), r, with_cn) for r in regions], jobs))
+    samples = parts[0][0]
+    sites = [site for part in parts for site in part[1]]
+    for i, site in enumerate(sites):
+        site["idx"] = i
+    nalt_m = np.vstack([p[2] for p in parts])
+    gq_m = np.vstack([p[3] for p in parts])
+    cn_m = np.vstack([p[4] for p in parts]) if with_cn else None
     return samples, sites, nalt_m, gq_m, cn_m
 
 
@@ -2051,6 +2119,7 @@ def generate_report(
     mosaic_dir: str | Path | None = None,
     subthreshold: bool = True,
     low_quality_prefixes: tuple[str, ...] = (),
+    jobs: int = 1,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
@@ -2077,7 +2146,7 @@ def generate_report(
     def _impact(contig: str, start: int, end: int, svtype: str = "DEL") -> tuple[float, str]:
         return gene_idx.impact(contig, start, end, svtype) if gene_idx else (0.0, "")
 
-    samples, sites, nalt_m, gq_m, cn_m = _read_cohort_vcf(vcf_path, with_cn=family_events)
+    samples, sites, nalt_m, gq_m, cn_m = _read_cohort_vcf(vcf_path, with_cn=family_events, jobs=jobs)
     passing = [s for s in sites if s["filter"] == "PASS"]
     n_artifact = sum(1 for s in sites if "CohortArtifact" in s["filter"])
     # "rare" by carrier count (an AF cutoff is meaningless in small cohorts:
@@ -2366,7 +2435,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
     # rescan of the cohort VCF (the 36 h trap on 1207-family cohorts)
     if family_events and pedigree is not None and inh_spill is not None:
         inh_spill.flush()
-        sub_cands = subthreshold_candidates(run_dir, samples) if subthreshold else None
+        sub_cands = subthreshold_candidates(run_dir, samples, jobs=jobs) if subthreshold else None
         if sub_cands is not None:
             logger.info("events: %d appels sous le seuil candidats (%d échantillons)",
                         len(sub_cands), len(sub_cands.samples))
@@ -2378,6 +2447,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             wave_scores=wave_scores, wave_by_contig=wave_by_contig,
             mosaic_by_sample=mosaic_by_sample, subthreshold=sub_cands,
             denovo_families=dn_families, low_quality_prefixes=tuple(low_quality_prefixes),
+            jobs=jobs,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

@@ -16,6 +16,7 @@ process VEDETTE_COHORT_FILTER {
     """
     ls -1 ${genotype_tables} > gt_list.txt
     ${params.vedette_bin} cohort-filter ${sites} \\
+        --jobs ${task.cpus} \\
         --genotypes @gt_list.txt \\
         --out cohort.vcf.gz \\
         ${ped_arg} ${known_arg}

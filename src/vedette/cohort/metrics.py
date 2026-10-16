@@ -135,6 +135,195 @@ class _KnownSites:
         }
 
 
+# set by run_cohort_filter before its pool forks: shared copy-on-write
+_SHARED: dict = {}
+
+
+def _load_one(path: str | Path):
+    return _load_table_arrays(path, _SHARED["site_idx"], _SHARED["n_sites"])
+
+
+def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
+                   known_common_frac) -> pysam.VariantHeader:
+    with pysam.VariantFile(str(sites_vcf)) as sites:
+        header = sites.header.copy()
+    header.add_line(f"##source=vedette-cohort-{__version__}")
+    for line in (
+        ("AC", "A", "Integer", "Alternate allele count"),
+        ("AN", "1", "Integer", "Total genotyped alleles"),
+        ("AF", "A", "Float", "Alternate allele frequency"),
+        ("NS", "1", "Integer", "Samples with a genotype"),
+        ("NCARRIER", "1", "Integer", "Samples carrying the variant after re-genotyping"),
+        ("GTR_DISC", "1", "Float",
+         "Absolute discordance between nominating-sample count and re-genotyped carriers "
+         "(only the 'fewer carriers than nominations' direction is flagged)"),
+        ("HWE_P", "1", "Float", "Founder Hardy-Weinberg exact p-value"),
+        ("CARRIER_FRAC", "1", "Float", "Fraction of genotyped samples carrying the variant"),
+        ("CN_DISC", "1", "Float",
+         "Fraction of carriers whose copy number contradicts SVTYPE (DUP with CN<=1, DEL with CN>=3)"),
+        ("REF_AF", "1", "Float", "Allele frequency of the matching site in the reference cohort (--known-sites)"),
+        ("REF_CARRIER_FRAC", "1", "Float", "Carrier fraction of the matching site in the reference cohort"),
+        ("REF_FILTER", "1", "String", "FILTER of the matching site in the reference cohort, '|'-separated"),
+    ):
+        if line[0] not in header.info:
+            header.info.add(*line)
+    for name, desc in (
+        ("CohortArtifact", "High-frequency or genotype-discordant recurrent locus"),
+        ("HighCarrierFrac",
+         f"Carried by >= {carrier_frac_max:g} of the genotyped samples (reference/mappability artifact)"),
+        ("CNDiscordant",
+         f"Copy number of >= {cn_discordant_frac:g} of the carriers contradicts the SV type"),
+        ("CommonRef",
+         f"Matching site carried by >= {known_common_frac:g} of the reference cohort (--known-sites)"),
+    ):
+        if name not in header.filters:
+            header.filters.add(name, None, None, desc)
+    for line in (
+        ("GT", "1", "String", "Genotype"),
+        ("GQ", "1", "Integer", "Genotype quality"),
+        ("CN", "1", "Integer", "Integer copy number"),
+        ("RD", "1", "Float", "Mean copy ratio"),
+        ("PE", "1", "Integer", "Discordant pairs"),
+        ("SR", "1", "Integer", "Split reads"),
+    ):
+        if line[0] not in header.formats:
+            header.formats.add(*line)
+    for s in samples:
+        header.add_sample(s)
+    return header
+
+
+def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
+    """Sites [i0, i1) of the sites VCF as cohort records, to ``part`` (BGZF
+    or plain text, no header); returns the FILTER counts."""
+    import numpy as np
+    from pysam.libcbgzf import BGZFile
+
+    i0, i1, part = task
+    sh = _SHARED
+    tables, samples, is_founder = sh["tables"], sh["samples"], sh["is_founder"]
+    artifact_af = sh["artifact_af"]
+    artifact_gtr_discordance = sh["artifact_gtr_discordance"]
+    carrier_frac_max = sh["carrier_frac_max"]
+    cn_discordant_frac = sh["cn_discordant_frac"]
+    known_common_frac = sh["known_common_frac"]
+    header = _cohort_header(
+        sh["sites_vcf"], samples, carrier_frac_max, cn_discordant_frac,
+        known_common_frac,
+    )
+    known = _KnownSites(sh["known_sites"]) if sh["known_sites"] else None
+    gt_of_nalt = {0: (0, 0), 1: (0, 1), 2: (1, 1)}
+    counts = {"sites": 0, "artifact": 0, "high_carrier": 0, "cn_discordant": 0,
+              "common_ref": 0, "pass": 0}
+    fo = BGZFile(part, "wb") if part.endswith(".gz") else open(part, "wb")
+    with pysam.VariantFile(str(sh["sites_vcf"])) as sites, fo:
+        for i, rec in enumerate(sites):
+            if i < i0:
+                continue
+            if i >= i1:
+                break
+            counts["sites"] += 1
+            new = header.new_record(
+                contig=rec.contig, start=rec.start, stop=rec.stop,
+                alleles=rec.alleles, id=rec.id,
+            )
+            for k, v in rec.info.items():
+                new.info[k] = v
+
+            col_nalt = np.array([tables[s]["nalt"][i] for s in samples])
+            col_cn = np.array([tables[s]["cn"][i] for s in samples])
+            called = col_nalt >= 0
+            svtype = rec.info.get("SVTYPE", "")
+            for s_i, s in enumerate(samples):
+                fmt = new.samples[s]
+                t = tables[s]
+                if not called[s_i]:
+                    fmt["GT"] = (None, None)
+                    continue
+                fmt["GT"] = gt_of_nalt[int(col_nalt[s_i])]
+                fmt["GQ"] = int(t["gq"][i])
+                if t["cn"][i] >= 0:
+                    fmt["CN"] = int(t["cn"][i])
+                if not np.isnan(t["rd"][i]):
+                    fmt["RD"] = float(t["rd"][i])
+                fmt["PE"] = int(t["pe"][i])
+                fmt["SR"] = int(t["sr"][i])
+
+            ns = int(called.sum())
+            an = 2 * ns
+            ac = int(col_nalt[called].sum())
+            ncar = int((col_nalt > 0).sum())
+            f = is_founder & called
+            het = int((col_nalt[f] == 1).sum())
+            hom_alt = int((col_nalt[f] == 2).sum())
+            hom_ref = int((col_nalt[f] == 0).sum())
+
+            new.info["AC"] = (ac,)
+            new.info["AN"] = an
+            new.info["AF"] = (round(ac / an, 6) if an else 0.0,)
+            new.info["NS"] = ns
+            new.info["NCARRIER"] = ncar
+            nominators = int(rec.info.get("NSAMPLES", 0))
+            disc = (
+                abs(nominators - ncar) / max(nominators, 1) if nominators else 0.0
+            )
+            # Directional: only "re-genotyping reproduces FEWER carriers
+            # than the callers nominated" is suspicious. The other
+            # direction is re-genotyping being more sensitive than
+            # per-sample calling, which is the whole point of genotyping
+            # from the stores — on the PMS cohort it filtered the causal
+            # SHANK3 deletion (6 nominators, 64 carriers) and 36328 sites
+            # in that direction vs 425 in the other. The artifact case it
+            # used to cover ("the genotyper calls everyone") is now
+            # HighCarrierFrac's job.
+            disc_down = (nominators - ncar) / nominators if nominators else 0.0
+            new.info["GTR_DISC"] = round(disc, 4)
+            hwe_p = hwe_exact(het, hom_alt, hom_ref)
+            new.info["HWE_P"] = round(hwe_p, 6)
+
+            af = ac / an if an else 0.0
+            tags = []
+            if (af > artifact_af and hwe_p < 1e-6) or (
+                nominators >= 3 and disc_down > artifact_gtr_discordance
+            ):
+                tags.append("CohortArtifact")
+
+            carrier_frac = ncar / ns if ns else 0.0
+            new.info["CARRIER_FRAC"] = round(carrier_frac, 4)
+            if ns >= 4 and carrier_frac >= carrier_frac_max:
+                tags.append("HighCarrierFrac")
+
+            carrier_cn = col_cn[(col_nalt > 0) & (col_cn >= 0)]
+            if len(carrier_cn) >= 2:
+                contra = (carrier_cn <= 1) if svtype == "DUP" else (carrier_cn >= 3)
+                cn_disc = float(contra.mean())
+                new.info["CN_DISC"] = round(cn_disc, 4)
+                if cn_disc >= cn_discordant_frac:
+                    tags.append("CNDiscordant")
+
+            if known is not None:
+                hit = known.lookup(rec.contig, rec.start, rec.stop, svtype)
+                if hit is not None:
+                    new.info["REF_AF"] = round(hit["af"], 6)
+                    new.info["REF_CARRIER_FRAC"] = round(hit["carrier_frac"], 4)
+                    new.info["REF_FILTER"] = hit["filter"]
+                    if hit["carrier_frac"] >= known_common_frac:
+                        tags.append("CommonRef")
+
+            for tag in tags or ["PASS"]:
+                new.filter.add(tag)
+            counts["artifact"] += "CohortArtifact" in tags
+            counts["high_carrier"] += "HighCarrierFrac" in tags
+            counts["cn_discordant"] += "CNDiscordant" in tags
+            counts["common_ref"] += "CommonRef" in tags
+            counts["pass"] += not tags
+            # str(record) is the line VariantFile.write would emit
+            fo.write(str(new).encode())
+    if known is not None:
+        known.vcf.close()
+    return counts
+
+
 def run_cohort_filter(
     sites_vcf: str | Path,
     genotype_tsvs: list[str | Path],
@@ -146,10 +335,18 @@ def run_cohort_filter(
     cn_discordant_frac: float = 0.5,
     known_sites: str | Path | None = None,
     known_common_frac: float = 0.5,
+    jobs: int = 1,
 ) -> dict[str, int]:
+    """``jobs`` > 1 loads the genotype tables and writes the records in
+    parallel (5 h on one core for 2670 samples): each worker writes a
+    contiguous block of sites, the blocks are joined in site order, so the
+    records are identical to the serial run."""
+    import shutil
+    import tempfile
+
     import numpy as np
 
-    known = _KnownSites(known_sites) if known_sites else None
+    from ..parallel import concat_bgzf, concat_text, pmap
 
     # site order defines the array index
     site_ids: list[str] = []
@@ -159,175 +356,70 @@ def run_cohort_filter(
     site_idx = {sid: i for i, sid in enumerate(site_ids)}
     n_sites = len(site_ids)
 
+    _SHARED.clear()
+    _SHARED.update(site_idx=site_idx, n_sites=n_sites)
     tables: dict[str, dict] = {}
-    for path in genotype_tsvs:
-        sample, arrays = _load_table_arrays(path, site_idx, n_sites)
-        if not sample:
-            logger.warning("Empty genotype table: %s", path)
-            continue
-        tables[sample] = arrays
-    samples = sorted(tables)
-    if not samples:
-        raise ValueError("No genotype tables to assemble")
-    logger.info(
-        "cohort-filter: %d samples x %d sites (%.1f MB in arrays)",
-        len(samples), n_sites, len(samples) * n_sites * 12 / 1e6,
-    )
-    founders = (
-        {ind.sample_id for ind in pedigree.founders()} if pedigree else set(samples)
-    )
+    try:
+        for path, (sample, arrays) in zip(
+            genotype_tsvs, pmap(_load_one, genotype_tsvs, jobs), strict=True
+        ):
+            if not sample:
+                logger.warning("Empty genotype table: %s", path)
+                continue
+            tables[sample] = arrays
+        samples = sorted(tables)
+        if not samples:
+            raise ValueError("No genotype tables to assemble")
+        logger.info(
+            "cohort-filter: %d samples x %d sites (%.1f MB in arrays)",
+            len(samples), n_sites, len(samples) * n_sites * 12 / 1e6,
+        )
+        founders = (
+            {ind.sample_id for ind in pedigree.founders()} if pedigree else set(samples)
+        )
+        _SHARED.update(
+            tables=tables, samples=samples,
+            is_founder=np.array([s in founders for s in samples]),
+            sites_vcf=str(sites_vcf),
+            known_sites=str(known_sites) if known_sites else None,
+            artifact_af=artifact_af,
+            artifact_gtr_discordance=artifact_gtr_discordance,
+            carrier_frac_max=carrier_frac_max,
+            cn_discordant_frac=cn_discordant_frac,
+            known_common_frac=known_common_frac,
+        )
 
-    counts = {"sites": 0, "artifact": 0, "high_carrier": 0, "cn_discordant": 0,
-              "common_ref": 0, "pass": 0}
-    with pysam.VariantFile(str(sites_vcf)) as sites:
-        header = sites.header.copy()
-        header.add_line(f"##source=vedette-cohort-{__version__}")
-        for line in (
-            ("AC", "A", "Integer", "Alternate allele count"),
-            ("AN", "1", "Integer", "Total genotyped alleles"),
-            ("AF", "A", "Float", "Alternate allele frequency"),
-            ("NS", "1", "Integer", "Samples with a genotype"),
-            ("NCARRIER", "1", "Integer", "Samples carrying the variant after re-genotyping"),
-            ("GTR_DISC", "1", "Float",
-             "Absolute discordance between nominating-sample count and re-genotyped carriers "
-             "(only the 'fewer carriers than nominations' direction is flagged)"),
-            ("HWE_P", "1", "Float", "Founder Hardy-Weinberg exact p-value"),
-            ("CARRIER_FRAC", "1", "Float", "Fraction of genotyped samples carrying the variant"),
-            ("CN_DISC", "1", "Float",
-             "Fraction of carriers whose copy number contradicts SVTYPE (DUP with CN<=1, DEL with CN>=3)"),
-            ("REF_AF", "1", "Float", "Allele frequency of the matching site in the reference cohort (--known-sites)"),
-            ("REF_CARRIER_FRAC", "1", "Float", "Carrier fraction of the matching site in the reference cohort"),
-            ("REF_FILTER", "1", "String", "FILTER of the matching site in the reference cohort, '|'-separated"),
-        ):
-            if line[0] not in header.info:
-                header.info.add(*line)
-        for name, desc in (
-            ("CohortArtifact", "High-frequency or genotype-discordant recurrent locus"),
-            ("HighCarrierFrac",
-             f"Carried by >= {carrier_frac_max:g} of the genotyped samples (reference/mappability artifact)"),
-            ("CNDiscordant",
-             f"Copy number of >= {cn_discordant_frac:g} of the carriers contradicts the SV type"),
-            ("CommonRef",
-             f"Matching site carried by >= {known_common_frac:g} of the reference cohort (--known-sites)"),
-        ):
-            if name not in header.filters:
-                header.filters.add(name, None, None, desc)
-        for line in (
-            ("GT", "1", "String", "Genotype"),
-            ("GQ", "1", "Integer", "Genotype quality"),
-            ("CN", "1", "Integer", "Integer copy number"),
-            ("RD", "1", "Float", "Mean copy ratio"),
-            ("PE", "1", "Integer", "Discordant pairs"),
-            ("SR", "1", "Integer", "Split reads"),
-        ):
-            if line[0] not in header.formats:
-                header.formats.add(*line)
-        for s in samples:
-            header.add_sample(s)
-
-        is_founder = np.array([s in founders for s in samples])
-        gt_of_nalt = {0: (0, 0), 1: (0, 1), 2: (1, 1)}
         out_path = str(out_vcf)
-        mode = "wz" if out_path.endswith(".gz") else "w"
-        with pysam.VariantFile(out_path, mode, header=header) as out:
-            for i, rec in enumerate(sites):
-                counts["sites"] += 1
-                new = out.new_record(
-                    contig=rec.contig, start=rec.start, stop=rec.stop,
-                    alleles=rec.alleles, id=rec.id,
-                )
-                for k, v in rec.info.items():
-                    new.info[k] = v
-
-                col_nalt = np.array([tables[s]["nalt"][i] for s in samples])
-                col_cn = np.array([tables[s]["cn"][i] for s in samples])
-                called = col_nalt >= 0
-                svtype = rec.info.get("SVTYPE", "")
-                for s_i, s in enumerate(samples):
-                    fmt = new.samples[s]
-                    t = tables[s]
-                    if not called[s_i]:
-                        fmt["GT"] = (None, None)
-                        continue
-                    fmt["GT"] = gt_of_nalt[int(col_nalt[s_i])]
-                    fmt["GQ"] = int(t["gq"][i])
-                    if t["cn"][i] >= 0:
-                        fmt["CN"] = int(t["cn"][i])
-                    if not np.isnan(t["rd"][i]):
-                        fmt["RD"] = float(t["rd"][i])
-                    fmt["PE"] = int(t["pe"][i])
-                    fmt["SR"] = int(t["sr"][i])
-
-                ns = int(called.sum())
-                an = 2 * ns
-                ac = int(col_nalt[called].sum())
-                ncar = int((col_nalt > 0).sum())
-                f = is_founder & called
-                het = int((col_nalt[f] == 1).sum())
-                hom_alt = int((col_nalt[f] == 2).sum())
-                hom_ref = int((col_nalt[f] == 0).sum())
-
-                new.info["AC"] = (ac,)
-                new.info["AN"] = an
-                new.info["AF"] = (round(ac / an, 6) if an else 0.0,)
-                new.info["NS"] = ns
-                new.info["NCARRIER"] = ncar
-                nominators = int(rec.info.get("NSAMPLES", 0))
-                disc = (
-                    abs(nominators - ncar) / max(nominators, 1) if nominators else 0.0
-                )
-                # Directional: only "re-genotyping reproduces FEWER carriers
-                # than the callers nominated" is suspicious. The other
-                # direction is re-genotyping being more sensitive than
-                # per-sample calling, which is the whole point of genotyping
-                # from the stores — on the PMS cohort it filtered the causal
-                # SHANK3 deletion (6 nominators, 64 carriers) and 36328 sites
-                # in that direction vs 425 in the other. The artifact case it
-                # used to cover ("the genotyper calls everyone") is now
-                # HighCarrierFrac's job.
-                disc_down = (nominators - ncar) / nominators if nominators else 0.0
-                new.info["GTR_DISC"] = round(disc, 4)
-                hwe_p = hwe_exact(het, hom_alt, hom_ref)
-                new.info["HWE_P"] = round(hwe_p, 6)
-
-                af = ac / an if an else 0.0
-                tags = []
-                if (af > artifact_af and hwe_p < 1e-6) or (
-                    nominators >= 3 and disc_down > artifact_gtr_discordance
-                ):
-                    tags.append("CohortArtifact")
-
-                carrier_frac = ncar / ns if ns else 0.0
-                new.info["CARRIER_FRAC"] = round(carrier_frac, 4)
-                if ns >= 4 and carrier_frac >= carrier_frac_max:
-                    tags.append("HighCarrierFrac")
-
-                carrier_cn = col_cn[(col_nalt > 0) & (col_cn >= 0)]
-                if len(carrier_cn) >= 2:
-                    contra = (carrier_cn <= 1) if svtype == "DUP" else (carrier_cn >= 3)
-                    cn_disc = float(contra.mean())
-                    new.info["CN_DISC"] = round(cn_disc, 4)
-                    if cn_disc >= cn_discordant_frac:
-                        tags.append("CNDiscordant")
-
-                if known is not None:
-                    hit = known.lookup(rec.contig, rec.start, rec.stop, svtype)
-                    if hit is not None:
-                        new.info["REF_AF"] = round(hit["af"], 6)
-                        new.info["REF_CARRIER_FRAC"] = round(hit["carrier_frac"], 4)
-                        new.info["REF_FILTER"] = hit["filter"]
-                        if hit["carrier_frac"] >= known_common_frac:
-                            tags.append("CommonRef")
-
-                for tag in tags or ["PASS"]:
-                    new.filter.add(tag)
-                counts["artifact"] += "CohortArtifact" in tags
-                counts["high_carrier"] += "HighCarrierFrac" in tags
-                counts["cn_discordant"] += "CNDiscordant" in tags
-                counts["common_ref"] += "CommonRef" in tags
-                counts["pass"] += not tags
-                out.write(new)
-    if mode == "wz":
+        gz = out_path.endswith(".gz")
+        mode = "wz" if gz else "w"
+        tmp = tempfile.mkdtemp(prefix=".cohort_parts_", dir=Path(out_path).parent)
+        try:
+            n_chunks = 1 if jobs <= 1 else min(max(n_sites, 1), jobs * 4)
+            bounds = np.linspace(0, n_sites, n_chunks + 1).astype(int)
+            ext = ".vcf.gz" if gz else ".vcf"
+            tasks = [
+                (int(bounds[k]), int(bounds[k + 1]), f"{tmp}/part{k:05d}{ext}")
+                for k in range(n_chunks)
+            ]
+            counts = {"sites": 0, "artifact": 0, "high_carrier": 0,
+                      "cn_discordant": 0, "common_ref": 0, "pass": 0}
+            for c in pmap(_write_chunk, tasks, jobs):
+                for k, v in c.items():
+                    counts[k] += v
+            head = f"{tmp}/header{ext}"
+            header = _cohort_header(
+                sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
+                known_common_frac,
+            )
+            with pysam.VariantFile(head, mode, header=header):
+                pass
+            parts = [head] + [t[2] for t in tasks]
+            (concat_bgzf if gz else concat_text)(parts, out_path)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    finally:
+        _SHARED.clear()
+    if gz:
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info(
         "cohort-filter: %d sites, %d PASS, %d CohortArtifact, %d HighCarrierFrac, "

@@ -30,6 +30,15 @@
   segment, at its copy number) are folded into the mosaic row; a deeper
   event inside it stays a row. A clonal dataset_paper genome went from 120
   fragment rows to its 12 mosaic rows.
+- **cohort stages on several cores** — `merge`, `cohort-filter`,
+  `ped-annotate`, `bench trios` and `report` take `--jobs` (default: every
+  allowed CPU; Nextflow passes its `cpus`, now 16 for these stages). Each ran
+  on one core: ~14 h end to end after the calls on the 2670-sample cohort.
+  The work is split by contig, by block of sites, by 10 Mb region or by
+  family and restitched in file order, so the outputs are those of the
+  serial run (checked on PMS: identical sites, cohort VCF, Mendelian report
+  and family pages). PMS with 16 cores: merge 7 min -> 70 s, cohort-filter
+  17 min -> 86 s, ped 3.5 min -> 19 s, report 12 min -> 3 min.
 
 ## v1.1.0 — 2026-10-13
 

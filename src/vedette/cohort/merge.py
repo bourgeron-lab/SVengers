@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pysam
 
 from .. import __version__
+from ..parallel import pmap
 from ..reference import Contig
 from ..vcfout import clamp_end
 
@@ -187,6 +189,63 @@ def read_sample_calls(
     return out
 
 
+_BY_KEY: dict[tuple[str, str], list[MemberCall]] | None = None
+
+
+def _contig_sites(work: tuple) -> list[tuple[int, int, str, list[tuple]]]:
+    """Cluster one contig's calls: (start, end, svtype, INFO items) per site,
+    in output order."""
+    contig, length, rescue_min_samples, rescue_total_sq = work
+    by_key = _BY_KEY
+    merged: list[tuple[int, SiteCluster]] = []
+    for svtype in ("DEL", "DUP"):
+        calls = by_key.get((contig, svtype), [])
+        if not calls:
+            continue
+        calls.sort(key=lambda m: m.start)
+        for cl in cluster_calls([(m, svtype) for m in calls]):
+            merged.append((cl.start, cl))
+    merged.sort(key=lambda t: t[0])
+    sites = []
+    for _pos, cl in merged:
+        rescued = not any(m.passing for m in cl.members)
+        # best SQ per carrier: rescue criterion, and SQMAX/SQMEAN
+        # carried to the cohort VCF (the per-sample SQ is otherwise
+        # lost past the merge)
+        best_sq: dict[str, float] = {}
+        for m in cl.members:
+            best_sq[m.sample] = max(best_sq.get(m.sample, 0.0), m.sq)
+        if rescued and (
+            len(best_sq) < rescue_min_samples
+            or sum(best_sq.values()) < rescue_total_sq
+        ):
+            continue
+        # member calls from VCFs written before vcfout clamped END
+        # overhang the contig end by up to one depth bin
+        start = cl.start
+        end = clamp_end(start, cl.end, length)
+        info = [
+            ("SVTYPE", cl.svtype),
+            # NB: with SVLEN set on a symbolic allele, htslib forces
+            # END = POS + |SVLEN|, one base past the half-open end — the
+            # same convention every vedette VCF carries (see ROADMAP,
+            # coordinate-normalization item)
+            ("SVLEN", (end - start) * (1 if cl.svtype == "DUP" else -1)),
+            ("NMEMBERS", len(cl.members)),
+            ("NSAMPLES", len({m.sample for m in cl.members})),
+            ("SPREAD", cl.spread),
+            ("PRECISE_FRAC", round(
+                sum(1 for m in cl.members if m.precise) / len(cl.members), 3
+            )),
+            ("SQMAX", round(max(best_sq.values()), 2)),
+            ("SQMEAN", round(sum(best_sq.values()) / len(best_sq), 2)),
+        ]
+        if rescued:
+            info.append(("RESCUE", "RECURRENT"))
+        sites.append((start, end, cl.svtype, info))
+    return sites
+
+
 def run_merge(
     vcf_paths: list[str | Path],
     contigs: list[Contig],
@@ -196,6 +255,7 @@ def run_merge(
     rescue_min_sq: float | None = 1.0,
     rescue_min_samples: int = 2,
     rescue_total_sq: float = 8.0,
+    jobs: int = 1,
 ) -> int:
     """Merge per-sample VCFs into a sites-only VCF; returns the site count.
 
@@ -203,12 +263,19 @@ def run_merge(
     when >= rescue_min_samples distinct carriers support it and their summed
     best SQ reaches rescue_total_sq — treating per-sample calibrated scores
     as accumulating evidence for recurrent sub-threshold sites.
+
+    ``jobs`` > 1 reads the VCFs and clusters the contigs in parallel (4 h on
+    one core for 2670 samples); input order is kept at both steps, so the
+    output is identical to the serial run.
     """
+    global _BY_KEY
     by_key: dict[tuple[str, str], list[MemberCall]] = {}
-    for path in vcf_paths:
-        for key, calls in read_sample_calls(
-            path, min_gq, pass_only, rescue_min_sq=rescue_min_sq
-        ).items():
+    read = partial(
+        read_sample_calls, min_gq=min_gq, pass_only=pass_only,
+        rescue_min_sq=rescue_min_sq,
+    )
+    for calls_of in pmap(read, vcf_paths, jobs):
+        for key, calls in calls_of.items():
             by_key.setdefault(key, []).extend(calls)
 
     header = pysam.VariantHeader()
@@ -232,65 +299,39 @@ def run_merge(
         "(RECURRENT: rescued by cross-sample recurrence of sub-threshold calls)",
     )
 
-    n_sites = 0
     contig_order = {c.name: i for i, c in enumerate(contigs)}
     contig_length = {c.name: c.length for c in contigs}
+    work = [
+        (contig, contig_length.get(contig), rescue_min_samples, rescue_total_sq)
+        for contig in sorted(
+            {k[0] for k in by_key}, key=lambda c: contig_order.get(c, 1_000_000)
+        )
+    ]
+    # workers read the calls from this module global, shared copy-on-write
+    # by fork instead of pickled to each of them
+    # (all sites computed before the output opens: no htslib handle may be
+    # open in the parent when the pool forks)
+    _BY_KEY = by_key
+    try:
+        per_contig = list(pmap(_contig_sites, work, jobs))
+    finally:
+        _BY_KEY = None
+    n_sites = 0
     out_path = str(out_vcf)
     mode = "wz" if out_path.endswith(".gz") else "w"
     with pysam.VariantFile(out_path, mode, header=header) as out:
-        for contig in sorted(
-            {k[0] for k in by_key}, key=lambda c: contig_order.get(c, 1_000_000)
-        ):
-            merged: list[tuple[int, SiteCluster]] = []
-            for svtype in ("DEL", "DUP"):
-                calls = by_key.get((contig, svtype), [])
-                if not calls:
-                    continue
-                calls.sort(key=lambda m: m.start)
-                for cl in cluster_calls([(m, svtype) for m in calls]):
-                    merged.append((cl.start, cl))
-            merged.sort(key=lambda t: t[0])
-            for _pos, cl in merged:
-                rescued = not any(m.passing for m in cl.members)
-                # best SQ per carrier: rescue criterion, and SQMAX/SQMEAN
-                # carried to the cohort VCF (the per-sample SQ is otherwise
-                # lost past the merge)
-                best_sq: dict[str, float] = {}
-                for m in cl.members:
-                    best_sq[m.sample] = max(best_sq.get(m.sample, 0.0), m.sq)
-                if rescued and (
-                    len(best_sq) < rescue_min_samples
-                    or sum(best_sq.values()) < rescue_total_sq
-                ):
-                    continue
+        for (contig, *_), sites in zip(work, per_contig, strict=True):
+            for start, end, svtype, info in sites:
                 n_sites += 1
-                # member calls from VCFs written before vcfout clamped END
-                # overhang the contig end by up to one depth bin
-                start = cl.start
-                end = clamp_end(start, cl.end, contig_length.get(contig))
                 rec = out.new_record(
                     contig=contig,
                     start=start,
                     stop=end,
-                    alleles=("N", f"<{cl.svtype}>"),
+                    alleles=("N", f"<{svtype}>"),
                     id=f"vedette_site_{n_sites}",
                 )
-                rec.info["SVTYPE"] = cl.svtype
-                # NB: with SVLEN set on a symbolic allele, htslib forces
-                # END = POS + |SVLEN|, one base past the half-open end — the
-                # same convention every vedette VCF carries (see ROADMAP,
-                # coordinate-normalization item)
-                rec.info["SVLEN"] = (end - start) * (1 if cl.svtype == "DUP" else -1)
-                rec.info["NMEMBERS"] = len(cl.members)
-                rec.info["NSAMPLES"] = len({m.sample for m in cl.members})
-                rec.info["SPREAD"] = cl.spread
-                rec.info["PRECISE_FRAC"] = round(
-                    sum(1 for m in cl.members if m.precise) / len(cl.members), 3
-                )
-                rec.info["SQMAX"] = round(max(best_sq.values()), 2)
-                rec.info["SQMEAN"] = round(sum(best_sq.values()) / len(best_sq), 2)
-                if rescued:
-                    rec.info["RESCUE"] = "RECURRENT"
+                for k, v in info:
+                    rec.info[k] = v
                 out.write(rec)
     if mode == "wz":
         pysam.tabix_index(out_path, preset="vcf", force=True)

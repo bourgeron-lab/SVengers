@@ -45,7 +45,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} ${mosaic_arg} ${lq_arg} \\
+    ${params.vedette_bin} report rundir --jobs ${task.cpus} ${ped_arg} ${genes_arg} ${ndd_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} ${mosaic_arg} ${lq_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi

@@ -212,9 +212,11 @@ def merge(
     rescue_total_sq: float = typer.Option(
         8.0, help="Summed best-SQ across carriers required to rescue such a site"
     ),
+    jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Cross-sample clustering of filtered calls into cohort sites."""
     from .cohort.merge import run_merge
+    from .parallel import resolve_jobs
     from .reference import read_fai
 
     paths: list[Path] = []
@@ -227,6 +229,7 @@ def merge(
         paths, read_fai(fasta), out, min_gq=min_gq, pass_only=not include_filtered,
         rescue_min_sq=None if rescue_min_sq < 0 else rescue_min_sq,
         rescue_min_samples=rescue_min_samples, rescue_total_sq=rescue_total_sq,
+        jobs=resolve_jobs(jobs),
     )
     typer.echo(f"{len(paths)} VCFs -> {n} sites -> {out}")
 
@@ -342,9 +345,11 @@ def cohort_filter(
     known_common_frac: float = typer.Option(
         0.5, help="CommonRef: reference-cohort carrier fraction at or above which the site is flagged"
     ),
+    jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics."""
     from .cohort.metrics import run_cohort_filter
+    from .parallel import resolve_jobs
     from .ped import parse_ped
 
     paths: list[Path] = []
@@ -361,6 +366,7 @@ def cohort_filter(
         cn_discordant_frac=cn_discordant_frac,
         known_sites=known_sites,
         known_common_frac=known_common_frac,
+        jobs=resolve_jobs(jobs),
     )
     typer.echo(
         f"{counts['sites']} sites, {counts['pass']} PASS, {counts['artifact']} CohortArtifact, "
@@ -375,13 +381,16 @@ def ped_annotate(
     pedigree: Path = typer.Option(..., help="Pedigree TSV"),
     out_report: Path = typer.Option(..., help="Per-trio-site report TSV"),
     out_summary: Optional[Path] = typer.Option(None, help="Per-trio summary TSV"),
+    jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Mendelian consistency, inheritance and de novo annotation on a cohort VCF."""
     from .cohort.mendel import run_ped_annotate
+    from .parallel import resolve_jobs
     from .ped import parse_ped
 
     stats = run_ped_annotate(
-        cohort_vcf, parse_ped(pedigree), out_report, out_summary
+        cohort_vcf, parse_ped(pedigree), out_report, out_summary,
+        jobs=resolve_jobs(jobs),
     )
     for st in stats:
         tr = f"{st.transmission_rate:.3f}" if st.n_transmit_opportunity else "NA"
@@ -553,14 +562,17 @@ def bench_trios(
     exclude_rescue: bool = typer.Option(
         False, help="Also drop INFO/RESCUE sites (recurrent sub-threshold)"
     ),
+    jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """MVR and transmission rate as a function of the quality threshold."""
     from .bench.trios import sweep
+    from .parallel import resolve_jobs
     from .ped import parse_ped
 
     rows = sweep(
         cohort_vcf, parse_ped(pedigree), field=field, out_tsv=out,
         pass_only=pass_only, exclude_rescue=exclude_rescue,
+        jobs=resolve_jobs(jobs),
     )
     if plot:
         from .bench.plots import plot_trio_sweep
@@ -617,8 +629,10 @@ def report(
         [], "--low-quality-prefix",
         help="Sample-ID prefix of older, lower-quality genomes (repeatable; IP at the GHFC): no sub-threshold rows for them",
     ),
+    jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
+    from .parallel import resolve_jobs
     from .ped import parse_ped
     from .report import generate_report
 
@@ -640,6 +654,7 @@ def report(
         min_carrier_gq=min_carrier_gq,
         mosaic_dir=mosaic_dir,
         low_quality_prefixes=tuple(low_quality_prefix),
+        jobs=resolve_jobs(jobs),
     )
     typer.echo(f"rapport -> {path}")
 
