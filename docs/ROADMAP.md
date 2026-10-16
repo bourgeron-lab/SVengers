@@ -34,7 +34,8 @@ graphiques — les graphiques montrent le signal que suit l'algorithme, ils
 ne sont pas un contrôle indépendant dans les génomes ondulés).
 
 Priorités :
-1. **Vagues à la source** (en cours, PMS d'abord) : les génomes ondulés
+1. **Vagues à la source** (PMS en production avec PoN médiane sans SVD
+   le 2026-10-15 ; dataset_paper rappelé, comparaison en cours) : les génomes ondulés
    portent l'essentiel des faux positifs restants dans toutes les relectures
    et ont fait échouer v6 à v8. Panel of normals de fondateurs non apparentés
    (dataset_paper) + débruitage SVD (déjà codé, jamais validé, cf. 4), test
@@ -46,7 +47,23 @@ Priorités :
    GIAB identiques à la production (1septdecies).
 3. Mosaïques complexes : mosaïque coupée par une délétion plus profonde
    (chr13), remaniement gain/perte en 7q11.23.
-4. Article dataset_paper : chiffres hors échantillon, comparaison aux
+4. **Génomes très bruités à l'appel** (relevé au rappel dataset_paper avec
+   PoN, 2026-10-16) : 5 génomes d'un même lot tués par OOM à 24 Go en
+   ~5 min, puis 5 à 9 h par appel au lieu de ~1 h (~5 M pileups faibles par
+   chromosome, budget d'alignement des hidden splits épuisé à chaque
+   contig). Ils retardent toute la cohorte de ~8 h. À faire : détecter le
+   profil tôt (densité de pileups, wave brute) et couper la recherche des
+   hidden splits plus tôt ou la borner en temps ; réserver d'emblée plus de
+   mémoire à ces génomes plutôt que d'attendre l'échec ; les signaler au
+   rapport comme génomes à prudence.
+5. **Caryotype des chromosomes sexuels** : le scan de mosaïques ne couvre
+   que les autosomes, un gain de chrX entier (XXX probable sur dataset_paper)
+   n'est vu que par les appels. Contrôle X/Y explicite par génome : CN
+   moyen de chrX et chrY (et BAF de chrX hors PAR) contre le sexe du
+   pedigree → XXY, X0, XXX, XYY et mosaïques des gonosomes, discordances de
+   sexe ; ligne dans le tableau des anomalies chromosomiques
+   constitutionnelles. Petit chantier, faisable en parallèle de 2.
+6. Article dataset_paper : chiffres hors échantillon, comparaison aux
    autres callers sur les métriques trios, figures.
 
 ### Plan de publication (2026-10-14) — pas la priorité
