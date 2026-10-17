@@ -62,6 +62,24 @@ Priorités :
    trios dataset_paper PoN (de novo à parents confiants = FP, transmis = TP,
    hors trios d'évaluation), évaluation par les métriques trios de cohorte
    (désormais ~1 h pour 2670 génomes).
+   **v10 non retenu (2026-10-17)** : labels de cohorte sur 208 trios
+   dataset_paper PoN (parents non IP, wave < 0,128 ; TP = parent porteur AVEC
+   son propre appel, `label-trio --parent-calls` ; FP = deux parents 0/0
+   confiants sans appel ; sites communs de la cohorte et appels présents chez
+   >= 10 de 100 fondateurs non apparentés écartés : 1,68 M -> 141 k labels) +
+   GIAB PoN. Panel de 40 trios : de novo apparents médians par enfant 526
+   (v5n) -> 912, DUP PASS >= 100 kb 0 -> 13 par enfant, génome bruité
+   1 953 -> 4 526 PASS ; HG002 hors échantillon F1 DEL 0,451 -> 0,412 (CMRG
+   0,452 -> 0,350). Cause : les labels de transmission sont biaisés pour les
+   appels par profondeur — un FP exige deux parents 0/0 confiants, rare dans
+   les régions bruitées, un TP un seul parent avec un appel : 75 % des
+   grandes DUP de profondeur labellisées TP ; v10 passe 712 DUP de
+   profondeur >= 10 kb sur 40 enfants (v5n 7), dont 291 sans aucun appel
+   parental. **Conclusion v9/v10** : sans vérité indépendante pour les appels
+   par profondeur, réentraîner déplace les erreurs ; v5n + PoN reste le
+   meilleur compromis mesuré. Suite du modèle : labels indépendants pour la
+   profondeur (lot IGV ciblé grandes DEL/DUP de profondeur, second avis CNN),
+   pas de nouveau réentraînement sur labels de transmission seuls.
 3. Mosaïques complexes : mosaïque coupée par une délétion plus profonde
    (chr13), remaniement gain/perte en 7q11.23.
 4. **Génomes très bruités à l'appel** (relevé au rappel dataset_paper avec

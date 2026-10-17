@@ -208,3 +208,59 @@ def test_label_by_transmission(tmp_path):
         tmp_path / "child.clean.tsv", known_sites=tmp_path / "ref.vcf.gz",
     )
     assert counts == {"tp": 0, "fp": 0, "ambiguous": 2, "common": 2}
+
+
+def test_label_by_transmission_needs_parent_own_calls(tmp_path):
+    """With the parents' own VCFs: forced re-genotyping alone makes no TP
+    (false 33/33 under IGV on PMS), and a parent's own call vetoes an FP."""
+    import csv
+
+    import pysam
+
+    from vedette.train.label_trio import label_by_transmission
+
+    for name, rows in (
+        ("father", [("A", 10_000, 20_000, "0/1", 99), ("B", 50_000, 60_000, "0/0", 80),
+                    ("D", 200_000, 210_000, "0/1", 99)]),
+        ("mother", [("A", 10_000, 20_000, "0/0", 90), ("B", 50_000, 60_000, "0/0", 75),
+                    ("D", 200_000, 210_000, "0/0", 90)]),
+    ):
+        with open(tmp_path / f"{name}.gt.tsv", "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=["site_id", "contig", "start", "end", "svtype",
+                                               "sample", "gt", "gq"], delimiter="\t")
+            w.writeheader()
+            for sid, s, e, gt, gq in rows:
+                w.writerow({"site_id": sid, "contig": "chr1", "start": s, "end": e,
+                            "svtype": "DEL", "sample": name, "gt": gt, "gq": gq})
+    # father's own calls: A (a real transmission) and, filtered, at B
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr1", length=1_000_000)
+    hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
+    hdr.info.add("SVTYPE", "1", "String", "t")
+    hdr.info.add("END", "1", "Integer", "e")
+    hdr.filters.add("LowSQ", None, None, "low")
+    hdr.formats.add("GT", "1", "String", "g")
+    for name, calls in (("father", [(10_050, 19_900, None), (50_100, 59_900, "LowSQ")]), ("mother", [])):
+        hdr_s = hdr.copy()
+        hdr_s.add_sample(name)
+        with pysam.VariantFile(str(tmp_path / f"{name}.vcf.gz"), "wz", header=hdr_s) as vf:
+            for s, e, flt in calls:
+                r = vf.new_record(contig="chr1", start=s, stop=e, alleles=("N", "<DEL>"))
+                r.info["SVTYPE"] = "DEL"
+                if flt:
+                    r.filter.add(flt)
+                r.samples[name]["GT"] = (0, 1)
+                vf.write(r)
+    with open(tmp_path / "child.features.tsv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["call_id", "contig", "start", "end", "svtype"], delimiter="\t")
+        w.writeheader()
+        for r in (("c1", "chr1", 10_100, 19_800, "DEL"),     # carrier + own call -> TP
+                  ("c2", "chr1", 50_200, 59_500, "DEL"),     # 0/0 x2 but father called it -> ambiguous
+                  ("c5", "chr1", 200_100, 209_900, "DEL")):  # carrier by re-genotyping only -> ambiguous
+            w.writerow(dict(zip(w.fieldnames, r, strict=True)))
+    counts = label_by_transmission(
+        tmp_path / "child.features.tsv",
+        [tmp_path / "father.gt.tsv", tmp_path / "mother.gt.tsv"], tmp_path / "out.tsv",
+        parent_calls=[tmp_path / "father.vcf.gz", tmp_path / "mother.vcf.gz"],
+    )
+    assert counts == {"tp": 1, "fp": 0, "ambiguous": 2, "common": 0}

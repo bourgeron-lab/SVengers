@@ -706,6 +706,9 @@ def label_trio(
     max_ref_carrier_frac: float = typer.Option(
         0.5, help="With --known-sites: drop calls whose site is carried by >= this fraction",
     ),
+    parent_calls: list[Path] = typer.Option(
+        [], help="Each parent's own VCF, in --parent-gt order: TP needs the carrier parent's own call, FP no call in either parent",
+    ),
 ) -> None:
     """Transmission labels from clean parents for a truth-less child (wavy training)."""
     from .train.label_trio import label_by_transmission
@@ -713,6 +716,7 @@ def label_trio(
     counts = label_by_transmission(
         features, parent_gt, out, min_gq=min_gq,
         known_sites=known_sites, max_ref_carrier_frac=max_ref_carrier_frac,
+        parent_calls=parent_calls or None,
     )
     typer.echo(
         f"{counts['tp']} TP, {counts['fp']} FP, {counts['ambiguous']} ambiguous, "

@@ -70,6 +70,22 @@ def _overlapping(sites: list, start: int, end: int, min_ro: float = 0.5):
     return hits
 
 
+def _load_own_calls(vcf_path: str | Path) -> dict[tuple[str, str], list]:
+    """{(contig, svtype): sorted [(start, end, True, True)]}: every call of the
+    sample's own VCF, whatever its FILTER (the call exists)."""
+    import pysam
+
+    out: dict[tuple[str, str], list] = {}
+    with pysam.VariantFile(str(vcf_path)) as vf:
+        for rec in vf:
+            svtype = rec.info.get("SVTYPE")
+            if svtype in ("DEL", "DUP"):
+                out.setdefault((rec.contig, svtype), []).append((rec.start, rec.stop, True, True))
+    for rows in out.values():
+        rows.sort()
+    return out
+
+
 def label_by_transmission(
     features_tsv: str | Path,
     parent_gt_tsvs: list[str | Path],
@@ -78,9 +94,21 @@ def label_by_transmission(
     min_ro: float = 0.5,
     known_sites: str | Path | None = None,
     max_ref_carrier_frac: float = 0.5,
+    parent_calls: list[str | Path] | None = None,
 ) -> dict[str, int]:
-    """Label a child's feature rows TP/FP by parental transmission."""
+    """Label a child's feature rows TP/FP by parental transmission.
+
+    With ``parent_calls`` (each parent's own VCF, same order as
+    ``parent_gt_tsvs``), re-genotyping alone no longer decides: TP needs a
+    parent that is a carrier AND has its own call there, FP needs both
+    parents confidently 0/0 AND neither with a call. Carriage by forced
+    re-genotyping without an own call was false 33/33 in the IGV review of
+    PMS (ROADMAP 1septies), so it would label artefacts as transmitted.
+    """
     parents = [_load_parent_sites(p, min_gq) for p in parent_gt_tsvs]
+    own = [_load_own_calls(p) for p in parent_calls] if parent_calls else None
+    if own is not None and len(own) != len(parents):
+        raise ValueError("parent_calls must list one VCF per parent genotype table")
     ref = None
     if known_sites:
         from ..cohort.metrics import _KnownSites
@@ -99,15 +127,18 @@ def label_by_transmission(
             carrier = False
             confident_ref_both = True
             any_overlap = False
-            for psites in parents:
+            for k, psites in enumerate(parents):
                 hits = _overlapping(
                     psites.get((contig, svtype), []), start, end, min_ro
                 )
+                called = own is not None and bool(
+                    _overlapping(own[k].get((contig, svtype), []), start, end, min_ro)
+                )
                 if hits:
                     any_overlap = True
-                if any(h[0] for h in hits):
+                if any(h[0] for h in hits) and (own is None or called):
                     carrier = True
-                if not any(h[1] for h in hits):
+                if not any(h[1] for h in hits) or called:
                     confident_ref_both = False
             if (carrier or (any_overlap and confident_ref_both)) and ref is not None:
                 hit = ref.lookup(contig, start, end, svtype)
