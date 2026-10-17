@@ -154,7 +154,7 @@ def run_ped_annotate(
     import shutil
     import tempfile
 
-    from ..parallel import concat_text, has_index, pmap, vcf_regions
+    from ..parallel import concat_text, pmap, split_regions
 
     trios = pedigree.trios()
     stats = {
@@ -167,7 +167,7 @@ def run_ped_annotate(
         if all(ind.sample_id in vcf_samples for ind in t)
     ]
     logger.info("ped: %d/%d trios present in the VCF", len(usable), len(trios))
-    regions = vcf_regions(cohort_vcf) if jobs > 1 and has_index(cohort_vcf) else [None]
+    regions = split_regions(cohort_vcf, jobs)
     tmp = tempfile.mkdtemp(prefix=".ped_parts_", dir=Path(out_report).parent)
     try:
         tasks = [

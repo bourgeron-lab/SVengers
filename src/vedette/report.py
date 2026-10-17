@@ -2000,9 +2000,9 @@ def _read_cohort_vcf(path: Path, with_cn: bool = False, jobs: int = 1):
     — one core spent ~1.5 h in this loop on 2670 samples — and stacks them
     in file order.
     """
-    from .parallel import has_index, pmap, vcf_regions
+    from .parallel import pmap, split_regions
 
-    regions = vcf_regions(path) if jobs > 1 and has_index(path) else [None]
+    regions = split_regions(path, jobs)
     parts = list(pmap(_read_cohort_region, [(str(path), r, with_cn) for r in regions], jobs))
     samples = parts[0][0]
     sites = [site for part in parts for site in part[1]]

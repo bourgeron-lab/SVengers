@@ -18,6 +18,7 @@ hold an open htslib handle at that point (handles must not cross fork).
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ProcessPoolExecutor
@@ -27,6 +28,8 @@ from pathlib import Path
 import pysam
 
 REGION_SIZE = 10_000_000
+
+logger = logging.getLogger(__name__)
 
 
 def default_jobs() -> int:
@@ -69,6 +72,18 @@ def vcf_regions(path: str | Path, size: int | None = None) -> list[Region]:
             start += size
         regions.append((name, start, None))
     return regions
+
+
+def split_regions(path: str | Path, jobs: int) -> list[Region | None]:
+    """The regions to map over with ``jobs`` workers, or [None] (the whole
+    file, one pass) when serial or when the file has no index — warned, as
+    a missing .tbi silently cost a 2670-sample PED step 1 h on one core."""
+    if jobs <= 1:
+        return [None]
+    if not has_index(path):
+        logger.warning("%s has no .tbi/.csi index: one core instead of %d", path, jobs)
+        return [None]
+    return vcf_regions(path)
 
 
 def fetch_region(vf: pysam.VariantFile, region: Region) -> Iterator:

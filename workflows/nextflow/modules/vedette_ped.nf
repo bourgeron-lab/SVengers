@@ -4,6 +4,9 @@ process VEDETTE_PED {
 
     input:
     path cohort_vcf
+    // staged next to the VCF: without it the region split falls back to one
+    // core (1 h 08 instead of ~9 min on 2670 samples)
+    path cohort_index
 
     output:
     path "mendel_report.tsv", emit: report

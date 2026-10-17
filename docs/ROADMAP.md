@@ -46,8 +46,22 @@ Priorités :
    puis PMS rappelé avec `--pon` et comparé à v5n (PASS par génome selon la
    wave, sites, de novo, MVR). Métadonnées de séquençage (lot, kit, date)
    demandées pour une normalisation par lot.
-2. v9 et second avis CNN (1sexdecies) : après 1 ; ~180 labels IGV, pistes
-   GIAB identiques à la production (1septdecies).
+2. v9 et second avis CNN (1sexdecies). **v9 non retenu (2026-10-17)** :
+   recette v8 sur les appels avec PoN (GIAB HG002/3/4 rappelés avec la PoN,
+   24 enfants ondulés labellisés par transmission sur dataset_paper PoN,
+   wave_score neutralisée). Holdout ondulé bien meilleur (DEL P/R 0,945/0,647
+   -> 0,957/0,810 ; DUP 0,262/0,049 -> 0,846/0,320), relecture IGV +8 vrais
+   sans perte, DUP >= 1 kb enfin passées (31 -> 976 sur 40 enfants, 69 %
+   transmises) ; mais dataset_paper refiltré entier : de novo PASS (GQ >= 20)
+   médian par enfant 27 -> 63 (1-10 kb 14 -> 44, >= 10 kb 2 -> 5), MVR
+   3,15 -> 3,22 %, transmission 0,894 -> 0,878, et HG002 hors échantillon
+   F1 DEL 0,451 -> 0,405. Les labels de v9 ne voient pas l'échec : les
+   de novo apparents de 1-10 kb par la profondeur, quasi absents des labels
+   (les GIAB n'ont pas de parents propres hors HG002, les enfants ondulés
+   sont peu nombreux). Piste v10 : labels de cohorte sur des centaines de
+   trios dataset_paper PoN (de novo à parents confiants = FP, transmis = TP,
+   hors trios d'évaluation), évaluation par les métriques trios de cohorte
+   (désormais ~1 h pour 2670 génomes).
 3. Mosaïques complexes : mosaïque coupée par une délétion plus profonde
    (chr13), remaniement gain/perte en 7q11.23.
 4. **Génomes très bruités à l'appel** (relevé au rappel dataset_paper avec

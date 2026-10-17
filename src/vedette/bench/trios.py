@@ -89,7 +89,7 @@ def sweep(
     exclude_rescue: bool = False,
     jobs: int = 1,
 ) -> list[dict]:
-    from ..parallel import has_index, pmap, vcf_regions
+    from ..parallel import pmap, split_regions
 
     trios = pedigree.trios()
     thresholds = sorted(thresholds)
@@ -103,7 +103,7 @@ def sweep(
             raise ValueError("No complete trio present in the cohort VCF")
         if field not in vcf.header.formats:
             raise ValueError(f"FORMAT/{field} absent from {cohort_vcf}")
-    regions = vcf_regions(cohort_vcf) if jobs > 1 and has_index(cohort_vcf) else [None]
+    regions = split_regions(cohort_vcf, jobs)
     tasks = [
         (str(cohort_vcf), region, usable, thresholds, field, pass_only, exclude_rescue)
         for region in regions

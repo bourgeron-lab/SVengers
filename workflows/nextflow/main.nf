@@ -133,7 +133,7 @@ workflow {
     }
 
     if ('ped' in steps) {
-        VEDETTE_PED(VEDETTE_COHORT_FILTER.out.cohort_vcf)
+        VEDETTE_PED(VEDETTE_COHORT_FILTER.out.cohort_vcf, VEDETTE_COHORT_FILTER.out.cohort_index)
     }
 
     // chromosomal-scale mosaics, per sample from its store; the report stages
