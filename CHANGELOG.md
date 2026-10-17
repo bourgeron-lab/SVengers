@@ -40,6 +40,18 @@
   and family pages). PMS with 16 cores: merge 7 min -> 70 s, cohort-filter
   17 min -> 86 s, ped 3.5 min -> 19 s, report 12 min -> 3 min.
 
+- **report** — « Chromosomes sexuels »: per genome, chrX and chrY copy
+  number on the raw depth of the bins where the panel of normals tells the
+  sexes apart, chrX heterozygosity relative to the autosomes and chrX BAF;
+  XX/XY/X0/XXY/XXX/XYY, intermediate levels (mosaic, partial loss of Y), a
+  heterozygous single X (DNA contamination?) and pedigree-sex discordances
+  are listed and flagged in the carrier QC column. On 2989 GHFC genomes: one
+  XXY, one XYY, one XXX, a probable 45,X/46,XX mosaic, 8 partial losses of Y,
+  4 men with a heterozygous X, and 5 PMS families whose two parents have
+  their sexes swapped.
+- **pedigree** — sex written as "1.0"/"2.0" (the GHFC pedigrees) is parsed;
+  it read as unknown for every individual.
+
 ## v1.1.0 — 2026-10-13
 
 Production model, mosaic detection and a report reworked after an IGV review

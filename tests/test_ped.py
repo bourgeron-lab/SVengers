@@ -58,3 +58,12 @@ def test_identical_duplicate_line_tolerated(tmp_path):
 def test_too_few_columns(tmp_path):
     with pytest.raises(ValueError, match="6"):
         parse_ped(_write(tmp_path, "A\tB\tC\n"))
+
+
+def test_sex_written_as_float(tmp_path):
+    from vedette.ped import parse_ped
+
+    p = tmp_path / "ped.tsv"
+    p.write_text("F1\tA\t0\t0\t1.0\t1\nF1\tB\t0\t0\t2.0\t1\nF1\tC\tA\tB\t-9\t2\n")
+    ped = parse_ped(p)
+    assert [ped.sex_of(s) for s in "ABC"] == [1, 2, 0]

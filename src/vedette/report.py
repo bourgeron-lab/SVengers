@@ -31,6 +31,7 @@ import numpy as np
 import pysam
 
 from . import __version__
+from .karyotype import is_anomaly
 from .ped import Pedigree
 from .qc import WAVE_WARN
 
@@ -2100,6 +2101,37 @@ def carrier_excess(n_carrier: np.ndarray) -> np.ndarray:
     return n_carrier / med
 
 
+def _sample_karyotype(task) -> dict | None:
+    """sex_chromosome_stats + classify for one sample, with the panel of
+    normals its store was called with (none: no informative bins, None)."""
+    import zarr
+
+    from .extract.store import EvidenceStore
+    from .karyotype import classify, sex_chromosome_stats
+
+    store_path, ped_sex = task
+    try:
+        store = EvidenceStore(store_path)
+        pon = store.meta.get("pon")
+        if not pon or not Path(pon).exists():
+            return None
+        st = sex_chromosome_stats(store, zarr.open(pon, mode="r"))
+    except (OSError, KeyError, ValueError):
+        return None
+    if st is None:
+        return None
+    return {**st, **classify(st, ped_sex)}
+
+
+def sex_karyotypes(run_dir: Path, samples: list[str], ped_sex: dict[str, str | None],
+                   jobs: int = 1) -> dict[str, dict]:
+    """{sample: karyotype record} for the samples whose store carries a PoN."""
+    from .parallel import pmap
+
+    tasks = [(str(run_dir / "samples" / s / f"{s}.evidence.zarr"), ped_sex.get(s)) for s in samples]
+    return {s: k for s, k in zip(samples, pmap(_sample_karyotype, tasks, jobs), strict=True) if k}
+
+
 def generate_report(
     run_dir: str | Path,
     pedigree: Pedigree | None,
@@ -2429,6 +2461,39 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             "(|BAF − 0,5| observé au-delà du bruit / attendu). Autosomes seulement. Constat "
             "technique à confirmer par une méthode clinique (caryotype, ACPA).</p>"
             + _table(["échantillon", "chr", "Mb", "type", "CN", "BAF obs. / att."], constit_rows)
+        )
+    # sex chromosomes: the mosaic scan is autosomal, and the caller's own sex
+    # inference sets the X/Y baseline — an extra or missing X otherwise shows,
+    # at best, as fragmented gains (an XXX genome of dataset_paper)
+    ped_sex = ({i.sample_id: {1: "M", 2: "F"}.get(i.sex) for i in pedigree.individuals.values()}
+               if pedigree is not None else {})
+    karyo = sex_karyotypes(run_dir, samples, ped_sex, jobs=jobs)
+    if karyo:
+        kc = Counter(k["karyotype"] for k in karyo.values())
+        kar_rows = sorted(
+            [s_, {"M": "masculin", "F": "féminin"}.get(ped_sex.get(s_) or "", "—"),
+             f'{k["x_cn"]:.2f}', "—" if k["y_cn"] is None else f'{k["y_cn"]:.2f}',
+             "—" if k["x_het"] is None else f'{k["x_het"]:.2f}',
+             "—" if k["x_baf"] is None else f'{k["x_baf"]:.3f}', k["karyotype"], k["note"] or "—"]
+            for s_, k in karyo.items() if is_anomaly(k)
+        )
+        for s_, k in karyo.items():
+            if is_anomaly(k):
+                sample_qc.setdefault(s_, []).append(
+                    k["karyotype"] if not k["note"] else f'{k["karyotype"]} ({k["note"]})')
+        mosaic_section += (
+            "<h3>Chromosomes sexuels</h3>"
+            f"<p>{len(karyo)} génomes : " + ", ".join(f"{n} {k}" for k, n in kc.most_common())
+            + ". Nombre de copies de chrX et chrY sur la profondeur brute (bins où le panel de "
+            "normaux distingue les sexes : régions pseudo-autosomiques et répétitions X/Y "
+            "exclues), hétérozygotie de chrX rapportée aux autosomes (un seul X : ~0 ; deux : "
+            "~1), |BAF − 0,5| des sites hétérozygotes de chrX (XX ~0,06 ; XXX ~0,17). "
+            "Signalés : caryotype autre que XX/XY, niveau intermédiaire (mosaïque, perte "
+            "partielle du Y), un seul X hétérozygote (contamination ?), sexe du pedigree "
+            "discordant. Constat technique à confirmer par une méthode clinique.</p>"
+            + (_table(["échantillon", "sexe pedigree", "CN chrX", "CN chrY", "hétéroz. X",
+                       "BAF X", "caryotype", "remarque"], kar_rows)
+               if kar_rows else "<p>Aucune anomalie.</p>")
         )
 
     # ---- family events pages: one sweep of the matrices, never a per-family

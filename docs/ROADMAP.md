@@ -91,7 +91,7 @@ Priorités :
    hidden splits plus tôt ou la borner en temps ; réserver d'emblée plus de
    mémoire à ces génomes plutôt que d'attendre l'échec ; les signaler au
    rapport comme génomes à prudence.
-5. **Caryotype des chromosomes sexuels** : le scan de mosaïques ne couvre
+5. **Caryotype des chromosomes sexuels** — FAIT (2026-10-17, `karyotype.py`, section « Chromosomes sexuels » du rapport ; 2989 génomes GHFC : 1 XXY, 1 XYY, 1 XXX, 1 mosaïque X probable, 8 pertes partielles du Y, 4 hommes à X hétérozygote = contamination ?, 5 familles PMS aux sexes des parents inversés). Plan initial : le scan de mosaïques ne couvre
    que les autosomes, un gain de chrX entier (XXX probable sur dataset_paper)
    n'est vu que par les appels. Contrôle X/Y explicite par génome : CN
    moyen de chrX et chrY (et BAF de chrX hors PAR) contre le sexe du

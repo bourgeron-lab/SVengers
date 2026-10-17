@@ -107,7 +107,9 @@ def parse_ped(path: str | Path) -> Pedigree:
                 continue
             raise ValueError(f"{path}:{i}: conflicting duplicate sample_id {sid!r}")
         try:
-            sex_code = int(sex)
+            # the GHFC pedigrees write "1.0"/"2.0": int() refused them and
+            # every individual came out of unknown sex
+            sex_code = int(float(sex))
         except ValueError:
             sex_code = 0
         if sex_code not in (0, 1, 2):
