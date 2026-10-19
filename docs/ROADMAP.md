@@ -82,7 +82,13 @@ Priorités :
    pas de nouveau réentraînement sur labels de transmission seuls.
 3. Mosaïques complexes : mosaïque coupée par une délétion plus profonde
    (chr13), remaniement gain/perte en 7q11.23.
-4. **Génomes très bruités à l'appel** (relevé au rappel dataset_paper avec
+4. **Génomes très bruités à l'appel** — FAIT en partie (2026-10-19) : la
+   recherche de la pile SR de chaque cluster PE parcourait toutes les piles du
+   contig (quadratique ; 1,9 M piles sur chr20 d'un génome bruité) -> recherche
+   binaire, sorties identiques ; génome bruité entier 8 h 56 -> 3 h 10, VCF
+   identique ; pic mémoire ~48 Go -> relance Nextflow à 72 Go. Reste : le
+   budget des hidden splits épuisé sur chaque contig (~2 h du reste), et le
+   pic mémoire après le scan. Constat initial : (relevé au rappel dataset_paper avec
    PoN, 2026-10-16) : 5 génomes d'un même lot tués par OOM à 24 Go en
    ~5 min, puis 5 à 9 h par appel au lieu de ~1 h (~5 M pileups faibles par
    chromosome, budget d'alignement des hidden splits épuisé à chaque
