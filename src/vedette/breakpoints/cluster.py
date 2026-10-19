@@ -197,7 +197,8 @@ def cluster_cigar_dels(
 def _nearest_sr(
     breakpoints: list[SRBreakpoint], side: int, lo: int, hi: int
 ) -> SRBreakpoint | None:
-    """Best SR pileup of the wanted side within [lo, hi] (most reads wins)."""
+    """Best SR pileup of the wanted side within [lo, hi] (most reads wins;
+    the first of equals in position order). Reference for _SRIndex."""
     best = None
     for bp in breakpoints:
         if bp.side != side or not (lo <= bp.pos <= hi):
@@ -205,6 +206,38 @@ def _nearest_sr(
         if best is None or bp.n > best.n:
             best = bp
     return best
+
+
+class _SRIndex:
+    """_nearest_sr by binary search on per-side, position-sorted pileups.
+
+    The linear scan ran once per PE cluster over every pileup of the contig:
+    quadratic, and a noisy genome has millions of pileups (a batch of five
+    noisy dataset_paper genomes: 1.9 M on chr20, 7 of the 13 min of its chr20
+    call, 5-9 h per genome). Same answer: the pileups of one side keep their relative
+    order, so the first maximum in the window is the same pileup.
+    """
+
+    def __init__(self, breakpoints: list[SRBreakpoint]):
+        self._by_side: dict[int, tuple[np.ndarray, list[SRBreakpoint]]] = {}
+        for side in {bp.side for bp in breakpoints}:
+            bps = [bp for bp in breakpoints if bp.side == side]
+            order = sorted(range(len(bps)), key=lambda i: bps[i].pos)  # stable
+            bps = [bps[i] for i in order]
+            self._by_side[side] = (np.array([bp.pos for bp in bps], dtype=np.int64), bps)
+
+    def nearest(self, side: int, lo: int, hi: int) -> SRBreakpoint | None:
+        entry = self._by_side.get(side)
+        if entry is None:
+            return None
+        pos, bps = entry
+        i = int(np.searchsorted(pos, lo, "left"))
+        j = int(np.searchsorted(pos, hi, "right"))
+        best = None
+        for bp in bps[i:j]:
+            if best is None or bp.n > best.n:
+                best = bp
+        return best
 
 
 def make_junctions(
@@ -226,6 +259,7 @@ def make_junctions(
       start breakpoint in [pos1_lo - mu, pos1_hi], end in [pos2_lo, pos2_hi + mu].
     """
     sr_bps = cluster_sr(sr, config)
+    sr_index = _SRIndex(sr_bps)
     junctions: list[Junction] = []
     mu = int(insert.mu) or 500
 
@@ -238,8 +272,8 @@ def make_junctions(
                 start_lo, start_hi = max(cl.pos1_lo - mu, 0), cl.pos1_hi + 150
                 end_lo, end_hi = cl.pos2_lo, cl.pos2_hi + mu
 
-            sr_at_start = _nearest_sr(sr_bps, SR_RIGHT_CLIP, start_lo, start_hi)
-            sr_at_end = _nearest_sr(sr_bps, SR_LEFT_CLIP, end_lo, end_hi)
+            sr_at_start = sr_index.nearest(SR_RIGHT_CLIP, start_lo, start_hi)
+            sr_at_end = sr_index.nearest(SR_LEFT_CLIP, end_lo, end_hi)
 
             start = sr_at_start.pos if sr_at_start else (start_lo + start_hi) // 2
             end = sr_at_end.pos if sr_at_end else (end_lo + end_hi) // 2

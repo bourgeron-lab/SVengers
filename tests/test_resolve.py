@@ -138,3 +138,28 @@ def test_alignment_budget_keeps_strongest_pileups(ref):
     assert [(j.svtype, j.start, j.end) for j in junctions] == [("DEL", 2000, 2500)]
     # no budget: the weak pileups also realign (sanity that the cap did the cut)
     assert len(recover_junctions(sr, seqs, ref, BreakpointConfig())) > 1
+
+
+def test_sr_index_matches_linear_scan():
+    """_SRIndex (binary search) picks the same pileup as the linear scan,
+    including the first of equal-support pileups."""
+    import random
+
+    from vedette.breakpoints.cluster import (
+        SR_LEFT_CLIP,
+        SR_RIGHT_CLIP,
+        SRBreakpoint,
+        _nearest_sr,
+        _SRIndex,
+    )
+
+    rng = random.Random(3)
+    bps = [SRBreakpoint(pos=rng.randrange(0, 50_000), side=rng.choice((SR_LEFT_CLIP, SR_RIGHT_CLIP)),
+                        n=rng.randint(2, 6), mean_mapq=60.0, max_cliplen=30) for _ in range(2000)]
+    bps.sort(key=lambda b: b.pos)
+    idx = _SRIndex(bps)
+    for _ in range(3000):
+        lo = rng.randrange(0, 50_000)
+        hi = lo + rng.randrange(0, 1500)
+        side = rng.choice((SR_LEFT_CLIP, SR_RIGHT_CLIP))
+        assert idx.nearest(side, lo, hi) is _nearest_sr(bps, side, lo, hi)
