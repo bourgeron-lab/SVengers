@@ -49,6 +49,15 @@
   XXY, one XYY, one XXX, a probable 45,X/46,XX mosaic, 8 partial losses of Y,
   4 men with a heterozygous X, and 5 PMS families whose two parents have
   their sexes swapped.
+- **call (fix)** — with a panel of normals, a male chrX/chrY was divided by
+  the male panel median (~0.5) and came out at ratio 1.0 against a baseline
+  of 0.5: every male had his whole chrX and chrY called a CN 2 DUP (1,501
+  dataset_paper men, 156 Mb of chrX in median), and cohort genotyping read
+  every man as a carrier of the chrX DUP sites. The normalized ratio is
+  brought back to the sample's baseline (ploidy / 2). Re-called male genome:
+  autosomes identical, chrX depth DUP 156 -> 0.2 Mb; female genome
+  identical. Stores and calls made with a PoN before this fix must be
+  re-called for the men.
 - **pedigree** — sex written as "1.0"/"2.0" (the GHFC pedigrees) is parsed;
   it read as unknown for every individual.
 

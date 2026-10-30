@@ -220,23 +220,30 @@ class PanelOfNormals:
         min_median: float = 0.25,
         max_cv: float = 0.30,
         denoise: bool = True,
+        level: float = 1.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         """(normalized ratio, extended mask).
 
-        Bins are divided by the population median ratio; bins where the
-        population is too variable (MAD/median > max_cv) or systematically
-        aberrant (median < min_median) are masked as depth-uninformative.
-        When the panel carries SVD components (and ``denoise``), the sample's
-        projection onto the panel's residual-variation axes is also removed.
+        Bins are divided by the population median ratio and brought back to
+        the sample's baseline ``level`` (ploidy / 2: 0.5 on a male chrX or
+        chrY, whose sex-stratified median is already ~0.5 — without it every
+        male chrX came out at ratio 1.0 and was called a whole-chromosome
+        DUP); bins where the population is too variable (MAD/median > max_cv)
+        or systematically aberrant (median < min_median x level) are masked
+        as depth-uninformative. When the panel carries SVD components (and
+        ``denoise``), the sample's projection onto the panel's
+        residual-variation axes is also removed.
         """
+        if level <= 0:  # chrY of a female: no baseline, not called
+            return ratio, mask
         prof = self.profile(contig, sex)
         if prof is None or len(prof[0]) != len(ratio):
             logger.warning("PoN: no usable profile for %s, ratio left untouched", contig)
             return ratio, mask
         median, mad = prof
-        ok = np.isfinite(median) & (median >= min_median)
+        ok = np.isfinite(median) & (median >= min_median * level)
         out = ratio.copy()
-        out[ok] = ratio[ok] / median[ok]
+        out[ok] = ratio[ok] / median[ok] * level
         bad = ~ok | (np.isfinite(median) & (mad > max_cv * np.maximum(median, 1e-3)))
 
         if denoise:

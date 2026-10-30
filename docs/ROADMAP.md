@@ -104,7 +104,27 @@ Priorités :
    pedigree → XXY, X0, XXX, XYY et mosaïques des gonosomes, discordances de
    sexe ; ligne dans le tableau des anomalies chromosomiques
    constitutionnelles. Petit chantier, faisable en parallèle de 2.
-6. Article dataset_paper : chiffres hors échantillon, comparaison aux
+6. **chrX/chrY des hommes avec le PoN** — CORRIGÉ dans le code
+   (2026-10-30), RAPPEL À FAIRE. `PanelOfNormals.normalize` divisait le chrX
+   d'un homme (~0,5) par la médiane des hommes du panel (~0,5) : ratio 1,0
+   contre une ligne de base à 0,5, tout le chrX (et chrY) appelé DUP CN 2
+   chez les 1 501 hommes de dataset_paper (médiane 156 Mo) et ceux de PMS
+   depuis le passage au PoN. v5n les rejette (SQ ~0,01), mais le génotypage
+   de cohorte lit chaque homme porteur des sites DUP de chrX (8 637 des
+   10 182 sites chrX filtrés ont > 50 % d'hommes porteurs, CohortArtifact) :
+   une vraie DUP de chrX chez un garçon (MECP2) risque d'être écartée.
+   Correction : ratio ramené au niveau ploïdie/2 ; génome masculin rappelé :
+   autosomes identiques, DUP de profondeur chrX 156 -> 0,2 Mo ; génome
+   féminin identique. Rappeler les hommes (dataset_paper 1 503, PMS 153)
+   puis refaire merge -> rapport.
+   **Relecture IGV v4 (2026-10-30, 55 appels de profondeur >= 10 kb, 40
+   enfants, à l'aveugle v5n/v10)** : DEL v10 seul 16/16 vrais, v5n seul 1
+   vrai / 3 faux (DUSP22) / 2 incertains, les deux 8/8 ; DUP les deux 4/4
+   (sauvetage LARGE_DUP_BAF), v10 seul autosomes 3 vrais + 1 incertain,
+   v10 seul chrX/chrY 0/17 — toutes ce bug (hommes XY normaux). Les labels
+   de transmission de v10 en étaient contaminés (chaque père « porteur » de
+   son chrX entier). À refaire après le rappel : labels de cohorte puis v11.
+7. Article dataset_paper : chiffres hors échantillon, comparaison aux
    autres callers sur les métriques trios, figures.
 
 ### Plan de publication (2026-10-14) — pas la priorité

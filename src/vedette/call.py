@@ -177,7 +177,9 @@ def run_call(
         n_new_masked = 0
         for name in call_names:
             before = int(mask[name].sum())
-            ratio[name], mask[name] = pon.normalize(name, ratio[name], mask[name], sex=sex)
+            ratio[name], mask[name] = pon.normalize(
+                name, ratio[name], mask[name], sex=sex, level=ploidy.get(name, 2) / 2.0
+            )
             corr[name] = (ratio[name] * mean_depth).astype(np.float32)
             n_new_masked += int(mask[name].sum()) - before
         logger.info("PoN: applied (%s), %d additional bins masked", sex, n_new_masked)

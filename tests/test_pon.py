@@ -72,6 +72,33 @@ def test_sex_stratified_chrx(tmp_path):
     assert np.median(med_f) == pytest.approx(1.0, abs=0.05)
 
 
+def test_male_chrx_stays_at_its_baseline(tmp_path):
+    """A male chrX divided by the male panel must come back at ratio 0.5 (CN1),
+    not 1.0: every dataset_paper male had his whole chrX called a DUP."""
+    rng = np.random.default_rng(2)
+    paths = []
+    for sex, base in (("male", 0.5), ("female", 1.0)):
+        for i in range(4):
+            r = rng.normal(base, 0.03, N_BINS)
+            r[:50] = rng.normal(1.0, 0.03, 50)          # pseudo-autosomal: 2 copies in both
+            paths.append(_make_store(tmp_path, f"{sex}{i}", r, sex=sex, contig="chrX"))
+    pon = PanelOfNormals(build_pon(paths, tmp_path / "pon.zarr", min_samples=8))
+    mask = np.zeros(N_BINS, dtype=bool)
+    male = rng.normal(0.5, 0.03, N_BINS)
+    male[:50] = 1.0
+    male[600:650] = 0.0                                  # hemizygous deletion
+    norm, _ = pon.normalize("chrX", male, mask, sex="male", level=0.5)
+    assert np.median(norm[100:600]) == pytest.approx(0.5, abs=0.05)
+    assert np.median(norm[:50]) == pytest.approx(0.5, abs=0.05)
+    assert np.max(norm[600:650]) == pytest.approx(0.0, abs=0.01)
+    female = rng.normal(1.0, 0.03, N_BINS)
+    norm, _ = pon.normalize("chrX", female, mask, sex="female", level=1.0)
+    assert np.median(norm) == pytest.approx(1.0, abs=0.05)
+    # chrY of a female (ploidy 0): left as it is
+    norm, new_mask = pon.normalize("chrX", female, mask, sex="female", level=0.0)
+    assert np.array_equal(norm, female) and not new_mask.any()
+
+
 def test_bin_size_guard(tmp_path, cohort_stores):
     pon = PanelOfNormals(build_pon(cohort_stores, tmp_path / "pon.zarr", min_samples=5))
     assert pon.bin_size == 1000
