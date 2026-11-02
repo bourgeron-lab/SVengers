@@ -58,6 +58,26 @@
   autosomes identical, chrX depth DUP 156 -> 0.2 Mb; female genome
   identical. Stores and calls made with a PoN before this fix must be
   re-called for the men.
+- **call, genotype (fix)** — the depth noise (sigma0) is fitted around the
+  contig's own baseline and expressed at CN2: on a male chrX at 0.5, the
+  former 0.7-1.3 window kept ~170 of 147k bins and gave sigma0 0.02 instead
+  of 0.08, so single-bin dips became hemizygous deletions (about a third of
+  the men genotyped 1/1 at recurrent chrX sites, ~75 chrX "de novo" per
+  child). Hidden before the PoN fix, which left male chrX at 1.0.
+- **cohort-filter, ped-annotate, bench trios** — chrX/chrY aware: men are
+  hemizygous outside the PARs (male founders out of the HWE test, carrier
+  fraction per sex, CN discordance against the carrier's ploidy), a son's
+  chrX comes from his mother only, chrY from the father only.
+- **cohort-filter** — `ChrYNoDepth`: on chrY outside the PARs, a site whose
+  carriers' copy number does not support the SV type (fewer than half of
+  them above / below their baseline) leaves PASS. dataset_paper, once the
+  men's chrY was called at its baseline: 525 chrY PASS sites, 453 of them
+  small junction-only calls in the Y repeats carried by up to two thirds of
+  the men, with a son disagreeing with his father in 40-54 % of the pairs
+  carrying them; the 70 deletions the copy number supports, 20 %.
+- **filter** — the default operating threshold is SQ >= 5 (was 13), the
+  operating point of the shipped model `models/v5n`: without a site TOML
+  setting it, a run filtered far more than production.
 - **pedigree** — sex written as "1.0"/"2.0" (the GHFC pedigrees) is parsed;
   it read as unknown for every individual.
 
