@@ -17,7 +17,15 @@ genome:
   (one X: ~0, sequencing errors only; two or more: ~0.7, the X's lower
   diversity);
 - ``x_baf``: median |BAF - 0.5| of those heterozygous sites (XX ~0.07 at 30x,
-  XXX ~0.17: VAF 1/3 and 2/3).
+  XXX ~0.17: VAF 1/3 and 2/3);
+- ``gc_contrast``: median copy number of the GC-rich autosomes (16, 17, 19,
+  22) minus that of the AT-rich ones (4, 5, 13, 18). Raw depth carries the
+  genome's GC bias, and chrX, AT-rich, reads like chr4: a dataset_paper man
+  (wave 0.50, contrast 1.23) had chrX at 0.84 and chrY at 0.65, a PMS woman
+  (contrast 1.06) chrX at 1.70 — two "mosaics" that were GC alone. Medians of
+  four, so one trisomic chromosome (13, 18) does not move it. Of 2989
+  genomes, 14 above 0.5; of the 27 the karyotype pass flagged, these two
+  above 0.3 and the rest below 0.28.
 
 ``classify`` turns them into XX, XY, X0, XXY, XXX, XYY, or an
 "intermediate" level (a mosaic such as 45,X/46,XX, or a partial loss of Y),
@@ -36,6 +44,9 @@ MIN_BINS = 500
 CN_TOL = 0.25
 X_HET_ONE = 0.15             # x_het below this: a single X
 X_BAF_THREE = 0.12           # x_baf above this with x_cn ~3: three X
+GC_RICH = ("chr16", "chr17", "chr19", "chr22")
+AT_RICH = ("chr4", "chr5", "chr13", "chr18")
+GC_CONTRAST_MAX = 0.5        # above this an abnormal X/Y level is not read
 
 
 def informative_bins(pon_root, contig: str) -> np.ndarray | None:
@@ -77,6 +88,7 @@ def sex_chromosome_stats(store, pon_root) -> dict | None:
     if not store.has_contig("chrX"):
         return None
     auto = []
+    per_chrom = {}
     n_sites = n_het = 0
     for c in AUTOSOMES:
         if not store.has_contig(c):
@@ -84,6 +96,8 @@ def sex_chromosome_stats(store, pon_root) -> dict | None:
         raw, mask = _raw(store, c)
         v = raw[::AUTOSOME_STRIDE][~mask[::AUTOSOME_STRIDE]]
         auto.append(v[v > 0])
+        if len(auto[-1]):
+            per_chrom[c] = float(np.median(auto[-1]))
         if c in ("chr2", "chr7", "chr12"):
             s, h, _ = _het(store, c)
             n_sites += s
@@ -92,8 +106,11 @@ def sex_chromosome_stats(store, pon_root) -> dict | None:
     if len(auto) < MIN_BINS:
         return None
     base = float(np.median(auto))
+    gc = [2.0 * per_chrom[c] / base for c in GC_RICH if c in per_chrom]
+    at = [2.0 * per_chrom[c] / base for c in AT_RICH if c in per_chrom]
     out = {"sample": store.sample, "x_cn": None, "y_cn": None, "x_het": None, "x_baf": None,
-           "x_bins": 0, "y_bins": 0}
+           "x_bins": 0, "y_bins": 0,
+           "gc_contrast": round(float(np.median(gc) - np.median(at)), 3) if gc and at else None}
     for c in ("chrX", "chrY"):
         bins = informative_bins(pon_root, c)
         if bins is None or not store.has_contig(c):
@@ -143,6 +160,12 @@ def classify(st: dict, ped_sex: str | None = None) -> dict:
             notes.append(f"un seul chrX mais hétérozygote ({het:.2f}) : contamination de l'ADN ?")
         if nx == 3 and baf is not None and baf < X_BAF_THREE:
             notes.append(f"BAF de chrX {baf:.3f}, attendue ~0,17 pour XXX")
+    gcc = st.get("gc_contrast")
+    if gcc is not None and abs(gcc) > GC_CONTRAST_MAX and kar not in ("XX", "XY"):
+        # an XX/XY reading survives the bias; anything else may be the bias
+        return {"karyotype": "?", "note": f"biais GC du génome (contraste {gcc:.2f} copie entre "
+                                          "autosomes riches et pauvres en GC) : niveaux X/Y non "
+                                          "interprétables"}
     if ped_sex in ("M", "F") and kar not in ("?", "intermédiaire"):
         has_y = "Y" in kar
         if (ped_sex == "M") != has_y:

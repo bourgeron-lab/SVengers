@@ -2576,7 +2576,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             "~1), |BAF − 0,5| des sites hétérozygotes de chrX (XX ~0,06 ; XXX ~0,17). "
             "Signalés : caryotype autre que XX/XY, niveau intermédiaire (mosaïque, perte "
             "partielle du Y), un seul X hétérozygote (contamination ?), sexe du pedigree "
-            "discordant. Constat technique à confirmer par une méthode clinique.</p>"
+            "discordant ; « ? » quand un niveau anormal de X ou Y coïncide avec un fort biais "
+            "GC du génome (autosomes riches en GC loin au-dessus des pauvres). Constat technique à confirmer par une méthode clinique.</p>"
             + (_table(["échantillon", "sexe pedigree", "CN chrX", "CN chrY", "hétéroz. X",
                        "BAF X", "caryotype", "remarque"], kar_rows)
                if kar_rows else "<p>Aucune anomalie.</p>")

@@ -510,7 +510,13 @@ ordinary gain and a missing one is invisible. The report therefore reads, per ge
 
 These classify XX, XY, X0, XXY, XXX, XYY or an intermediate level (mosaic such as
 45,X/46,XX, partial loss of Y), and flag a heterozygous single X (possible DNA
-contamination), two X without heterozygosity, and pedigree-sex discordances. The
+contamination), two X without heterozygosity, and pedigree-sex discordances. Raw depth
+carries the genome's GC bias, and chrX, AT-rich, reads like the AT-rich autosomes: when
+the median copy number of the GC-rich autosomes (16, 17, 19, 22) exceeds that of the
+AT-rich ones (4, 5, 13, 18) by more than 0.5, an abnormal X/Y reading is reported as `?`
+(an XX/XY reading is kept). On dataset_paper and PMS this voided exactly two false
+"mosaics" (a man at chrX 0.84 / chrY 0.65, a woman at chrX 1.70) and none of the other 25
+flagged genomes; a single trisomic autosome does not move the medians. The
 karyotype needs a panel of normals: it is computed for genomes whose store records the
 path of the PoN they were called with, and the PoN must still exist at that path.
 

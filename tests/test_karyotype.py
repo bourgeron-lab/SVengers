@@ -31,11 +31,13 @@ def _pon(tmp_path):
     return root
 
 
-def _store(tmp_path, x_copies, y_copies, het_x=None, x_baf_shift=0.0, seed=0):
+def _store(tmp_path, x_copies, y_copies, het_x=None, x_baf_shift=0.0, seed=0, auto=None):
     rng = np.random.default_rng(seed)
     path = tmp_path / f"S{x_copies}{y_copies}.evidence.zarr"
     w = EvidenceStoreWriter(path, sample="S", reference_id="x", bin_size=BIN)
-    for c, cn in (("chr2", 2), ("chr7", 2), ("chr12", 2), ("chrX", x_copies), ("chrY", y_copies)):
+    # auto: {autosome: copies} beyond chr2/7/12 (a GC bias, a trisomy)
+    contigs = [("chr2", 2), ("chr7", 2), ("chr12", 2), *(auto or {}).items()]
+    for c, cn in (*contigs, ("chrX", x_copies), ("chrY", y_copies)):
         depth = (15.0 * cn + rng.normal(0, 1.0, N)).clip(0).astype(np.float32)
         if c == "chrX":
             depth[:200] = 30.0                      # pseudo-autosomal: 2 copies in both sexes
@@ -66,6 +68,24 @@ def test_triple_x_and_its_baf(tmp_path):
     st = sex_chromosome_stats(_store(tmp_path, 3, 0, x_baf_shift=1 / 6), _pon(tmp_path))
     assert classify(st)["karyotype"] == "XXX"
     assert st["x_baf"] == pytest.approx(1 / 6, abs=0.03)
+
+
+def test_gc_bias_voids_an_abnormal_reading(tmp_path):
+    pon = _pon(tmp_path)
+    # GC-rich autosomes at 3 copies, AT-rich at 1.6, chrX read at 1.6 in a woman
+    biased = {"chr4": 1.6, "chr5": 1.6, "chr13": 1.6, "chr18": 1.6,
+              "chr16": 3, "chr17": 3, "chr19": 3, "chr22": 3}
+    st = sex_chromosome_stats(_store(tmp_path, 1.6, 0, het_x=0.6, auto=biased), pon)
+    assert st["gc_contrast"] == pytest.approx(1.4, abs=0.1)
+    assert classify(st, "F")["karyotype"] == "?" and "biais GC" in classify(st, "F")["note"]
+    # an XY reading survives the same bias
+    st = sex_chromosome_stats(_store(tmp_path, 1, 1, auto=biased), pon)
+    assert classify(st, "M") == {"karyotype": "XY", "note": ""}
+    # a trisomy 18 is not a GC bias
+    tri = {c: 2 for c in biased} | {"chr18": 3}
+    st = sex_chromosome_stats(_store(tmp_path, 2, 1, seed=1, auto=tri), pon)
+    assert st["gc_contrast"] == pytest.approx(0, abs=0.1)
+    assert classify(st, "M")["karyotype"] == "XXY"
 
 
 def test_pedigree_discordance_contamination_and_mosaic():

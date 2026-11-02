@@ -82,6 +82,13 @@
   extra X over MECP2 read as a de novo duplication. On the family events
   pages those calls read « caryotype XXY » instead of « de novo », without
   the de novo alerts.
+- **karyotype** — GC bias guard: raw depth carries the genome's GC bias and
+  chrX, AT-rich, reads like chr4. A dataset_paper man (wave 0.50, autosomes
+  from 1.68 copies on chr4 to 3.55 on chr19) read chrX 0.84 / chrY 0.65
+  (« intermédiaire »), a PMS woman chrX 1.70 (« mosaïque ? »). New
+  `gc_contrast` (median CN of chr16/17/19/22 minus chr4/5/13/18; 14 of 2989
+  genomes above 0.5): above 0.5 an abnormal X/Y reading becomes « ? » with a
+  GC-bias note, an XX/XY one is kept. Only those two genomes change.
 - **cohort-filter, ped-annotate, bench trios** — chrX/chrY aware: men are
   hemizygous outside the PARs (male founders out of the HWE test, carrier
   fraction per sex, CN discordance against the carrier's ploidy), a son's
