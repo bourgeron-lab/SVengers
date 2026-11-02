@@ -630,6 +630,10 @@ def report(
         help="Sample-ID prefix of older, lower-quality genomes (repeatable; IP at the GHFC): no sub-threshold rows for them",
     ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
+    allow_missing_stores: bool = typer.Option(
+        False, "--allow-missing-stores",
+        help="Report even when no sample has an evidence store under samples/<S>/ (no karyotype section, wave QC or depth-based bounds)",
+    ),
 ) -> None:
     """Self-contained HTML cohort report + per-family workspaces."""
     from .parallel import resolve_jobs
@@ -655,6 +659,7 @@ def report(
         mosaic_dir=mosaic_dir,
         low_quality_prefixes=tuple(low_quality_prefix),
         jobs=resolve_jobs(jobs),
+        require_stores=not allow_missing_stores,
     )
     typer.echo(f"rapport -> {path}")
 

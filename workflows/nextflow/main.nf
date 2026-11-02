@@ -54,6 +54,27 @@ def validatedSteps() {
     return wanted
 }
 
+// Re-filter mode: the report (and a later `vedette report` by hand) reads each
+// store at <outdir>/samples/<S>/, but only the filter outputs are published
+// there -- a 2670-sample re-filter lost the sex-chromosome section and wave
+// alerts without a word (2026-11-02). Symlink the published call instead: no
+// copy of the stores, and no publishDir on a passthrough input (the symlink
+// cycle of VEDETTE_FILTER). Entries already present are left alone.
+def linkPublishedCall(String sample, src_dir) {
+    def dest_dir = file("${params.outdir}/samples/${sample}")
+    if (dest_dir.exists() && java.nio.file.Files.isSameFile(dest_dir, src_dir)) {
+        return  // --calls_dir is this run's own samples/
+    }
+    dest_dir.mkdirs()
+    ["${sample}.evidence.zarr", "${sample}.vedette.vcf.gz", "${sample}.vedette.vcf.gz.tbi"].each { fn ->
+        def src = src_dir.resolve(fn)
+        def dest = dest_dir.resolve(fn)
+        if (src.exists() && !java.nio.file.Files.exists(dest, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            java.nio.file.Files.createSymbolicLink(dest, src.toRealPath())
+        }
+    }
+}
+
 workflow {
 
     def steps = validatedSteps()
@@ -99,6 +120,7 @@ workflow {
             if (!vcf.exists() || !store.exists()) {
                 error "ERROR: published call missing for ${sample} under ${params.calls_dir}"
             }
+            linkPublishedCall(sample, d)
             tuple(sample, vcf, file("${vcf}.tbi"), store)
         }
     }

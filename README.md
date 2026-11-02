@@ -172,7 +172,8 @@ A `local` profile runs everything on one machine for smoke tests (`--contigs chr
 `--steps` must be a prefix of `call → filter → merge → genotype → cohort → ped → report`
 (default: `call,filter`), or start at `filter` with `--calls_dir` pointing at published
 calls (`<dir>/<S>/<S>.vedette.vcf.gz` + `<S>.evidence.zarr`): the re-filter path after a
-model update. `ped` requires `--pedigree`; `report` runs after `ped`. Other parameters:
+model update; those are symlinked into `<outdir>/samples/<S>/`, where the report reads
+the stores. `ped` requires `--pedigree`; `report` runs after `ped`. Other parameters:
 `--known_sites` (reference cohort VCF for `CommonRef`), `--artifact_bed`,
 `--family_workspaces` (per-family VCF subsets, default `true`; disable on 1000+-family
 cohorts), `--family_events`, `--events_pass_only` (needed at cohort scale), `--mosaic`
@@ -520,7 +521,10 @@ candidates (children above max(`--max-denovo-per-child`, 5× the cohort median; 
 median rule from 20 children on) are flagged as technical outliers and left out of the
 tables), rare sites (≤ 2 carriers) with genes and
 impact, chromosomal mosaics, constitutional chromosome anomalies, sex chromosomes, and a
-per-sample table (carrier load, GQ, wave score).
+per-sample table (carrier load, GQ, wave score). The sex chromosomes, wave scores and
+depth-based bounds come from the evidence stores at `samples/<S>/<S>.evidence.zarr`: the
+report warns about samples without one and stops when none has one
+(`--allow-missing-stores` to report anyway).
 
 With `--family-events`, each family of ≤ 20 members gets `families/<FID>/events.html`: one
 row per biological event carried by a member, filterable by chromosome, type, validation

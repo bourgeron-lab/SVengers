@@ -36,7 +36,8 @@ process VEDETTE_REPORT {
     def lq_arg = lq_list.findAll { it?.trim() }.collect { "--low-quality-prefix ${it.trim()}" }.join(' ')
     """
     mkdir -p rundir/cohort
-    # published per-sample evidence stores: wave-QC column of the sample table
+    # published per-sample evidence stores (linked from --calls_dir on a
+    # re-filter): sex-chromosome section, wave QC, depth-based row bounds
     if [ -d "${params.outdir}/samples" ]; then
         ln -s "${params.outdir}/samples" rundir/samples
     fi

@@ -1107,3 +1107,45 @@ def test_constitutional_segments_are_rows_unless_calls_cover_them():
     assert r["rescue"] == "CHROMOSOMIQUE" and r["own"] == "chromosomique"
     assert r["filter"] == "PASS" and "gain constitutionnel (CN 3.07" in r["inherit"]
     assert (r["pos"], r["end"]) == (15_000_001, 46_000_000)
+
+
+def test_missing_evidence_stores_warn_then_fail(tmp_path, caplog):
+    """A re-filter run (--calls_dir) published no store under samples/<S>/:
+    the report dropped its karyotype section and wave alerts silently
+    (2670 samples, 2026-11-02). Some missing: a warning naming the count and
+    the lost sections; none at all: an error before the VCF is decoded."""
+    import logging
+
+    import pysam
+
+    from vedette.report import check_evidence_stores, generate_report
+
+    samples = ["a", "b", "c"]
+    (tmp_path / "samples" / "a" / "a.evidence.zarr").mkdir(parents=True)
+    with caplog.at_level(logging.WARNING, logger="vedette.report"):
+        assert check_evidence_stores(tmp_path, samples) == ["b", "c"]
+    msg = caplog.text
+    assert "2/3" in msg and "Chromosomes sexuels" in msg and "vague" in msg and "b, c" in msg
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="vedette.report"):
+        assert check_evidence_stores(tmp_path, ["a"]) == []
+    assert not caplog.records
+
+    with pytest.raises(FileNotFoundError, match="aucun store"):
+        check_evidence_stores(tmp_path, ["b", "c"])
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="vedette.report"):
+        assert check_evidence_stores(tmp_path, ["b", "c"], require=False) == ["b", "c"]
+    assert "2/2" in caplog.text
+
+    # generate_report checks the header's samples before anything else
+    run = tmp_path / "run"
+    (run / "cohort").mkdir(parents=True)
+    hdr = pysam.VariantHeader()
+    hdr.contigs.add("chr1", length=1_000_000)
+    hdr.add_sample("kid")
+    with pysam.VariantFile(str(run / "cohort" / "cohort.vcf.gz"), "wz", header=hdr):
+        pass
+    with pytest.raises(FileNotFoundError, match="--allow-missing-stores"):
+        generate_report(run, None)

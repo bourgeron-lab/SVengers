@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **report, Nextflow** — a re-filter run (`--steps filter,… --calls_dir`)
+  published only the filter outputs under `samples/<S>/`, and the report,
+  which reads each evidence store there, silently lost the « Chromosomes
+  sexuels » section, the per-genome wave alerts and the depth-based row
+  bounds (2670-sample run, 2026-11-02). The pipeline now symlinks each
+  sample's evidence store and raw call VCF (+ index) from `--calls_dir` into
+  `<outdir>/samples/<S>/` (existing entries are left alone; nothing when
+  `--calls_dir` is the run's own `samples/`). `vedette report` warns with the
+  count of samples without a store and the sections they miss, and stops
+  when no sample has one (`--allow-missing-stores` to report anyway).
 - **production** — the Nextflow pipeline calls with a panel of normals: the
   per-bin median of 300 unrelated dataset_paper founders (no SVD). PMS
   re-called with it: cohort sites 104,498 -> 75,335, median apparent de novo

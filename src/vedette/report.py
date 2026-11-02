@@ -2132,6 +2132,37 @@ def sex_karyotypes(run_dir: Path, samples: list[str], ped_sex: dict[str, str | N
     return {s: k for s, k in zip(samples, pmap(_sample_karyotype, tasks, jobs), strict=True) if k}
 
 
+STORE_SECTIONS = ("« Chromosomes sexuels » (caryotype X/Y)", "score de vague par génome "
+                  "(colonne QC, alertes des lignes famille)", "bornes des lignes ajustées sur la profondeur")
+
+
+def check_evidence_stores(run_dir: Path, samples: list[str], require: bool = True) -> list[str]:
+    """The samples without an evidence store under samples/<S>/ of the run.
+
+    Karyotypes, wave QC and depth-based row bounds read these stores and
+    degrade to nothing when absent: a re-filter run (--calls_dir) published
+    only the filter outputs, and the 2670-sample report of 2026-11-02 lost
+    its sex-chromosome section without a word. Some missing: a warning;
+    all missing: an error unless ``require`` is False."""
+    missing = [s for s in samples
+               if not (Path(run_dir) / "samples" / s / f"{s}.evidence.zarr").exists()]
+    if not missing:
+        return missing
+    where = f"{Path(run_dir) / 'samples'}/<S>/<S>.evidence.zarr"
+    if require and len(missing) == len(samples):
+        raise FileNotFoundError(
+            f"aucun store de preuves sous {where} ({len(samples)} échantillons) — sections "
+            f"perdues : {'; '.join(STORE_SECTIONS)}. Liez les stores des appels "
+            "(samples/<S>/ du run d'appel) ou relancez avec --allow-missing-stores"
+        )
+    logger.warning(
+        "%d/%d échantillon(s) sans store de preuves sous %s — absents de : %s. Exemples : %s",
+        len(missing), len(samples), where, "; ".join(STORE_SECTIONS),
+        ", ".join(missing[:10]) + (" …" if len(missing) > 10 else ""),
+    )
+    return missing
+
+
 def generate_report(
     run_dir: str | Path,
     pedigree: Pedigree | None,
@@ -2152,12 +2183,16 @@ def generate_report(
     subthreshold: bool = True,
     low_quality_prefixes: tuple[str, ...] = (),
     jobs: int = 1,
+    require_stores: bool = True,
 ) -> Path:
     run_dir = Path(run_dir)
     cohort_dir = run_dir / "cohort"
     vcf_path = cohort_dir / "cohort.vcf.gz"
     if not vcf_path.exists():
         raise FileNotFoundError(f"{vcf_path} absent — lancez le pipeline cohorte d'abord")
+    # before the hours of VCF decoding: the header has the sample list
+    with pysam.VariantFile(str(vcf_path)) as _hdr:
+        check_evidence_stores(run_dir, list(_hdr.header.samples), require=require_stores)
     out_html = Path(out_html) if out_html else run_dir / "report.html"
     cohort_name = cohort_name or run_dir.name
 
