@@ -1172,3 +1172,11 @@ def test_missing_evidence_stores_warn_then_fail(tmp_path, caplog):
         pass
     with pytest.raises(FileNotFoundError, match="--allow-missing-stores"):
         generate_report(run, None)
+
+
+def test_inherit_label_karyotype():
+    from vedette.report import _inherit_fr
+
+    assert _inherit_fr("denovo") == "de novo"
+    assert _inherit_fr("karyotype_XXY") == "caryotype XXY"
+    assert "de novo" not in _inherit_fr("karyotype_XXY")   # no de novo alert

@@ -237,6 +237,16 @@ _INHERIT_FR = {
 }
 
 
+
+
+def _inherit_fr(v: str) -> str:
+    """French label of an inheritance class; ``karyotype_XXY``: a de novo
+    call on the sex chromosome the child's aneuploidy explains."""
+    if v.startswith("karyotype_"):
+        return f"caryotype {v.removeprefix('karyotype_')}"
+    return _INHERIT_FR.get(v, v)
+
+
 _NALT_GT = {-1: "./.", 0: "0/0", 1: "0/1", 2: "1/1"}
 
 
@@ -895,8 +905,8 @@ def _write_all_family_events(
             site_id = r[0]
             inh = inherit.get(site_id, [])
             inh_s = " · ".join(
-                f"{_INHERIT_FR.get(v, v)} ({c[-3:]})" for c, v in inh
-            ) if len(inh) > 1 else (_INHERIT_FR.get(inh[0][1], inh[0][1]) if inh else "")
+                f"{_inherit_fr(v)} ({c[-3:]})" for c, v in inh
+            ) if len(inh) > 1 else (_inherit_fr(inh[0][1]) if inh else "")
             gts, carriers = [], []
             for m, cell in zip(members, r[16:], strict=False):
                 na, gq, cn = cell.split(":")
@@ -2255,6 +2265,13 @@ def generate_report(
     if (cohort_dir / "mendel_summary.tsv").exists():
         summary_rows = list(csv.DictReader(open(cohort_dir / "mendel_summary.tsv"), delimiter="\t"))
 
+    # sex-chromosome karyotypes before the Mendelian stream: the de novo calls
+    # an aneuploidy explains leave the guard, the tables and the events pages
+    ped_sex = ({i.sample_id: {1: "M", 2: "F"}.get(i.sex) for i in pedigree.individuals.values()}
+               if pedigree is not None else {})
+    karyo = sex_karyotypes(run_dir, samples, ped_sex, jobs=jobs)
+    aneu = {c: aneuploid_sex_chromosomes(k["karyotype"]) for c, k in karyo.items()}
+
     # mendel_report.tsv scales with trios x sites (11 GB on dataset_paper):
     # stream it, keeping only GQ-filtered de novo rows and per-family
     # violation rows (the latter only when family workspaces are written)
@@ -2275,9 +2292,11 @@ def generate_report(
             mendel_fields = list(reader.fieldnames or [])
             for r in reader:
                 if inh_spill is not None and r.get("inheritance"):
-                    inh_spill.add(
-                        r["family_id"], f'{r["site_id"]}\t{r["child"]}\t{r["inheritance"]}'
-                    )
+                    inh = r["inheritance"]
+                    if inh.startswith("denovo") and \
+                            r["contig"].removeprefix("chr") in aneu.get(r["child"], ()):
+                        inh = f'karyotype_{karyo[r["child"]]["karyotype"]}'
+                    inh_spill.add(r["family_id"], f'{r["site_id"]}\t{r["child"]}\t{inh}')
                 if r["violation"] == "1":
                     viol_counts[r["family_id"]] += 1
                     if make_family_workspaces:
@@ -2290,11 +2309,6 @@ def generate_report(
                 ):
                     denovo_by_family[r["family_id"]].append(r)
 
-    # sex-chromosome karyotypes before the de novo guard: the candidates an
-    # aneuploidy explains leave the count and the tables
-    ped_sex = ({i.sample_id: {1: "M", 2: "F"}.get(i.sex) for i in pedigree.individuals.values()}
-               if pedigree is not None else {})
-    karyo = sex_karyotypes(run_dir, samples, ped_sex, jobs=jobs)
     karyo_dn = drop_karyotype_denovo(denovo_by_family, karyo)
     if karyo_dn:
         logger.info(

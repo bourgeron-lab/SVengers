@@ -79,7 +79,9 @@
   guard's count and the family tables, with a note pointing to « Chromosomes
   sexuels ». An XXY boy of dataset_paper had 681 of his 695 de novo sites on
   chrX: he was excluded as a technical outlier, and a 1.4 Mb piece of his
-  extra X over MECP2 read as a de novo duplication.
+  extra X over MECP2 read as a de novo duplication. On the family events
+  pages those calls read « caryotype XXY » instead of « de novo », without
+  the de novo alerts.
 - **cohort-filter, ped-annotate, bench trios** — chrX/chrY aware: men are
   hemizygous outside the PARs (male founders out of the HWE test, carrier
   fraction per sex, CN discordance against the carrier's ploidy), a son's
