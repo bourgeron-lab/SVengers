@@ -640,27 +640,31 @@ def report(
     from .ped import parse_ped
     from .report import generate_report
 
-    path = generate_report(
-        run_dir,
-        parse_ped(pedigree) if pedigree else None,
-        out_html=out,
-        cohort_name=cohort_name,
-        make_family_workspaces=not no_family_workspaces,
-        min_denovo_gq=min_denovo_gq,
-        genes_gff=genes_gff,
-        ndd_tsv=ndd_tsv,
-        segdup_bed=segdup_bed,
-        lcr_bed=lcr_bed,
-        max_denovo_per_child=max_denovo_per_child,
-        family_events=family_events,
-        events_pass_only=events_pass_only,
-        collapse_family_events=not no_collapse_events,
-        min_carrier_gq=min_carrier_gq,
-        mosaic_dir=mosaic_dir,
-        low_quality_prefixes=tuple(low_quality_prefix),
-        jobs=resolve_jobs(jobs),
-        require_stores=not allow_missing_stores,
-    )
+    try:
+        path = generate_report(
+            run_dir,
+            parse_ped(pedigree) if pedigree else None,
+            out_html=out,
+            cohort_name=cohort_name,
+            make_family_workspaces=not no_family_workspaces,
+            min_denovo_gq=min_denovo_gq,
+            genes_gff=genes_gff,
+            ndd_tsv=ndd_tsv,
+            segdup_bed=segdup_bed,
+            lcr_bed=lcr_bed,
+            max_denovo_per_child=max_denovo_per_child,
+            family_events=family_events,
+            events_pass_only=events_pass_only,
+            collapse_family_events=not no_collapse_events,
+            min_carrier_gq=min_carrier_gq,
+            mosaic_dir=mosaic_dir,
+            low_quality_prefixes=tuple(low_quality_prefix),
+            jobs=resolve_jobs(jobs),
+            require_stores=not allow_missing_stores,
+        )
+    except FileNotFoundError as e:  # no cohort VCF or no evidence store: no traceback
+        typer.secho(f"erreur : {e}", err=True, fg="red")
+        raise typer.Exit(1) from None
     typer.echo(f"rapport -> {path}")
 
 
