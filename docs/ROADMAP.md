@@ -6,6 +6,32 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
+### État au 2026-11-02 et priorités
+
+En production : `models/v5n`, SQ >= 5, PoN médiane, chromosomes sexuels
+corrigés (point 6 ci-dessous, FAIT) : `runs/dataset_paper` et `runs/PMS`
+rappelés, anciennes versions archivées en `runs/*_prod20261017`. Autosomes
+de dataset_paper identiques à l'ancienne production ; chrX des hommes au
+niveau des autosomes en transmission ; chrY limité aux sites que le nombre de
+copies soutient (`ChrYNoDepth`) ; candidats de novo d'une aneuploïdie des
+gonosomes hors garde-fou et hors tableaux (un garçon XXY passait pour un
+outlier technique, et un morceau de son X surnuméraire sur MECP2 pour une
+DUP de novo).
+
+Priorités :
+1. **Suites de la bascule** (petit) : pages « événements » qui montrent encore les
+   morceaux du X surnuméraire comme de novo ; 2 DUP chrY PASS discordantes
+   père/fils à 75 % ; un garçon à chrX 0,84 / chrY 0,65 à revoir dans IGV ;
+   anciens stores masculins dans les archives à nettoyer après validation.
+2. **Labels indépendants pour la profondeur** : lot IGV ciblé de grandes
+   DEL/DUP de profondeur, puis second avis CNN (1sexdecies), puis v11 —
+   pas de réentraînement sur labels de transmission seuls (conclusion
+   v9/v10, toujours valable sur les autosomes).
+3. **Génomes très bruités à l'appel** : reste du point 4 de la liste
+   précédente (budget des hidden splits, détection précoce, mémoire).
+4. **Mosaïques** : cas complexes (point 3 ci-dessous) et chrX.
+5. Publication (plan ci-dessous), pas la priorité.
+
 ### État au 2026-10-14 (v1.1.0 publiée) et priorités
 
 En production : `models/v5n` (v5 avec `wave_score` neutralisée, 1septdecies),
@@ -104,8 +130,18 @@ Priorités :
    pedigree → XXY, X0, XXX, XYY et mosaïques des gonosomes, discordances de
    sexe ; ligne dans le tableau des anomalies chromosomiques
    constitutionnelles. Petit chantier, faisable en parallèle de 2.
-6. **chrX/chrY des hommes avec le PoN** — CORRIGÉ dans le code
-   (2026-10-30), RAPPEL À FAIRE. `PanelOfNormals.normalize` divisait le chrX
+6. **chrX/chrY des hommes avec le PoN** — FAIT (2026-11-02) : hommes
+   rappelés (1 647), cohortes refaites et en production. En route, le bruit
+   de profondeur (sigma0) était ajusté dans une fenêtre 0,7-1,3 : sur le chrX
+   d'un homme à 0,5, ~170 bins sur 147 k, sigma0 0,02 au lieu de 0,08, et
+   chaque creux d'un bin devenait une délétion hémizygote — corrigé
+   (fenêtre autour de ploïdie/2). Étapes de cohorte sexuées (HWE sur les
+   femmes, fraction de porteurs par sexe, transmission X mère → fils, Y
+   père → fils). chrY : 453 des 525 sites PASS étaient de petits appels par
+   jonctions seules dans les répétitions du Y, portés par jusqu'aux deux
+   tiers des hommes à leur CN de base, discordants père/fils à 40-54 % ->
+   `ChrYNoDepth` ; restent 72 sites (DEL discordantes à 20 %, chr7 36 %).
+   Historique : `PanelOfNormals.normalize` divisait le chrX
    d'un homme (~0,5) par la médiane des hommes du panel (~0,5) : ratio 1,0
    contre une ligne de base à 0,5, tout le chrX (et chrY) appelé DUP CN 2
    chez les 1 501 hommes de dataset_paper (médiane 156 Mo) et ceux de PMS
