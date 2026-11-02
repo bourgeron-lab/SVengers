@@ -406,8 +406,8 @@ def test_cohort_filter_sex_chromosomes(tmp_path):
 
 def test_cohort_filter_chry_no_depth(tmp_path):
     """chrY outside the PARs: a site whose carriers sit at their baseline copy
-    number (junction-only) is ChrYNoDepth; a deletion the CN supports and a
-    pseudo-autosomal site are not."""
+    number (junction-only), or shorter than one depth bin, is ChrYNoDepth; a
+    deletion the CN supports and a pseudo-autosomal site are not."""
     import csv
 
     import pysam
@@ -417,12 +417,13 @@ def test_cohort_filter_chry_no_depth(tmp_path):
 
     men, women = [f"M{k}" for k in range(6)], [f"F{k}" for k in range(6)]
     # Y1: small DUP of four men at CN 1; Y2: DEL of two men at CN 0;
-    # Y3: the same junction-only DUP inside PAR1
+    # Y3: the same junction-only DUP inside PAR1; Y4: Y2 at 600 bp
     sites = [(f"R{k}", "chrX", 40_000_000 + k * 100_000, 40_010_000 + k * 100_000, "DEL", 1)
              for k in range(12)]   # nobody carries them: the reference CN
     sites += [("Y3", "chrY", 1_000_000, 1_000_300, "DUP", 4),
               ("Y1", "chrY", 10_000_000, 10_000_300, "DUP", 4),
-              ("Y2", "chrY", 15_000_000, 15_005_000, "DEL", 2)]
+              ("Y2", "chrY", 15_000_000, 15_005_000, "DEL", 2),
+              ("Y4", "chrY", 16_000_000, 16_000_600, "DEL", 2)]
     _write_sites_vcf(tmp_path / "sites.vcf.gz", sites)
     gt_paths = []
     for smp in men + women:
@@ -435,7 +436,7 @@ def test_cohort_filter_chry_no_depth(tmp_path):
                 gt, cn = ("0/0", 1) if male else ("0/0", 2)
             if sid in ("Y1", "Y3") and male and k < 4:
                 gt, cn = "1/1", 1
-            elif sid == "Y2" and male and k < 2:
+            elif sid in ("Y2", "Y4") and male and k < 2:
                 gt, cn = "1/1", 0
             rows.append(dict(zip(GENOTYPE_COLUMNS, [
                 sid, contig, start, end, svtype, smp, gt, 40, cn, cn / 2, "", 0, 0, 0, 0, "",
@@ -452,7 +453,8 @@ def test_cohort_filter_chry_no_depth(tmp_path):
     assert list(out["Y1"].filter.keys()) == ["ChrYNoDepth"]
     assert list(out["Y2"].filter.keys()) == ["PASS"]
     assert list(out["Y3"].filter.keys()) == ["PASS"]
-    assert counts["chry_no_depth"] == 1
+    assert list(out["Y4"].filter.keys()) == ["ChrYNoDepth"]   # CN 0, but 600 bp
+    assert counts["chry_no_depth"] == 2
 
 
 @pytest.mark.parametrize("child,father,mother,mode,male,expected", [

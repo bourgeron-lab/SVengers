@@ -421,7 +421,7 @@ five site filters:
 | `HighCarrierFrac` | carried by ≥ 0.85 of the genotyped samples (`--carrier-frac-max`, needs ≥ 4 samples): reference or mappability artefacts that HWE cannot see |
 | `CNDiscordant` | ≥ 0.5 of the carriers (`--cn-discordant-frac`, ≥ 2 carriers) have a re-genotyped CN that contradicts the type: a DUP below, or a DEL above, the carrier's own baseline |
 | `CommonRef` | with `--known-sites` (a reference cohort VCF, e.g. a large `cohort-filter` output), the matching site (same type, reciprocal overlap ≥ 0.5) is carried by ≥ 0.5 of that cohort (`--known-common-frac`); `REF_AF`, `REF_CARRIER_FRAC`, `REF_FILTER` are annotated whenever a match exists |
-| `ChrYNoDepth` | chrY outside the PARs: fewer than half of the carriers have a CN that supports the type (a DUP above, a DEL below their baseline) |
+| `ChrYNoDepth` | chrY outside the PARs: shorter than one depth bin (1 kb), or fewer than half of the carriers have a CN that supports the type (a DUP above, a DEL below their baseline) |
 
 HWE is the Wigginton exact test on the founders of the pedigree (on every sample without
 one). Genotype discordance is **directional**: only "fewer carriers than nominations" is
@@ -441,7 +441,9 @@ not from the pedigree sex, which can be wrong. Then:
 - on chrY outside the PARs, a site needs **copy-number support** (`ChrYNoDepth`): small
   junction-only calls in the Y repeats were carried by up to two thirds of the men at
   their baseline CN, and a son disagreed with his father in 40-54 % of the pairs carrying
-  them (20 % on the deletions the CN supports).
+  them (20 % on the deletions the CN supports). Below one depth bin the carriers' CN comes
+  from the junctions: on the sites left, father/son discordance 34 % (DEL) and 86 % (DUP)
+  under 1 kb, 10 % and 24 % above, so those sites are flagged too.
 
 `vedette pon artifacts` turns a cohort VCF into a recurrent-artefact BED (founder AF ≥ 0.03
 with HWE p ≤ 1e-6, or ≥ 3 nominators with discordance ≥ 0.5), which `filter --artifact-bed`

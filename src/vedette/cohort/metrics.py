@@ -31,7 +31,10 @@ at 0.6-0.75 of the cohort, below ``carrier_frac_max``.
   junction-only calls in the Y repeats, carried by up to two thirds of the
   men at their baseline copy number, and a son disagreed with his father in
   40-54 % of the father/son pairs carrying them (20 % on the 70 deletions
-  the copy number supports).
+  the copy number supports). Sites shorter than one depth bin
+  (``CHRY_MIN_SIZE``) are flagged too, their carriers' CN being set by the
+  junctions: on the 72 sites left, father/son discordance 34 % (DEL) and
+  86 % (DUP) below 1 kb, 10 % and 24 % above.
 """
 
 from __future__ import annotations
@@ -158,6 +161,7 @@ _SHARED: dict = {}
 
 
 SEX_CONTIGS = ("chrX", "X", "chrY", "Y")
+CHRY_MIN_SIZE = 1000   # one bin of the depth tracks (fast_bin_size)
 
 
 def hemizygous_x(tables: dict, samples: list[str], x_sites):
@@ -213,8 +217,8 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
         ("CommonRef",
          f"Matching site carried by >= {known_common_frac:g} of the reference cohort (--known-sites)"),
         ("ChrYNoDepth",
-         "chrY outside the PARs: the copy number of fewer than half of the carriers "
-         "supports the SV type (junction-only call in the Y repeats)"),
+         "chrY outside the PARs: shorter than one depth bin, or the copy number of fewer "
+         "than half of the carriers supports the SV type (junction-only call in the Y repeats)"),
     ):
         if name not in header.filters:
             header.filters.add(name, None, None, desc)
@@ -359,7 +363,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                 support = (
                     (carrier_cn > carrier_pl) if svtype == "DUP" else (carrier_cn < carrier_pl)
                 )
-                if support.mean() < 0.5:
+                # below one depth bin the carrier CN comes from the junctions
+                if support.mean() < 0.5 or rec.stop - rec.start < CHRY_MIN_SIZE:
                     tags.append("ChrYNoDepth")
 
             if known is not None:

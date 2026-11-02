@@ -92,7 +92,10 @@
   men's chrY was called at its baseline: 525 chrY PASS sites, 453 of them
   small junction-only calls in the Y repeats carried by up to two thirds of
   the men, with a son disagreeing with his father in 40-54 % of the pairs
-  carrying them; the 70 deletions the copy number supports, 20 %.
+  carrying them; the 70 deletions the copy number supports, 20 %. Sites
+  shorter than one depth bin (1 kb) are flagged too, their carriers' CN
+  being set by the junctions: father/son discordance 34 % (DEL) and 86 %
+  (DUP) below 1 kb, 10 % and 24 % above; 55 chrY PASS sites left.
 - **filter** — the default operating threshold is SQ >= 5 (was 13), the
   operating point of the shipped model `models/v5n`: without a site TOML
   setting it, a run filtered far more than production.
