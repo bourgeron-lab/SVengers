@@ -198,6 +198,7 @@ def _write_sites_vcf(path, records):
     header = pysam.VariantHeader()
     header.contigs.add("chr22", length=50_818_468)
     header.contigs.add("chrX", length=156_040_895)
+    header.contigs.add("chrY", length=57_227_415)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
     header.add_line('##ALT=<ID=DUP,Description="Duplication">')
     header.info.add("SVTYPE", "1", "String", "SV type")
@@ -401,6 +402,57 @@ def test_cohort_filter_sex_chromosomes(tmp_path):
     assert list(out["X2"].filter.keys()) == ["PASS"]
     assert out["X3"].info["CN_DISC"] == 0.0                     # CN 2 is a gain for a man
     assert list(out["X3"].filter.keys()) == ["PASS"]
+
+
+def test_cohort_filter_chry_no_depth(tmp_path):
+    """chrY outside the PARs: a site whose carriers sit at their baseline copy
+    number (junction-only) is ChrYNoDepth; a deletion the CN supports and a
+    pseudo-autosomal site are not."""
+    import csv
+
+    import pysam
+
+    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
+    from vedette.cohort.metrics import run_cohort_filter
+
+    men, women = [f"M{k}" for k in range(6)], [f"F{k}" for k in range(6)]
+    # Y1: small DUP of four men at CN 1; Y2: DEL of two men at CN 0;
+    # Y3: the same junction-only DUP inside PAR1
+    sites = [(f"R{k}", "chrX", 40_000_000 + k * 100_000, 40_010_000 + k * 100_000, "DEL", 1)
+             for k in range(12)]   # nobody carries them: the reference CN
+    sites += [("Y3", "chrY", 1_000_000, 1_000_300, "DUP", 4),
+              ("Y1", "chrY", 10_000_000, 10_000_300, "DUP", 4),
+              ("Y2", "chrY", 15_000_000, 15_005_000, "DEL", 2)]
+    _write_sites_vcf(tmp_path / "sites.vcf.gz", sites)
+    gt_paths = []
+    for smp in men + women:
+        male, k = smp[0] == "M", int(smp[1])
+        rows = []
+        for sid, contig, start, end, svtype, _ in sites:
+            if contig == "chrY":
+                gt, cn = ("0/0", 1) if male else ("0/0", 0)
+            else:
+                gt, cn = ("0/0", 1) if male else ("0/0", 2)
+            if sid in ("Y1", "Y3") and male and k < 4:
+                gt, cn = "1/1", 1
+            elif sid == "Y2" and male and k < 2:
+                gt, cn = "1/1", 0
+            rows.append(dict(zip(GENOTYPE_COLUMNS, [
+                sid, contig, start, end, svtype, smp, gt, 40, cn, cn / 2, "", 0, 0, 0, 0, "",
+            ], strict=False)))
+        path = tmp_path / f"{smp}.gt.tsv"
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
+            w.writeheader()
+            w.writerows(rows)
+        gt_paths.append(path)
+
+    counts = run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "cohort.vcf.gz")
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "cohort.vcf.gz"))}
+    assert list(out["Y1"].filter.keys()) == ["ChrYNoDepth"]
+    assert list(out["Y2"].filter.keys()) == ["PASS"]
+    assert list(out["Y3"].filter.keys()) == ["PASS"]
+    assert counts["chry_no_depth"] == 1
 
 
 @pytest.mark.parametrize("child,father,mother,mode,male,expected", [

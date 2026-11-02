@@ -371,7 +371,7 @@ def cohort_filter(
     typer.echo(
         f"{counts['sites']} sites, {counts['pass']} PASS, {counts['artifact']} CohortArtifact, "
         f"{counts['high_carrier']} HighCarrierFrac, {counts['cn_discordant']} CNDiscordant, "
-        f"{counts['common_ref']} CommonRef -> {out}"
+        f"{counts['common_ref']} CommonRef, {counts['chry_no_depth']} ChrYNoDepth -> {out}"
     )
 
 

@@ -24,6 +24,14 @@ number of its reference genotypes on chrX — the stores' ploidy, which a
 pedigree sex can contradict. Pooled, the two sexes hid chrX artifacts:
 a junction artifact carried by 96 % of the women and half of the men sat
 at 0.6-0.75 of the cohort, below ``carrier_frac_max``.
+
+- ``ChrYNoDepth``: on chrY outside the PARs, the copy number of fewer than
+  half of the carriers supports the SV type (DUP above, DEL below the
+  carrier's ploidy). dataset_paper: 453 of 525 chrY PASS sites were small
+  junction-only calls in the Y repeats, carried by up to two thirds of the
+  men at their baseline copy number, and a son disagreed with his father in
+  40-54 % of the father/son pairs carrying them (20 % on the 70 deletions
+  the copy number supports).
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ import pysam
 
 from .. import __version__
 from ..ped import Pedigree
+from .mendel import site_mode
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +212,9 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
          f"Copy number of >= {cn_discordant_frac:g} of the carriers contradicts the SV type"),
         ("CommonRef",
          f"Matching site carried by >= {known_common_frac:g} of the reference cohort (--known-sites)"),
+        ("ChrYNoDepth",
+         "chrY outside the PARs: the copy number of fewer than half of the carriers "
+         "supports the SV type (junction-only call in the Y repeats)"),
     ):
         if name not in header.filters:
             header.filters.add(name, None, None, desc)
@@ -243,7 +255,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
     known = _KnownSites(sh["known_sites"]) if sh["known_sites"] else None
     gt_of_nalt = {0: (0, 0), 1: (0, 1), 2: (1, 1)}
     counts = {"sites": 0, "artifact": 0, "high_carrier": 0, "cn_discordant": 0,
-              "common_ref": 0, "pass": 0}
+              "common_ref": 0, "chry_no_depth": 0, "pass": 0}
     fo = BGZFile(part, "wb") if part.endswith(".gz") else open(part, "wb")
     with pysam.VariantFile(str(sh["sites_vcf"])) as sites, fo:
         for i, rec in enumerate(sites):
@@ -343,6 +355,12 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                 new.info["CN_DISC"] = round(cn_disc, 4)
                 if cn_disc >= cn_discordant_frac:
                     tags.append("CNDiscordant")
+            if len(carrier_cn) and site_mode(rec.contig, rec.start, rec.stop) == "y":
+                support = (
+                    (carrier_cn > carrier_pl) if svtype == "DUP" else (carrier_cn < carrier_pl)
+                )
+                if support.mean() < 0.5:
+                    tags.append("ChrYNoDepth")
 
             if known is not None:
                 hit = known.lookup(rec.contig, rec.start, rec.stop, svtype)
@@ -359,6 +377,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             counts["high_carrier"] += "HighCarrierFrac" in tags
             counts["cn_discordant"] += "CNDiscordant" in tags
             counts["common_ref"] += "CommonRef" in tags
+            counts["chry_no_depth"] += "ChrYNoDepth" in tags
             counts["pass"] += not tags
             # str(record) is the line VariantFile.write would emit
             fo.write(str(new).encode())
@@ -450,7 +469,8 @@ def run_cohort_filter(
                 for k in range(n_chunks)
             ]
             counts = {"sites": 0, "artifact": 0, "high_carrier": 0,
-                      "cn_discordant": 0, "common_ref": 0, "pass": 0}
+                      "cn_discordant": 0, "common_ref": 0, "chry_no_depth": 0,
+                      "pass": 0}
             for c in pmap(_write_chunk, tasks, jobs):
                 for k, v in c.items():
                     counts[k] += v
@@ -471,8 +491,9 @@ def run_cohort_filter(
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info(
         "cohort-filter: %d sites, %d PASS, %d CohortArtifact, %d HighCarrierFrac, "
-        "%d CNDiscordant, %d CommonRef, %d samples",
+        "%d CNDiscordant, %d CommonRef, %d ChrYNoDepth, %d samples",
         counts["sites"], counts["pass"], counts["artifact"], counts["high_carrier"],
-        counts["cn_discordant"], counts["common_ref"], len(samples),
+        counts["cn_discordant"], counts["common_ref"], counts["chry_no_depth"],
+        len(samples),
     )
     return counts
