@@ -100,7 +100,7 @@ class FilterConfig:
     max_excluded_overlap: float = 0.30   # fraction of call overlapping N-gaps/exclude mask
     lowmap_segdup_frac: float = 0.70     # segdup overlap above which SR support is required
     min_informative_bins: int = 3
-    low_sq_threshold: float = 13.0       # phred; ~P(true)=0.95 once the model is trained
+    low_sq_threshold: float = 5.0        # phred (P(true) ~0.68): operating point of models/v5n
     # Large deletions sit outside the model's training range: only 131 of
     # 132555 labelled DEL examples exceed 1 Mb (0.1%), and those all have
     # degenerate features (dhffc=0, fc_chrom=0, no CN) because they are
