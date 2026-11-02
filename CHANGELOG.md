@@ -74,6 +74,12 @@
   of 0.08, so single-bin dips became hemizygous deletions (about a third of
   the men genotyped 1/1 at recurrent chrX sites, ~75 chrX "de novo" per
   child). Hidden before the PoN fix, which left male chrX at 1.0.
+- **report** — the de novo candidates a sex-chromosome aneuploidy explains
+  (chrX of an XXY, XXX or X0 child, chrY of an XYY one) leave the de novo
+  guard's count and the family tables, with a note pointing to « Chromosomes
+  sexuels ». An XXY boy of dataset_paper had 681 of his 695 de novo sites on
+  chrX: he was excluded as a technical outlier, and a 1.4 Mb piece of his
+  extra X over MECP2 read as a de novo duplication.
 - **cohort-filter, ped-annotate, bench trios** — chrX/chrY aware: men are
   hemizygous outside the PARs (male founders out of the HWE test, carrier
   fraction per sex, CN discordance against the carrier's ploidy), a son's

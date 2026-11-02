@@ -31,7 +31,7 @@ import numpy as np
 import pysam
 
 from . import __version__
-from .karyotype import is_anomaly
+from .karyotype import aneuploid_sex_chromosomes, is_anomaly
 from .ped import Pedigree
 from .qc import WAVE_WARN
 
@@ -1920,6 +1920,32 @@ def denovo_outliers(
     return {c: n for c, n in counts.items() if n > cut}
 
 
+def drop_karyotype_denovo(
+    denovo_by_family: dict[str, list[dict]], karyo: dict[str, dict]
+) -> dict[str, tuple[str, int]]:
+    """Removes, in place, the de novo candidates on a sex chromosome whose
+    copy number the child's karyotype explains (chrX of an XXY boy);
+    {child: (karyotype, candidates removed)}.
+
+    The extra or missing chromosome reads as a whole-chromosome de novo gain
+    or loss cut into dozens of sites: a dataset_paper XXY boy had 681 of his
+    695 de novo sites on chrX, enough to be excluded as a technical outlier,
+    and a 1.4 Mb piece of it over MECP2 looked like a de novo duplication.
+    The aneuploidy itself is reported under « Chromosomes sexuels ».
+    """
+    sex_chr = {c: aneuploid_sex_chromosomes(k["karyotype"]) for c, k in karyo.items()}
+    removed: dict[str, int] = defaultdict(int)
+    for fid, rows in denovo_by_family.items():
+        kept = []
+        for r in rows:
+            if r["contig"].removeprefix("chr") in sex_chr.get(r["child"], ()):
+                removed[r["child"]] += 1
+            else:
+                kept.append(r)
+        denovo_by_family[fid] = kept
+    return {c: (karyo[c]["karyotype"], n) for c, n in removed.items()}
+
+
 def _read_cohort_region(task):
     """Sites and genotype rows of one region (all of the file when the
     region is None) — see _read_cohort_vcf."""
@@ -2264,6 +2290,18 @@ def generate_report(
                 ):
                     denovo_by_family[r["family_id"]].append(r)
 
+    # sex-chromosome karyotypes before the de novo guard: the candidates an
+    # aneuploidy explains leave the count and the tables
+    ped_sex = ({i.sample_id: {1: "M", 2: "F"}.get(i.sex) for i in pedigree.individuals.values()}
+               if pedigree is not None else {})
+    karyo = sex_karyotypes(run_dir, samples, ped_sex, jobs=jobs)
+    karyo_dn = drop_karyotype_denovo(denovo_by_family, karyo)
+    if karyo_dn:
+        logger.info(
+            "de novo: candidats d'une aneuploïdie des chromosomes sexuels retirés: %s",
+            ", ".join(f"{c} ({k}, {n})" for c, (k, n) in sorted(karyo_dn.items())),
+        )
+
     dn_families = denovo_family_counts(denovo_by_family)
     # ---- de novo per-child guard: technical outliers leave the family tables
     dn_counts = denovo_counts(denovo_by_family)
@@ -2365,6 +2403,7 @@ def generate_report(
             fam_outliers = sorted(
                 {r["child"] for r in denovo_all} & set(dn_outliers)
             )
+            fam_karyo = sorted(m for m in members if m in karyo_dn)
             if make_family_workspaces:
                 fam_dir.mkdir(parents=True, exist_ok=True)
                 # family-subset VCF: sites where >=1 member carries
@@ -2415,6 +2454,7 @@ def generate_report(
 <p>Membres : {", ".join(map(html.escape, members))} —
 workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(members)) if family_events else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {dn_cut:.0f} candidats de novo ({DENOVO_REL:g}× la médiane de la cohorte) — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
+{"".join(f'<p class=warn>⚠ {html.escape(m)} : caryotype {html.escape(karyo_dn[m][0])} — {karyo_dn[m][1]} candidats de novo sur le chromosome surnuméraire ou manquant retirés (voir « Chromosomes sexuels »).</p>' for m in fam_karyo)}
 {_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ", "alerte"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
@@ -2500,9 +2540,6 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
     # sex chromosomes: the mosaic scan is autosomal, and the caller's own sex
     # inference sets the X/Y baseline — an extra or missing X otherwise shows,
     # at best, as fragmented gains (an XXX genome of dataset_paper)
-    ped_sex = ({i.sample_id: {1: "M", 2: "F"}.get(i.sex) for i in pedigree.individuals.values()}
-               if pedigree is not None else {})
-    karyo = sex_karyotypes(run_dir, samples, ped_sex, jobs=jobs)
     if karyo:
         kc = Counter(k["karyotype"] for k in karyo.values())
         kar_rows = sorted(

@@ -75,3 +75,13 @@ def test_pedigree_discordance_contamination_and_mosaic():
     assert "contamination" in classify({**xy, "x_het": 0.4}, "M")["note"]
     assert classify({"x_cn": 1.7, "y_cn": 0.0, "x_het": 1.0, "x_baf": 0.06})["karyotype"] == "intermédiaire"
     assert "perte partielle du Y" in classify({**xy, "y_cn": 0.55})["note"]
+
+
+@pytest.mark.parametrize("kar,expected", [
+    ("XX", set()), ("XY", set()), ("?", set()), ("intermédiaire", set()),
+    ("XXY", {"X"}), ("XXX", {"X"}), ("X0", {"X"}), ("XYY", {"Y"}), ("XXYY", {"X", "Y"}),
+])
+def test_aneuploid_sex_chromosomes(kar, expected):
+    from vedette.karyotype import aneuploid_sex_chromosomes
+
+    assert aneuploid_sex_chromosomes(kar) == expected

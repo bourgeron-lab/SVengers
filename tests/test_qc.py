@@ -185,6 +185,29 @@ def test_denovo_guard_counts_events_not_sites():
     assert denovo_event_count(big + dups) == 2
 
 
+def test_drop_karyotype_denovo():
+    """An XXY boy's extra X reads as dozens of de novo chrX gains: they leave
+    the de novo candidates, his autosomal ones stay; XYY drops chrY only."""
+    from vedette.report import denovo_outliers, drop_karyotype_denovo
+
+    def dn_rows(child, n, contig, step=1_000_000):
+        return [{"child": child, "contig": contig, "svtype": "DUP",
+                 "start": i * step, "end": i * step + 900_000} for i in range(n)]
+
+    dn = {"F1": dn_rows("xxy", 40, "chrX") + dn_rows("xxy", 2, "chr7"),
+          "F2": dn_rows("xyy", 3, "chrY") + dn_rows("xyy", 1, "chrX"),
+          "F3": dn_rows("xy", 2, "chrX")}
+    karyo = {"xxy": {"karyotype": "XXY"}, "xyy": {"karyotype": "XYY"},
+             "xy": {"karyotype": "XY"}}
+    assert denovo_outliers(dn, threshold=20) == {"xxy": 42}
+    removed = drop_karyotype_denovo(dn, karyo)
+    assert removed == {"xxy": ("XXY", 40), "xyy": ("XYY", 3)}
+    assert [r["contig"] for r in dn["F1"]] == ["chr7", "chr7"]
+    assert [r["contig"] for r in dn["F2"]] == ["chrX"]
+    assert len(dn["F3"]) == 2
+    assert denovo_outliers(dn, threshold=20) == {}
+
+
 def test_family_events_page(tmp_path):
     from vedette.report import _write_events_page
 

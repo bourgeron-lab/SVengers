@@ -152,3 +152,18 @@ def classify(st: dict, ped_sex: str | None = None) -> dict:
 
 def is_anomaly(kar: dict) -> bool:
     return kar["karyotype"] not in ("XX", "XY") or bool(kar["note"])
+
+
+def aneuploid_sex_chromosomes(karyotype: str) -> set[str]:
+    """Sex chromosomes ("X", "Y") whose copy number the karyotype changes
+    against the sex it implies: X for XXY, XXX or X0, Y for XYY. The whole
+    chromosome then reads as a de novo gain or loss against the parents."""
+    if karyotype in ("XX", "XY", "?", "intermédiaire"):
+        return set()
+    nx, ny = karyotype.count("X"), karyotype.count("Y")
+    out = set()
+    if nx != (1 if ny else 2):
+        out.add("X")
+    if ny > 1:
+        out.add("Y")
+    return out
