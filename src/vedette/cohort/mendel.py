@@ -4,6 +4,14 @@ de novo candidates, transmission rate.
 The Mendelian-violation rate and the transmission rate (expected ~50% for a
 true heterozygous variant) are *free specificity metrics*: they quantify the
 false-positive/genotyping-error load without any truth set.
+
+chrX and chrY follow the sex of the child: a son's chrX comes from his
+mother (his genotype is hemizygous, 0/0 or 1/1), a daughter gets her
+father's only chrX, chrY goes from father to son; in the pseudo-autosomal
+regions only "carrier child, both parents 0/0" counts. The child's sex is
+the ploidy its own genotypes show on chrX (reference CN 1 or 2), the
+pedigree sex as a fallback. Read as autosomes, every son 1/1 on chrX with a
+0/1 mother and a 0/0 father was a violation.
 """
 
 from __future__ import annotations
@@ -59,19 +67,64 @@ def _gt_of(rec, sample: str) -> tuple[tuple[int, ...] | None, int]:
     return tuple(gt), int(fmt.get("GQ") or 0)
 
 
+# GRCh38 pseudo-autosomal regions, 0-based half-open
+PAR = {"chrX": ((10_000, 2_781_479), (155_701_382, 156_030_895)),
+       "chrY": ((10_000, 2_781_479), (56_887_902, 57_217_415))}
+
+
+def site_mode(contig: str, start: int, stop: int) -> str:
+    """'auto', 'x', 'y' or 'par' (a site overlapping a pseudo-autosomal region)."""
+    c = contig if contig.startswith("chr") else f"chr{contig}"
+    if c not in PAR:
+        return "auto"
+    if any(start < e and stop > b for b, e in PAR[c]):
+        return "par"
+    return "x" if c == "chrX" else "y"
+
+
+def transmit_parents(mode: str, father_gt, mother_gt) -> tuple:
+    """Parent genotypes that give a ~50 % transmission opportunity: none from
+    a hemizygous father (his chrX always goes to his daughters, his chrY to
+    his sons)."""
+    if mode == "x":
+        return (mother_gt,)
+    if mode == "y":
+        return ()
+    return (father_gt, mother_gt)
+
+
 def classify_trio(
-    child_gt, father_gt, mother_gt
+    child_gt, father_gt, mother_gt, mode: str = "auto", child_male: bool = False,
 ) -> tuple[str, bool]:
-    """(inheritance label, is_violation) for a biallelic site."""
+    """(inheritance label, is_violation) for a biallelic site; ``mode`` from
+    site_mode."""
     c = sum(child_gt)
     f = sum(father_gt)
     m = sum(mother_gt)
-    violation = (
-        (c == 2 and (f == 0 or m == 0))
-        or (c == 0 and (f == 2 or m == 2))
-        or (c == 1 and f == 0 and m == 0)   # het child, both parents hom-ref
-        or (c == 0 and f == 2 and m == 2)
-    )
+    if mode == "x" and child_male:
+        if c == 0:
+            return "none", m == 2
+        return ("denovo", True) if m == 0 else ("maternal", False)
+    if mode == "y":
+        if not child_male or c == 0:
+            return "none", child_male and f > 0
+        return ("denovo", True) if f == 0 else ("paternal", False)
+    if mode == "x":      # daughter: the father's only chrX
+        fa = f > 0
+        violation = (
+            (c == 2 and (not fa or m == 0))
+            or (c == 1 and ((not fa and m == 0) or (fa and m == 2)))
+            or (c == 0 and (fa or m == 2))
+        )
+    elif mode == "par":
+        violation = c > 0 and f == 0 and m == 0
+    else:
+        violation = (
+            (c == 2 and (f == 0 or m == 0))
+            or (c == 0 and (f == 2 or m == 2))
+            or (c == 1 and f == 0 and m == 0)   # het child, both parents hom-ref
+            or (c == 0 and f == 2 and m == 2)
+        )
     if c == 0:
         return "none", violation
     if f == 0 and m == 0:
@@ -83,6 +136,42 @@ def classify_trio(
     return "maternal", violation
 
 
+def hemizygous_children(
+    cohort_vcf: str | Path, trios, pedigree: Pedigree | None = None,
+    max_records: int = 3000,
+) -> set[str]:
+    """Children with one chrX: median CN of their 0/0 genotypes on chrX
+    outside the PARs (every few records, up to ``max_records``) below 1.5;
+    the pedigree sex when the VCF has no chrX copy number."""
+    import numpy as np
+
+    children = sorted({t[0].sample_id for t in trios})
+    cns: dict[str, list[int]] = {s: [] for s in children}
+    with pysam.VariantFile(str(cohort_vcf)) as vcf:
+        contig = next((c for c in ("chrX", "X") if c in vcf.header.contigs), None)
+        if contig and "CN" in vcf.header.formats and children:
+            vcf.subset_samples(children)
+            try:
+                recs = list(vcf.fetch(contig))
+            except ValueError:
+                recs = []
+            recs = [r for r in recs if site_mode(contig, r.start, r.stop) == "x"]
+            for rec in recs[:: max(1, len(recs) // max_records)]:
+                for s in children:
+                    fmt = rec.samples[s]
+                    gt, cn = fmt.get("GT"), fmt.get("CN")
+                    if gt is not None and cn is not None and all(a == 0 for a in gt):
+                        cns[s].append(int(cn))
+    male = set()
+    for s in children:
+        if len(cns[s]) >= 10:
+            if float(np.median(cns[s])) < 1.5:
+                male.add(s)
+        elif pedigree is not None and pedigree.sex_of(s) == 1:
+            male.add(s)
+    return male
+
+
 def _ped_region(task) -> tuple[dict[str, list[int]], str]:
     """One region of the cohort VCF: per-child counters (n_genotyped,
     n_child_carrier, n_denovo, n_violation, n_transmit_opportunity,
@@ -90,7 +179,7 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
     from ..parallel import fetch_region
 
     (cohort_vcf, region, usable, part,
-     min_denovo_child_gq, min_denovo_parent_gq) = task
+     min_denovo_child_gq, min_denovo_parent_gq, male) = task
     counters = {child.sample_id: [0, 0, 0, 0, 0, 0] for child, _f, _m in usable}
     with pysam.VariantFile(str(cohort_vcf)) as vcf, open(part, "w", newline="") as fh:
         # decode only the trio members' genotypes
@@ -98,6 +187,7 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
         writer = csv.DictWriter(fh, fieldnames=REPORT_COLUMNS, delimiter="\t")
         records = fetch_region(vcf, region) if region is not None else vcf
         for rec in records:
+            mode = site_mode(rec.contig, rec.start, rec.stop)
             for child, father, mother in usable:
                 cgt, cgq = _gt_of(rec, child.sample_id)
                 fgt, fgq = _gt_of(rec, father.sample_id)
@@ -106,13 +196,15 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                     continue
                 st = counters[child.sample_id]
                 st[0] += 1
-                inheritance, violation = classify_trio(cgt, fgt, mgt)
+                inheritance, violation = classify_trio(
+                    cgt, fgt, mgt, mode, child.sample_id in male
+                )
                 if sum(cgt) > 0:
                     st[1] += 1
                 if violation:
                     st[3] += 1
                 # transmission: each het parent gives one opportunity
-                for pgt in (fgt, mgt):
+                for pgt in transmit_parents(mode, fgt, mgt):
                     if sum(pgt) == 1:
                         st[4] += 1
                         if sum(cgt) > 0:
@@ -167,12 +259,14 @@ def run_ped_annotate(
         if all(ind.sample_id in vcf_samples for ind in t)
     ]
     logger.info("ped: %d/%d trios present in the VCF", len(usable), len(trios))
+    male = hemizygous_children(cohort_vcf, usable, pedigree)
+    logger.info("ped: %d children with one chrX", len(male))
     regions = split_regions(cohort_vcf, jobs)
     tmp = tempfile.mkdtemp(prefix=".ped_parts_", dir=Path(out_report).parent)
     try:
         tasks = [
             (str(cohort_vcf), region, usable, f"{tmp}/part{k:05d}.tsv",
-             min_denovo_child_gq, min_denovo_parent_gq)
+             min_denovo_child_gq, min_denovo_parent_gq, male)
             for k, region in enumerate(regions)
         ]
         parts = [f"{tmp}/header.tsv"]

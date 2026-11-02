@@ -15,6 +15,15 @@ CohortArtifact at 46-100 % carriers in the 2670-sample cohort):
   2670-sample run), the matching site (same type, RO >= 0.5) is carried by
   >= ``known_common_frac`` of that cohort. REF_AF / REF_CARRIER_FRAC /
   REF_FILTER are annotated whenever a match exists.
+
+On chrX / chrY a man carries one copy (his genotypes are 0/0 or 1/1, his
+reference CN 1): HWE is tested on the female founders only (none on chrY),
+HighCarrierFrac on each sex's carrier fraction, and CNDiscordant against
+each carrier's own ploidy. Each sample's chrX ploidy is read from the copy
+number of its reference genotypes on chrX — the stores' ploidy, which a
+pedigree sex can contradict. Pooled, the two sexes hid chrX artifacts:
+a junction artifact carried by 96 % of the women and half of the men sat
+at 0.6-0.75 of the cohort, below ``carrier_frac_max``.
 """
 
 from __future__ import annotations
@@ -139,6 +148,25 @@ class _KnownSites:
 _SHARED: dict = {}
 
 
+SEX_CONTIGS = ("chrX", "X", "chrY", "Y")
+
+
+def hemizygous_x(tables: dict, samples: list[str], x_sites):
+    """Per sample (in ``samples`` order): one chrX copy, from the median copy
+    number of its 0/0 genotypes on the chrX sites (``x_sites``: indices)."""
+    import numpy as np
+
+    out = np.zeros(len(samples), dtype=bool)
+    if len(x_sites) == 0:
+        return out
+    for k, s in enumerate(samples):
+        t = tables[s]
+        cn = t["cn"][x_sites]
+        ref = cn[(t["nalt"][x_sites] == 0) & (cn >= 0)]
+        out[k] = len(ref) >= 10 and float(np.median(ref)) < 1.5
+    return out
+
+
 def _load_one(path: str | Path):
     return _load_table_arrays(path, _SHARED["site_idx"], _SHARED["n_sites"])
 
@@ -202,6 +230,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
     i0, i1, part = task
     sh = _SHARED
     tables, samples, is_founder = sh["tables"], sh["samples"], sh["is_founder"]
+    male = sh["male"]
     artifact_af = sh["artifact_af"]
     artifact_gtr_discordance = sh["artifact_gtr_discordance"]
     carrier_frac_max = sh["carrier_frac_max"]
@@ -234,6 +263,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             col_cn = np.array([tables[s]["cn"][i] for s in samples])
             called = col_nalt >= 0
             svtype = rec.info.get("SVTYPE", "")
+            sex_contig = rec.contig in SEX_CONTIGS
+            ploidy = np.where(male, 1, 2) if sex_contig else np.full(len(samples), 2)
             for s_i, s in enumerate(samples):
                 fmt = new.samples[s]
                 t = tables[s]
@@ -254,6 +285,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             ac = int(col_nalt[called].sum())
             ncar = int((col_nalt > 0).sum())
             f = is_founder & called
+            if sex_contig:
+                f &= ~male    # women only: a man is never heterozygous
             het = int((col_nalt[f] == 1).sum())
             hom_alt = int((col_nalt[f] == 2).sum())
             hom_ref = int((col_nalt[f] == 0).sum())
@@ -278,7 +311,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             # HighCarrierFrac's job.
             disc_down = (nominators - ncar) / nominators if nominators else 0.0
             new.info["GTR_DISC"] = round(disc, 4)
-            hwe_p = hwe_exact(het, hom_alt, hom_ref)
+            hwe_p = 1.0 if rec.contig in ("chrY", "Y") else hwe_exact(het, hom_alt, hom_ref)
             new.info["HWE_P"] = round(hwe_p, 6)
 
             af = ac / an if an else 0.0
@@ -290,12 +323,22 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
 
             carrier_frac = ncar / ns if ns else 0.0
             new.info["CARRIER_FRAC"] = round(carrier_frac, 4)
-            if ns >= 4 and carrier_frac >= carrier_frac_max:
+            fracs = [carrier_frac] if ns >= 4 else []
+            if sex_contig:   # each sex on its own
+                fracs = []
+                for grp in (male, ~male):
+                    n_grp = int((called & grp).sum())
+                    if n_grp >= 4:
+                        fracs.append(int(((col_nalt > 0) & grp).sum()) / n_grp)
+            if fracs and max(fracs) >= carrier_frac_max:
                 tags.append("HighCarrierFrac")
 
-            carrier_cn = col_cn[(col_nalt > 0) & (col_cn >= 0)]
+            sel = (col_nalt > 0) & (col_cn >= 0)
+            carrier_cn, carrier_pl = col_cn[sel], ploidy[sel]
             if len(carrier_cn) >= 2:
-                contra = (carrier_cn <= 1) if svtype == "DUP" else (carrier_cn >= 3)
+                contra = (
+                    (carrier_cn < carrier_pl) if svtype == "DUP" else (carrier_cn > carrier_pl)
+                )
                 cn_disc = float(contra.mean())
                 new.info["CN_DISC"] = round(cn_disc, 4)
                 if cn_disc >= cn_discordant_frac:
@@ -350,8 +393,11 @@ def run_cohort_filter(
 
     # site order defines the array index
     site_ids: list[str] = []
+    x_sites: list[int] = []
     with pysam.VariantFile(str(sites_vcf)) as sv:
         for rec in sv:
+            if rec.contig in ("chrX", "X"):
+                x_sites.append(len(site_ids))
             site_ids.append(rec.id)
     site_idx = {sid: i for i, sid in enumerate(site_ids)}
     n_sites = len(site_ids)
@@ -377,8 +423,10 @@ def run_cohort_filter(
         founders = (
             {ind.sample_id for ind in pedigree.founders()} if pedigree else set(samples)
         )
+        male = hemizygous_x(tables, samples, np.array(x_sites, dtype=np.int64))
+        logger.info("cohort-filter: %d samples with one chrX", int(male.sum()))
         _SHARED.update(
-            tables=tables, samples=samples,
+            tables=tables, samples=samples, male=male,
             is_founder=np.array([s in founders for s in samples]),
             sites_vcf=str(sites_vcf),
             known_sites=str(known_sites) if known_sites else None,

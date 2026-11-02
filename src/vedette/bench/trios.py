@@ -15,7 +15,13 @@ from pathlib import Path
 
 import pysam
 
-from ..cohort.mendel import _gt_of, classify_trio
+from ..cohort.mendel import (
+    _gt_of,
+    classify_trio,
+    hemizygous_children,
+    site_mode,
+    transmit_parents,
+)
 from ..ped import Pedigree
 
 logger = logging.getLogger(__name__)
@@ -37,7 +43,7 @@ def _qual_of(rec, sample: str, field: str) -> float:
 def _sweep_region(task) -> list[dict[str, int]]:
     from ..parallel import fetch_region
 
-    cohort_vcf, region, usable, thresholds, field, pass_only, exclude_rescue = task
+    cohort_vcf, region, usable, thresholds, field, pass_only, exclude_rescue, male = task
     counters = [
         {"n_geno": 0, "n_carrier": 0, "n_viol": 0, "n_opp": 0, "n_trans": 0, "n_denovo": 0}
         for _ in thresholds
@@ -50,6 +56,7 @@ def _sweep_region(task) -> list[dict[str, int]]:
                 continue
             if exclude_rescue and rec.info.get("RESCUE"):
                 continue
+            mode = site_mode(rec.contig, rec.start, rec.stop)
             for child, father, mother in usable:
                 cgt, _ = _gt_of(rec, child.sample_id)
                 fgt, _ = _gt_of(rec, father.sample_id)
@@ -60,9 +67,11 @@ def _sweep_region(task) -> list[dict[str, int]]:
                     _qual_of(rec, ind.sample_id, field)
                     for ind in (child, father, mother)
                 )
-                inheritance, violation = classify_trio(cgt, fgt, mgt)
+                inheritance, violation = classify_trio(
+                    cgt, fgt, mgt, mode, child.sample_id in male
+                )
                 carrier = sum(cgt) > 0
-                opp = sum(1 for pgt in (fgt, mgt) if sum(pgt) == 1)
+                opp = sum(1 for pgt in transmit_parents(mode, fgt, mgt) if sum(pgt) == 1)
                 for k, th in enumerate(thresholds):
                     if th > minq:
                         break
@@ -103,9 +112,10 @@ def sweep(
             raise ValueError("No complete trio present in the cohort VCF")
         if field not in vcf.header.formats:
             raise ValueError(f"FORMAT/{field} absent from {cohort_vcf}")
+    male = hemizygous_children(cohort_vcf, usable, pedigree)
     regions = split_regions(cohort_vcf, jobs)
     tasks = [
-        (str(cohort_vcf), region, usable, thresholds, field, pass_only, exclude_rescue)
+        (str(cohort_vcf), region, usable, thresholds, field, pass_only, exclude_rescue, male)
         for region in regions
     ]
     counters = [

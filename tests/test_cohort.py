@@ -197,6 +197,7 @@ def _write_sites_vcf(path, records):
 
     header = pysam.VariantHeader()
     header.contigs.add("chr22", length=50_818_468)
+    header.contigs.add("chrX", length=156_040_895)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
     header.add_line('##ALT=<ID=DUP,Description="Duplication">')
     header.info.add("SVTYPE", "1", "String", "SV type")
@@ -349,3 +350,89 @@ def test_cohort_filter_post_processing_flags(tmp_path):
     assert "REF_AF" not in out["D"].info
     assert counts["high_carrier"] == 1 and counts["cn_discordant"] == 1
     assert counts["common_ref"] == 1 and counts["pass"] == 1
+
+
+def test_cohort_filter_sex_chromosomes(tmp_path):
+    """chrX: carrier fraction per sex, ploidy-relative CN discordance; the
+    sexes come from the reference CN of each sample's chrX genotypes."""
+    import csv
+
+    import pysam
+
+    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
+    from vedette.cohort.metrics import run_cohort_filter
+
+    men, women = [f"M{k}" for k in range(6)], [f"F{k}" for k in range(6)]
+    # X1: junction artifact, every woman 0/1 at CN 2 and half the men: 0.75 pooled
+    # X2: DEL of three men (CN 0); X3: DUP of two men at CN 2
+    sites = [("X1", "chrX", 10_000_000, 10_000_300, "DUP", 9),
+             ("X2", "chrX", 20_000_000, 20_030_000, "DEL", 3),
+             ("X3", "chrX", 30_000_000, 30_050_000, "DUP", 2)]
+    sites += [(f"R{k}", "chrX", 40_000_000 + k * 100_000, 40_010_000 + k * 100_000, "DEL", 1)
+              for k in range(12)]   # nobody carries them: the reference CN
+    _write_sites_vcf(tmp_path / "sites.vcf.gz", sites)
+    gt_paths = []
+    for smp in men + women:
+        male, k = smp[0] == "M", int(smp[1])
+        ref = ("0/0", 1) if male else ("0/0", 2)
+        rows = []
+        for sid, contig, start, end, svtype, _ in sites:
+            gt, cn = ref
+            if sid == "X1" and (not male or k < 3):
+                gt, cn = ("1/1", 1) if male else ("0/1", 2)
+            elif sid == "X2" and male and k < 3:
+                gt, cn = "1/1", 0
+            elif sid == "X3" and male and k < 2:
+                gt, cn = "1/1", 2
+            rows.append(dict(zip(GENOTYPE_COLUMNS, [
+                sid, contig, start, end, svtype, smp, gt, 40, cn, cn / 2, "", 0, 0, 0, 0, "",
+            ], strict=False)))
+        path = tmp_path / f"{smp}.gt.tsv"
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
+            w.writeheader()
+            w.writerows(rows)
+        gt_paths.append(path)
+
+    run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "cohort.vcf.gz")
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "cohort.vcf.gz"))}
+    assert out["X1"].info["CARRIER_FRAC"] == 0.75
+    assert "HighCarrierFrac" in out["X1"].filter.keys()        # 6/6 women
+    assert list(out["X2"].filter.keys()) == ["PASS"]
+    assert out["X3"].info["CN_DISC"] == 0.0                     # CN 2 is a gain for a man
+    assert list(out["X3"].filter.keys()) == ["PASS"]
+
+
+@pytest.mark.parametrize("child,father,mother,mode,male,expected", [
+    # son: chrX from the mother only, coded hemizygous 1/1
+    ((1, 1), (0, 0), (0, 1), "x", True, ("maternal", False)),
+    ((1, 1), (1, 1), (0, 0), "x", True, ("denovo", True)),
+    ((0, 0), (1, 1), (0, 1), "x", True, ("none", False)),
+    ((0, 0), (0, 0), (1, 1), "x", True, ("none", True)),
+    # daughter: always her father's chrX
+    ((0, 1), (1, 1), (0, 0), "x", False, ("paternal", False)),
+    ((0, 0), (1, 1), (0, 0), "x", False, ("none", True)),
+    ((0, 1), (0, 0), (0, 0), "x", False, ("denovo", True)),
+    # chrY: father to son
+    ((1, 1), (1, 1), (0, 0), "y", True, ("paternal", False)),
+    ((1, 1), (0, 0), (0, 0), "y", True, ("denovo", True)),
+    # pseudo-autosomal: only "carrier child, both parents 0/0" is a violation
+    ((1, 1), (0, 0), (0, 1), "par", True, ("maternal", False)),
+    ((0, 0), (1, 1), (1, 1), "par", True, ("none", False)),
+    # autosomes unchanged
+    ((1, 1), (0, 0), (0, 1), "auto", True, ("maternal", True)),
+])
+def test_classify_trio_sex_chromosomes(child, father, mother, mode, male, expected):
+    from vedette.cohort.mendel import classify_trio
+
+    assert classify_trio(child, father, mother, mode, male) == expected
+
+
+def test_site_mode():
+    from vedette.cohort.mendel import site_mode
+
+    assert site_mode("chr7", 0, 10) == "auto"
+    assert site_mode("chrX", 1_000_000, 1_001_000) == "par"
+    assert site_mode("chrX", 2_781_000, 2_790_000) == "par"     # overlaps PAR1
+    assert site_mode("chrX", 50_000_000, 50_010_000) == "x"
+    assert site_mode("chrY", 7_000_000, 7_010_000) == "y"
