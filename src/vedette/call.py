@@ -289,7 +289,7 @@ def run_call(
             baf_pos=pos, baf_vaf=vaf,
             bin_size=bin_size, ploidy=ploidy[name],
             mean_depth=coverage,
-            sigma0=hmm.fit_sigma0(ratio[name], mask[name]),
+            sigma0=hmm.fit_sigma0(ratio[name], mask[name], ploidy[name]),
         )
         for call in contig_calls:
             if call.source != "INSERT":  # INSERT calls are pre-genotyped by the detector

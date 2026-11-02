@@ -136,13 +136,24 @@ def depth_log_emissions(
     return emit
 
 
-def fit_sigma0(ratio: np.ndarray, mask: np.ndarray) -> float:
-    """Robust sd of the copy ratio around the diploid baseline."""
+def fit_sigma0(ratio: np.ndarray, mask: np.ndarray, ploidy: int = 2) -> float:
+    """Robust sd of the copy ratio, expressed at CN2 (the emission model's unit).
+
+    Fitted around the contig's own baseline (ploidy / 2) and scaled by
+    1/sqrt(baseline), the Poisson-like variance of the emissions: a male chrX
+    sits at 0.5, and a 0.7-1.3 window kept only its noisy tail (~170 of 147k
+    bins, sigma0 0.02 instead of 0.08), so every dip of a single bin became a
+    hemizygous deletion.
+    """
+    if ploidy <= 0:
+        return 0.15
+    base = ploidy / 2.0
     vals = ratio[~mask]
-    vals = vals[(vals > 0.7) & (vals < 1.3)]
+    vals = vals[(vals > 0.7 * base) & (vals < 1.3 * base)]
     if len(vals) < 100:
         return 0.15
-    return float(np.median(np.abs(vals - np.median(vals))) * 1.4826) or 0.15
+    mad = float(np.median(np.abs(vals - np.median(vals))) * 1.4826)
+    return mad / np.sqrt(base) or 0.15
 
 
 def baf_log_emissions(
@@ -220,7 +231,7 @@ def segment_contig(
     n = len(ratio)
     if n == 0:
         return [], np.array([], dtype=np.int32)
-    sigma0 = fit_sigma0(ratio, mask)
+    sigma0 = fit_sigma0(ratio, mask, ploidy)
     emit = depth_log_emissions(ratio, mask, ploidy, max_cn, sigma0)
     if baf_emit is not None and baf_weight > 0:
         emit = emit + baf_weight * baf_emit

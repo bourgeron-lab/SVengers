@@ -64,7 +64,7 @@ class StoreGenotyper:
                     bin_size=self.store.bin_size,
                     ploidy=self.ploidy.get(contig, 2),
                     mean_depth=self.coverage,
-                    sigma0=fit_sigma0(ratio, mask),
+                    sigma0=fit_sigma0(ratio, mask, self.ploidy.get(contig, 2)),
                 )
                 self._has_junctions[contig] = self.store.has_junction_evidence(contig)
         return self._data[contig]

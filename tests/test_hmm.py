@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from vedette.segment import hmm
 
@@ -74,3 +75,21 @@ def test_baf_emissions_shift_ambiguous_dup():
     without, _ = hmm.segment_contig(ratio, mask, 2, 5, 1e-6)
     with_baf, _ = hmm.segment_contig(ratio, mask, 2, 5, 1e-6, baf_emit=baf_emit)
     assert any(s.cn == 3 and s.start_bin <= 102 for s in with_baf)
+
+
+def test_fit_sigma0_hemizygous_contig():
+    """A male chrX (baseline 0.5) gives the same CN2-unit sigma0 as an autosome
+    of the same sample, and a single noisy bin is not a hemizygous DEL."""
+    rng = np.random.default_rng(4)
+    sd2 = 0.08
+    auto = rng.normal(1.0, sd2, 50_000)
+    chrx = rng.normal(0.5, sd2 * np.sqrt(0.5), 50_000)
+    mask = np.zeros(50_000, dtype=bool)
+    s_auto = hmm.fit_sigma0(auto, mask)
+    s_x = hmm.fit_sigma0(chrx, mask, ploidy=1)
+    assert s_auto == pytest.approx(sd2, rel=0.05)
+    assert s_x == pytest.approx(sd2, rel=0.05)
+    assert hmm.fit_sigma0(chrx, mask, ploidy=0) == 0.15
+    # no CN change on a hemizygous contig of pure noise
+    segments, path = hmm.segment_contig(chrx, mask, ploidy=1, max_cn=5, transition=1e-4)
+    assert not segments and set(np.unique(path)) == {1}
