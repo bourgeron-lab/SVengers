@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v1.2.0 — 2026-11-04
+
+Panel of normals in production, sex chromosomes handled end to end, and a
+sex-chromosome karyotype per genome. dataset_paper (2670 genomes) and PMS
+(319) re-called and re-run with this version: autosomes unchanged against
+the previous production, chrX of men at their hemizygous baseline,
+Mendelian violation rate 3.15 % -> 2.38 % on dataset_paper. Evidence-store
+schema 0.5 (0.1-0.4 still read); feature schema and production model
+(`models/v5n`, SQ >= 5) unchanged.
+
 - **report, Nextflow** — a re-filter run (`--steps filter,… --calls_dir`)
   published only the filter outputs under `samples/<S>/`, and the report,
   which reads each evidence store there, silently lost the « Chromosomes

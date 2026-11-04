@@ -6,6 +6,44 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
+### État au 2026-11-04 (v1.2.0) et priorités
+
+En production : v1.2.0, `models/v5n`, SQ >= 5, PoN médiane, chromosomes
+sexuels traités de bout en bout. Fait depuis le 2026-11-02 (bloc 1 ci-dessous) :
+pages « événements » d'une aneuploïdie des gonosomes (« caryotype XXY »),
+`ChrYNoDepth` étendu aux sites chrY < 1 kb (55 sites chrY PASS sur
+dataset_paper, discordance père/fils des DEL ≥ 1 kb 10 %, la DUP réelle
+de 6,9 kb transmise 16/16 garde son PASS), garde-fou GC du caryotype (deux
+fausses « mosaïques » d'X/Y sur des génomes très ondulés, contraste GC
+1,06-1,23, passées en « ? »), anciens stores masculins des archives
+supprimés (862 Go). Sorties exportées dans l'arborescence GHFC
+(`samples|families|cohorts/…/svs/vedette/`, scripts non suivis sous
+`runs/_export/`) : à rafraîchir après chaque relance de production.
+Pedigree PMS à corriger côté GHFC : deux familles avec un individu en
+double, cinq couples de parents aux sexes apparemment inversés.
+
+Priorités :
+1. **Labels indépendants pour la profondeur** — EN COURS : lot IGV v5 de 141
+   appels par la profondeur seule (enfants de trios dataset_paper,
+   production actuelle), stratifié type × taille (1-10 kb, 10-100 kb,
+   ≥ 100 kb) × zone de score (PASS, SQ 1-5, SQ < 1) × transmission
+   apparente, à l'aveugle (`runs/validation/validation_v5.html`, non suivi).
+   Constat du tirage : aucune DUP de profondeur < 100 kb n'est PASS (5 sur
+   ~20 000 en zone grise) ; les DUP ≥ 100 kb PASS le sont par le sauvetage
+   BAF (SQ < 0,21). La relecture dira si v5n perd de vraies DUP.
+2. **Second avis CNN (1sexdecies)** — EN COURS, étape 1 sans attendre les
+   labels : tenseurs par appel depuis le store (profondeur, BAF, PE, SR,
+   insert, CIGAR) + contexte de cohorte par bin ; puis CNN 1D léger et
+   usage « RESCUE_CNN » sur les LowSQ une fois les labels IGV disponibles.
+3. **v11** : labels IGV + transmission + GIAB, contrôles de déploiement
+   habituels (PASS par génome vs production, récurrence, trios, HG002 hors
+   échantillon).
+4. **Export GHFC par le pipeline** : le wrapper Nextflow publie directement
+   dans `samples|families|cohorts/…/svs/vedette/`, plus de copie manuelle.
+5. **Génomes très bruités à l'appel** (budget des hidden splits, détection
+   précoce, mémoire) ; **mosaïques** complexes et chrX ; publication en
+   dernier.
+
 ### État au 2026-11-02 et priorités
 
 En production : `models/v5n`, SQ >= 5, PoN médiane, chromosomes sexuels
