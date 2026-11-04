@@ -5,8 +5,14 @@ import pysam
 import pytest
 import zarr
 
-from vedette.extract.store import PE_DEL, SR_LEFT_CLIP, SR_RIGHT_CLIP, EvidenceStoreWriter, _create_array
-from vedette.filter.tensor import CHANNELS, L, SCALARS, run_tensors
+from vedette.extract.store import (
+    PE_DEL,
+    SR_LEFT_CLIP,
+    SR_RIGHT_CLIP,
+    EvidenceStoreWriter,
+    _create_array,
+)
+from vedette.filter.tensor import CHANNELS, SCALARS, L, run_tensors
 
 BIN = 1000
 N = 300  # bins per contig (300 kb)
@@ -98,7 +104,7 @@ def test_deletion_shape(tmp_path):
     assert np.allclose(x[C["ins_z"]], 0) and x[C["depth_masked"]].max() == 0
     assert not z["has_pon"] and np.allclose(x[C["pon_median"]], 0)
     assert z["call_id"][0] == "c0" and z["sq"][0] == pytest.approx(7.5)
-    s = dict(zip(SCALARS, z["s"][0]))
+    s = dict(zip(SCALARS, z["s"][0], strict=True))
     assert s["src_depth"] == 1 and s["segdup_ovl"] == pytest.approx(0.2) and s["ploidy"] == 1
 
 

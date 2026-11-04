@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.3.2 — 2026-11-04
+
+- **tests** — `tests/test_tensor.py` passes the CI lint (import order,
+  `zip(strict=True)`); v1.3.0 and v1.3.1 failed the lint job, tests and
+  container passed. No change to the package.
+
 ## v1.3.1 — 2026-11-04
 
 - **tensors (fix)** — counts are capped at 60,000 before the float16 cast:
