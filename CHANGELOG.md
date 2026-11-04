@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v1.3.3 — 2026-11-04
+
+- **pedigree** — a repeated sample line whose sex or phenotype differs from
+  the first is no longer reported as an "identical" duplicate: the warning
+  names the conflict and the line kept. In the PMS pedigree, two
+  individuals were each written twice, once per sex — the second line was a
+  missing parent's. The first line is still the one used.
+
 ## v1.3.2 — 2026-11-04
 
 - **tests** — `tests/test_tensor.py` passes the CI lint (import order,

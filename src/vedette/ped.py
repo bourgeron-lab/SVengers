@@ -102,8 +102,21 @@ def parse_ped(path: str | Path) -> Pedigree:
                 and (prev.father_id or "0") in (father, "0")
                 and (prev.mother_id or "0") in (mother, "0")
             )
-            if same:  # strictly repeated line: tolerate (real GHFC files have these)
-                logger.warning("%s:%d: duplicate identical line for %s, ignored", path, i, sid)
+            if same:  # repeated line: tolerate (real GHFC files have these)
+                try:
+                    dup_sex = int(float(sex))
+                except ValueError:
+                    dup_sex = 0
+                if dup_sex == prev.sex and pheno == prev.phenotype:
+                    logger.warning("%s:%d: duplicate identical line for %s, ignored", path, i, sid)
+                else:
+                    # PMS: two individuals each written twice, once per sex —
+                    # the second line was another person's (a missing parent)
+                    logger.warning(
+                        "%s:%d: duplicate line for %s with another sex/phenotype (%s/%s, first "
+                        "line %d/%s kept): likely another individual's line under this id",
+                        path, i, sid, sex, pheno, prev.sex, prev.phenotype,
+                    )
                 continue
             raise ValueError(f"{path}:{i}: conflicting duplicate sample_id {sid!r}")
         try:

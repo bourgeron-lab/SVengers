@@ -55,6 +55,13 @@ def test_identical_duplicate_line_tolerated(tmp_path):
     assert len(ped.individuals) == 3
 
 
+def test_duplicate_with_another_sex_flagged(tmp_path, caplog):
+    content = HEADERLESS + "FAM1\tMOM1\t0\t0\t1\t1\n"  # MOM1 again, as a man
+    ped = parse_ped(_write(tmp_path, content))
+    assert ped.sex_of("MOM1") == 2                       # first line kept
+    assert "another sex/phenotype" in caplog.text
+
+
 def test_too_few_columns(tmp_path):
     with pytest.raises(ValueError, match="6"):
         parse_ped(_write(tmp_path, "A\tB\tC\n"))
