@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.2.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.3.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -643,6 +643,26 @@ A model directory holds `model_del.joblib`, `model_dup.joblib` and `manifest.jso
 (version, feature list and schema hash, neutral features, training provenance, out-of-fold
 metrics and an SQ → kept / FDR / recall table).
 
+### CNN tensors (`vedette tensors`, groundwork for a second opinion)
+
+The model above reads summaries of each call and never its *shape*: a clean deletion (two
+steps down to half depth, flat flanks, no heterozygous site inside) and a GC wave can share
+the same summaries — a 9 kb deletion over SHANK3, obvious in IGV, scores SQ 0.38.
+`vedette tensors` turns every call of a filtered VCF (default: PASS and LowSQ, ≥ 1 kb) into
+a 13-channel track of 256 points over the call and one call length of flank on each side,
+read from the evidence store only: log2 copy ratio and masked fraction, the panel of
+normals' median and MAD on the same bins (the cohort context: dips and scatter every genome
+shares), heterozygous-site density and BAF deviation, DEL/DUP-oriented pair ends, soft
+clips by side, CIGAR deletions, insert-size shift, and the call's footprint; plus 12
+scalars (size, type, source, ploidy, context annotations, wave score, coverage). Output:
+one compressed `.npz` per genome (~1 MB, ~20 s). Channel and scalar lists are a model
+contract (`filter/tensor.py`, `TENSOR_VERSION`). No model reads them yet: a 1D CNN trained
+on the IGV labels is the next step (`docs/ROADMAP.md`, 1sexdecies).
+
+```bash
+vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out out/S1/S1.tensors.npz
+```
+
 ### Training your own
 
 1. **Calls and features.** Call truth-bearing genomes (e.g. GIAB) and filter them without
@@ -739,6 +759,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 |---|---|
 | `vedette call` | per-sample calling: CRAM (and optional tracks) → raw VCF + evidence store |
 | `vedette filter` | hard filters + calibrated `SQ` score → filtered VCF (and feature matrix) |
+| `vedette tensors` | per-call multi-channel tracks from the store (`.npz`), input of the planned CNN second opinion |
 | `vedette mosaic` | chromosomal-scale mosaic and constitutional segments from a store, or a whole run (`--run-dir`) |
 | `vedette wave` | write the wave QC score into stores called before schema 0.4 (`--run-dir`, `--force`, `--jobs`) |
 | `vedette merge` | cluster filtered calls across samples into cohort sites |

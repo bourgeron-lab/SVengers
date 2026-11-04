@@ -31,10 +31,16 @@ Priorités :
    Constat du tirage : aucune DUP de profondeur < 100 kb n'est PASS (5 sur
    ~20 000 en zone grise) ; les DUP ≥ 100 kb PASS le sont par le sauvetage
    BAF (SQ < 0,21). La relecture dira si v5n perd de vraies DUP.
-2. **Second avis CNN (1sexdecies)** — EN COURS, étape 1 sans attendre les
-   labels : tenseurs par appel depuis le store (profondeur, BAF, PE, SR,
-   insert, CIGAR) + contexte de cohorte par bin ; puis CNN 1D léger et
-   usage « RESCUE_CNN » sur les LowSQ une fois les labels IGV disponibles.
+2. **Second avis CNN (1sexdecies)** — étape 1 FAITE (v1.3.0, 2026-11-04) :
+   `vedette tensors`, 13 canaux x 256 points + 12 scalaires par appel
+   (PASS/LowSQ >= 1 kb, ~1 200 par génome, ~20 s, ~1 Mo). Le contexte de
+   cohorte est le panel de normaux (médiane et MAD de 300 fondateurs par
+   bin), sans calcul supplémentaire. Contrôle : la DEL SHANK3 de PMS (SQ
+   0,38) se lit comme une perte nette (log2 -1,0, flancs plats, aucun site
+   hétérozygote, panel plat) ; une seconde DEL rejetée du même génome a le
+   même profil. Reste : tenseurs des cohortes, CNN 1D léger (log1p sur les
+   comptages), usage « RESCUE_CNN » sur les LowSQ une fois les labels IGV
+   disponibles.
 3. **v11** : labels IGV + transmission + GIAB, contrôles de déploiement
    habituels (PASS par génome vs production, récurrence, trios, HG002 hors
    échantillon).

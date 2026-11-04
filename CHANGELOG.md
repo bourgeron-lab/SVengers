@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v1.3.0 — 2026-11-04
+
+First step of the CNN second opinion (ROADMAP 1sexdecies). No change to
+calling, filtering or the cohort stages; same store, feature schema and
+production model as v1.2.0.
+
+- **tensors** — new `vedette tensors`: each call of a filtered VCF (default
+  PASS and LowSQ, >= 1 kb) becomes a 13 x 256 track over the call and one
+  call length of flank per side (>= 5 kb), read from the evidence store
+  only — log2 copy ratio and masked fraction, the panel of normals' median
+  and MAD on the same bins (cohort context), heterozygous-site density and
+  BAF deviation, DEL/DUP pair ends, soft clips by side, CIGAR deletions,
+  insert-size shift, call footprint — plus 12 scalars. One `.npz` per
+  genome (~1 MB, ~20 s, ~1,200 calls). The PMS SHANK3 deletion rejected by
+  v5n (SQ 0.38) reads as a clean two-step loss: log2 ratio -1.0 inside,
+  flat flanks, no heterozygous site, flat panel.
+
 ## v1.2.0 — 2026-11-04
 
 Panel of normals in production, sex chromosomes handled end to end, and a

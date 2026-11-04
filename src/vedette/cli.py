@@ -195,6 +195,24 @@ def filter(
 
 
 @app.command()
+def tensors(
+    vcf: Path = typer.Argument(..., help="Filtered single-sample VCF (from `vedette filter`)"),
+    store: Path = typer.Option(..., help="Matching evidence store (.zarr)"),
+    out: Path = typer.Option(..., help="Output tensors (.npz)"),
+    min_size: int = typer.Option(1000, help="Smallest call kept (bp)"),
+    all_filters: bool = typer.Option(
+        False, help="Keep hard-filtered calls too (default: PASS and LowSQ only)"
+    ),
+) -> None:
+    """Per-call multi-channel tensors for the CNN second opinion, from the store."""
+    from .filter.tensor import CHANNELS, L, run_tensors
+
+    n = run_tensors(vcf, store, out, min_size=min_size,
+                    filters=None if all_filters else ("PASS", "LowSQ"))
+    typer.echo(f"{n} calls x {len(CHANNELS)} channels x {L} points -> {out}")
+
+
+@app.command()
 def merge(
     vcfs: list[Path] = typer.Argument(..., help="Filtered single-sample VCFs (or one @filelist)"),
     out: Path = typer.Option(..., help="Output sites-only VCF (.vcf.gz)"),
