@@ -55,6 +55,9 @@ INS_BIN = 100                # as config.insert_bin_size
 DEPTH_LOG2_RANGE = (-3.0, 2.0)
 INS_Z_RANGE = (-5.0, 5.0)
 SCALE_DEPTH = 30.0           # event counts are scaled to this coverage
+# float16 tops out at 65504: soft-clip piles in repeats reach it (15 of the
+# first 299 production genomes wrote inf on sr_left)
+FLOAT16_CAP = 60_000.0
 
 CHANNELS: list[str] = [
     "depth", "depth_masked", "pon_median", "pon_mad",
@@ -276,7 +279,8 @@ def run_tensors(
     n = len(xs)
     np.savez_compressed(
         out,
-        x=np.stack(xs).astype(np.float16) if n else np.zeros((0, len(CHANNELS), L), np.float16),
+        x=(np.clip(np.stack(xs), -FLOAT16_CAP, FLOAT16_CAP).astype(np.float16) if n
+           else np.zeros((0, len(CHANNELS), L), np.float16)),
         s=np.stack(ss) if n else np.zeros((0, len(SCALARS)), np.float32),
         channels=np.array(CHANNELS), scalars=np.array(SCALARS),
         tensor_version=TENSOR_VERSION, sample=store.sample, has_pon=pon_root is not None,

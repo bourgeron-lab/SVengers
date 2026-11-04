@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.3.1 — 2026-11-04
+
+- **tensors (fix)** — counts are capped at 60,000 before the float16 cast:
+  soft-clip piles in repeats passed float16's 65,504 and were written as
+  inf (15 of the first 299 production genomes, `sr_left`).
+
 ## v1.3.0 — 2026-11-04
 
 First step of the CNN second opinion (ROADMAP 1sexdecies). No change to

@@ -14,7 +14,7 @@ DEL = (100_000, 120_000)   # one-copy loss on chr1
 C = {name: i for i, name in enumerate(CHANNELS)}
 
 
-def _store(tmp_path, pon=None):
+def _store(tmp_path, pon=None, sr_pile=0):
     rng = np.random.default_rng(0)
     w = EvidenceStoreWriter(tmp_path / "S.evidence.zarr", sample="S", reference_id="x", bin_size=BIN)
     w.set_meta(mean_depth=30.0, coverage=30.0, insert_mu=350.0, insert_sigma=70.0, insert_n_pairs=1000,
@@ -31,8 +31,10 @@ def _store(tmp_path, pon=None):
         n = 10 if c == "chr1" else 0
         w.write_pe(c, np.full(n, DEL[0] - 200), np.full(n, DEL[1] + 200), np.zeros(n), np.full(n, PE_DEL),
                    np.full(n, 60))
-        w.write_sr(c, np.array([DEL[0]] * n + [DEL[1]] * n), np.array([SR_RIGHT_CLIP] * n + [SR_LEFT_CLIP] * n),
-                   np.full(2 * n, 60), np.full(2 * n, 30))
+        k = sr_pile if c == "chr1" else 0
+        w.write_sr(c, np.array([DEL[0]] * (n + k) + [DEL[1]] * n),
+                   np.array([SR_RIGHT_CLIP] * (n + k) + [SR_LEFT_CLIP] * n),
+                   np.full(2 * n + k, 60), np.full(2 * n + k, 30))
         w.write_ins(c, np.full(N * 10, 350.0 * 20), np.full(N * 10, 20))
         w.write_cig(c, np.array([], np.uint32), np.array([], np.uint32))
     return tmp_path / "S.evidence.zarr"
@@ -72,9 +74,9 @@ def _vcf(tmp_path, calls):
     return path
 
 
-def _run(tmp_path, calls, pon=None, **kw):
+def _run(tmp_path, calls, pon=None, sr_pile=0, **kw):
     out = tmp_path / "t.npz"
-    n = run_tensors(_vcf(tmp_path, calls), _store(tmp_path, pon), out, **kw)
+    n = run_tensors(_vcf(tmp_path, calls), _store(tmp_path, pon, sr_pile), out, **kw)
     return n, np.load(out)
 
 
@@ -111,6 +113,12 @@ def test_cohort_context_and_male_x(tmp_path):
     # a man's chrX at half the autosomal depth is his normal level
     assert np.median(x[1, C["depth"]]) == pytest.approx(0.0, abs=0.05)
     assert np.allclose(x[1, C["pon_median"]], 0)            # no chrX profile in this panel
+
+
+def test_clip_pile_stays_finite(tmp_path):
+    # a soft-clip pile in a repeat, beyond float16's 65504 once scaled
+    _, z = _run(tmp_path, [("chr1", *DEL, "DEL", "PASS")], sr_pile=80_000)
+    assert np.isfinite(z["x"]).all() and z["x"].max() == pytest.approx(60_000, rel=1e-3)
 
 
 def test_window_off_the_contig_start(tmp_path):
