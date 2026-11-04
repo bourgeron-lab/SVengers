@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.3.3** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.4.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -572,6 +572,13 @@ status and own-call status, sortable, opened from disk. Each row has:
   overlaps, inheritance, carriers, own-call, support and carrier-QC columns, then
   `validation`) and re-imported from any TSV with `site_id` and `validation` columns.
 
+Each page comes with a **machine-readable export** for curation tools: `<FID>.vedette.tsv`
+(the page's rows with typed, coded columns: `kind`, 1-based inclusive `start`/`end`, the
+impact split into score, level and reason, complete exonic and intronic gene lists with
+Ensembl ids, per-member `GT`/`GQ`/`CN`, each child's inheritance code and DNQ),
+`<FID>.vedette.qc.tsv` (per-member QC: wave, carrier load, de novo count, karyotype, flag
+codes) and `<FID>.vedette.json` (schema and caller versions). Format: [docs/EXPORT.md](docs/EXPORT.md).
+
 `--events-pass-only` restricts the pages to PASS sites, which is required at cohort scale
 (non-PASS artefacts are carried by nearly every family). Without `--no-family-workspaces`,
 each family also gets `families/<FID>/<FID>.vcf.gz` (sites carried by a member) and its
@@ -795,6 +802,7 @@ cohort/mendel_summary.tsv            per-trio violation and transmission rates
 cohort/trio_sweep.tsv / .png         violation / transmission vs GQ threshold
 report.html                          cohort report
 families/<FID>/events.html           interactive family page (--family_events)
+families/<FID>/<FID>.vedette.tsv, .qc.tsv, .json   machine-readable family export (docs/EXPORT.md)
 families/<FID>/<FID>.vcf.gz, mendel.tsv   family workspace
 reports/timeline.html, report.html, trace.txt   Nextflow execution reports
 ```
@@ -820,7 +828,11 @@ n_denovo n_violation violation_rate transmission_rate`.
 **Mosaic TSV**: `sample contig start end svtype cn fraction baf_dev baf_expected n_windows
 mosaic` (`mosaic` = 1 for a fractional segment, 0 for a whole-copy one).
 
-Coordinates in the TSV outputs are 0-based half-open; VCFs follow the VCF convention.
+Coordinates in the TSV outputs are 0-based half-open, except the family export
+(1-based inclusive, see docs/EXPORT.md). VCFs follow the VCF 4.3 rule for symbolic
+alleles: `POS` is the base before the event, `END` its last base (header line
+`##vedette_coords=padded`; VCFs written before v1.4.0 had both one base to the right, and
+are still read correctly).
 
 ## Configuration
 

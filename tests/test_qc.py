@@ -472,6 +472,7 @@ def test_own_call_index_clamps_ends_to_the_contig(tmp_path):
     d = tmp_path / "samples" / "kid"
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
+    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chrX", length=156_040_895)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "type")
@@ -498,6 +499,7 @@ def test_read_cohort_vcf_clamps_site_ends_to_the_contig(tmp_path):
 
     chr12 = 133_275_309
     hdr = pysam.VariantHeader()
+    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr12", length=chr12)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "type")
@@ -521,7 +523,7 @@ def test_read_cohort_vcf_clamps_site_ends_to_the_contig(tmp_path):
     by_start = {st["start"]: st for st in sites}
     assert by_start[133_250_000]["end"] == chr12
     assert by_start[133_250_000]["size"] == chr12 - 133_250_000
-    assert by_start[1_000_000]["end"] == 1_020_001  # inside: untouched
+    assert by_start[1_000_000]["end"] == 1_020_000  # inside: untouched
 
 
 def test_sample_qc_flags_and_family_row_alert(tmp_path):
@@ -585,6 +587,7 @@ def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
     d = tmp_path / "samples" / "kid"
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
+    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr22", length=50_818_468)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "type")
@@ -612,9 +615,9 @@ def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
                                  genes, lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"))
     assert n == 1
     page = (tmp_path / "families" / "F1" / "events.html").read_text()
-    assert "<td>45,146,001</td><td>48,986,001</td>" in page
+    assert "<td>45,146,001</td><td>48,986,000</td>" in page
     assert "44,116,001" not in page
-    assert (45_146_000, 48_986_001) in seen      # genes of the own span
+    assert (45_146_000, 48_986_000) in seen      # genes of the own span
 
 
 def test_carrier_requires_sufficient_gq():
@@ -784,6 +787,7 @@ def test_big_cnv_alert_on_family_rows(tmp_path):
     d = tmp_path / "samples" / "dad"
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
+    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr10", length=133_797_422)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "t")
@@ -810,6 +814,7 @@ def _sub_vcf(run_dir, sample, calls):
     d = run_dir / "samples" / sample
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
+    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr22", length=50_818_468)
     for t in ("DEL", "DUP"):
         hdr.add_line(f'##ALT=<ID={t},Description="{t}">')
@@ -879,7 +884,7 @@ def test_subthreshold_ndd_call_is_a_row_of_its_family_page(tmp_path):
     row = rows[0][:rows[0].index("</tr>")]
     assert 'data-site="sub_kid_chr22_50731000"' in row and 'data-sub="1"' in row
     assert 'data-pass="0"' in row and "SOUS-SEUIL NDD" in row and "SQ 0.38" in row
-    assert "<td>50,731,001</td><td>50,740,001</td>" in row
+    assert "<td>50,731,001</td><td>50,740,000</td>" in row
     # visible by default: the sub-threshold box is ticked next to "PASS uniquement"
     assert 'id="sub" checked' in page
 
@@ -1166,6 +1171,7 @@ def test_missing_evidence_stores_warn_then_fail(tmp_path, caplog):
     run = tmp_path / "run"
     (run / "cohort").mkdir(parents=True)
     hdr = pysam.VariantHeader()
+    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr1", length=1_000_000)
     hdr.add_sample("kid")
     with pysam.VariantFile(str(run / "cohort" / "cohort.vcf.gz"), "wz", header=hdr):

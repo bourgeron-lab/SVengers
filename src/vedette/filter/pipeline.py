@@ -13,6 +13,7 @@ import pysam
 
 from ..config import Config
 from ..extract.store import EvidenceStore
+from ..vcfout import span, spec_coords
 from .annotate import ContextAnnotator
 from .features import FeatureExtractor
 from .hard_filters import hard_filter_tags
@@ -86,15 +87,19 @@ def run_filter(
     feats_all: list[dict] = []
     tags_all: list[tuple[list[str], list[str]]] = []  # (hard_tags, all_tags)
     svtypes: list[str] = []
+    spans: list[tuple[int, int]] = []
     with pysam.VariantFile(str(vcf_in)) as vcf:
         sample = list(vcf.header.samples)[0]
+        spec = spec_coords(vcf.header)
         for rec in vcf:
             svtype = rec.info["SVTYPE"]
+            start, end = span(rec, spec)
+            spans.append((start, end))
             fmt = rec.samples[sample]
             feats = extractor.extract(
                 rec.contig,
-                rec.start,
-                rec.stop,
+                start,
+                end,
                 svtype,
                 cn=int(fmt.get("CN") or -1),
                 cnq=float(fmt.get("CNQ") or float("nan")),
@@ -110,10 +115,10 @@ def run_filter(
                 baf_n=int(fmt.get("BAFN") or 0),
                 baf_dev=float(fmt.get("BAFDEV") or float("nan")),
             )
-            tags = hard_filter_tags(feats, rec.stop - rec.start, config.filter)
+            tags = hard_filter_tags(feats, end - start, config.filter)
             if (
                 artifacts is not None
-                and artifacts.overlap_fraction(rec.contig, rec.start, rec.stop) > 0.5
+                and artifacts.overlap_fraction(rec.contig, start, end) > 0.5
             ):
                 tags.append("CohortArtifact")
             existing = [f for f in rec.filter.keys() if f != "PASS"]
@@ -152,7 +157,7 @@ def run_filter(
                     new_rec.samples[sample]["SQ"] = round(sq, 2)
                     new_rec.info["MODEL_VER"] = model.version
                     cf = config.filter
-                    override = sq_override(svtypes[i], rec.stop - rec.start, feats, cf)
+                    override = sq_override(svtypes[i], spans[i][1] - spans[i][0], feats, cf)
                     if sq < cf.low_sq_threshold and not override:
                         all_tags.append("LowSQ")
                         counts["low_sq"] += 1
@@ -171,7 +176,7 @@ def run_filter(
 
                 if feat_writer is not None:
                     feat_writer.writerow(
-                        [rec.id, rec.contig, rec.start, rec.stop, svtypes[i]]
+                        [rec.id, rec.contig, *spans[i], svtypes[i]]
                         + [f"{feats[name]:.6g}" for name in FEATURES]
                     )
     if feat_fh is not None:

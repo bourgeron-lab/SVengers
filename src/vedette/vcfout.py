@@ -1,4 +1,14 @@
-"""VCF 4.3 output (symbolic <DEL>/<DUP> records) via pysam."""
+"""VCF 4.3 output (symbolic <DEL>/<DUP> records) via pysam, and the one
+conversion between VCF and internal coordinates.
+
+Internally an event is 0-based half-open ``[start, end)``: the affected
+bases. In the VCF (4.3 spec for symbolic alleles), POS is the padding base
+before the event and END its last base, so POS = ``start`` and END = ``end``
+in 1-based terms (pysam: ``rec.start = start - 1``, ``rec.stop = end``) and
+SVLEN = +/-(end - start). Files carry ``##vedette_coords=padded``; Vedette
+files without it (before v1.4.0) wrote POS = start + 1 and END = end + 1
+(htslib sets END = POS + |SVLEN|), and are read with that convention.
+"""
 
 from __future__ import annotations
 
@@ -55,6 +65,7 @@ FORMAT_DEFS = [
 def make_header(contigs: list[Contig], sample: str, command: str = "") -> pysam.VariantHeader:
     header = pysam.VariantHeader()
     header.add_line(f"##source=vedette-{__version__}")
+    add_coords_line(header)
     if command:
         header.add_line(f"##vedette_command={command}")
     for c in contigs:
@@ -71,16 +82,61 @@ def make_header(contigs: list[Contig], sample: str, command: str = "") -> pysam.
     return header
 
 
+COORDS_KEY = "vedette_coords"
+COORDS_VALUE = "padded"
+
+
+def add_coords_line(header: pysam.VariantHeader) -> None:
+    """Mark a header as written with the VCF-spec coordinates (module doc)."""
+    if not any(r.key == COORDS_KEY for r in header.records):
+        header.add_line(f"##{COORDS_KEY}={COORDS_VALUE}")
+
+
+def spec_coords(header: pysam.VariantHeader) -> bool:
+    """False only for a Vedette file written before v1.4.0 (``##source=vedette``
+    without the coordinates line); any other VCF (truth sets, other callers)
+    follows the spec."""
+    records = list(header.records)
+    if any(r.key == COORDS_KEY for r in records):
+        return True
+    return not any(r.key == "source" and str(r.value).startswith("vedette") for r in records)
+
+
+def span(rec: pysam.VariantRecord, spec: bool = True) -> tuple[int, int]:
+    """Internal 0-based half-open ``[start, end)`` of an SV record.
+
+    Spec: POS is the padding base (``rec.start + 1``) and END the last base
+    (``rec.stop``); this also holds for sequence-resolved deletions (REF =
+    padding + deleted bases). Legacy Vedette files: ``[rec.start, rec.stop - 1)``.
+    """
+    if spec:
+        return rec.start + 1, max(rec.stop, rec.start + 2)
+    return rec.start, max(rec.stop - 1, rec.start + 1)
+
+
+def sv_record(out, contig: str, start: int, end: int, svtype: str, rec_id: str | None = None):
+    """New symbolic record for the internal span ``[start, end)``, with SVTYPE
+    and SVLEN set (``out``: a VariantFile or VariantHeader). An event at the
+    very contig start has no padding base: it is written from base 1."""
+    start = max(start, 1)
+    end = max(end, start + 1)
+    rec = out.new_record(
+        contig=contig, start=start - 1, stop=end, alleles=("N", f"<{svtype}>"), id=rec_id,
+    )
+    rec.info["SVTYPE"] = svtype
+    # htslib recomputes END = POS + |SVLEN| from SVLEN: equal to ``end`` here
+    rec.info["SVLEN"] = (end - start) * (1 if svtype == "DUP" else -1)
+    return rec
+
+
 def clamp_end(start: int, end: int, length: int | None) -> int:
-    """Half-open end bounded so the written VCF END stays on the contig.
+    """Half-open end bounded by the contig, so the written END stays on it.
 
     A depth segment's last 1 kb bin overhangs the contig end (dataset_paper:
-    24 cohort sites up to 1 kb past chrX/chr12/...). htslib writes
-    END = POS + |SVLEN| on symbolic alleles, one base past our half-open end
-    (ROADMAP, SVLEN/END normalization), hence ``length - 1``: END <= length.
+    24 cohort sites up to 1 kb past chrX/chr12/...).
     """
     if length is not None:
-        end = min(end, length - 1)
+        end = min(end, length)
     return max(end, start + 1)
 
 
@@ -105,15 +161,8 @@ def write_vcf(
     with pysam.VariantFile(path, mode, header=header) as out:
         for i, call in enumerate(calls):
             end = clamp_end(call.start, call.end, lengths.get(call.contig))
-            rec = out.new_record(
-                contig=call.contig,
-                start=call.start,
-                stop=end,
-                alleles=("N", f"<{call.svtype}>"),
-                id=f"vedette_{call.svtype}_{i + 1}",
-            )
-            rec.info["SVTYPE"] = call.svtype
-            rec.info["SVLEN"] = (end - call.start) * (1 if call.svtype == "DUP" else -1)
+            rec = sv_record(out, call.contig, call.start, end, call.svtype,
+                            f"vedette_{call.svtype}_{i + 1}")
             rec.info["SOURCE"] = call.source
             rec.info["NBINS"] = call.n_bins
             rec.info["MASKFRAC"] = round(call.masked_frac, 4)

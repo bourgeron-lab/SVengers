@@ -15,6 +15,7 @@ from pathlib import Path
 import pysam
 
 from ..reference import Contig
+from ..vcfout import add_coords_line, span, spec_coords, sv_record
 from .truth import Stratifier, evaluate
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _norm_header(contigs: list[Contig]) -> pysam.VariantHeader:
     h = pysam.VariantHeader()
+    add_coords_line(h)
     for c in contigs:
         h.contigs.add(c.name, length=c.length)
     h.add_line('##ALT=<ID=DEL,Description="Deletion">')
@@ -47,12 +49,7 @@ def _write_norm(
     header = _norm_header(contigs)
     with pysam.VariantFile(str(out_vcf), "wz", header=header) as out:
         for i, (contig, start, end, svtype) in enumerate(records):
-            rec = out.new_record(
-                contig=contig, start=start, stop=end,
-                alleles=("N", f"<{svtype}>"), id=f"{caller}_{i + 1}",
-            )
-            rec.info["SVTYPE"] = svtype
-            rec.info["SVLEN"] = (end - start) * (1 if svtype == "DUP" else -1)
+            rec = sv_record(out, contig, start, end, svtype, f"{caller}_{i + 1}")
             rec.samples["S"]["GT"] = (0, 1)
             out.write(rec)
     pysam.tabix_index(str(out_vcf), preset="vcf", force=True)
@@ -66,6 +63,7 @@ def normalize_sv_vcf(
     """Extract DEL/DUP from any symbolic SV VCF into the normalized form."""
     records = []
     with pysam.VariantFile(str(in_vcf)) as vcf:
+        spec = spec_coords(vcf.header)
         for rec in vcf:
             svtype = str(rec.info.get("SVTYPE", ""))
             if svtype.startswith("DUP"):
@@ -74,10 +72,10 @@ def normalize_sv_vcf(
                 continue
             if pass_only and set(rec.filter.keys()) - {"PASS", "."}:
                 continue
-            end = rec.stop
-            if end - rec.start < min_size:
+            start, end = span(rec, spec)
+            if end - start < min_size:
                 continue
-            records.append((rec.contig, rec.start, end, svtype))
+            records.append((rec.contig, start, end, svtype))
     n = _write_norm(Path(out_vcf), contigs, records, caller)
     logger.info("%s: %d DEL/DUP calls normalized from %s", caller, n, in_vcf)
     return n

@@ -19,6 +19,7 @@ from ..extract.store import PE_DEL, PE_DUP, SR_LEFT_CLIP, SR_RIGHT_CLIP, Evidenc
 from ..genotype.likelihood import ContigData, Genotyper
 from ..segment.hmm import fit_sigma0
 from ..variants import SOURCE_BOTH, SOURCE_DEPTH, CNVCall
+from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -171,10 +172,9 @@ def run_genotype(
     ):
         writer = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
         writer.writeheader()
+        spec = spec_coords(sites.header)
         for rec in sites:
-            row = gtr.genotype_site(
-                rec.id, rec.contig, rec.start, rec.stop, rec.info["SVTYPE"]
-            )
+            row = gtr.genotype_site(rec.id, rec.contig, *span(rec, spec), rec.info["SVTYPE"])
             if row is not None:
                 writer.writerow(row)
                 n += 1

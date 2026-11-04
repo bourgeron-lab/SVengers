@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## v1.4.0 — 2026-11-04
+
+VCF coordinates follow the spec, and the family pages get a machine-readable
+export (genetics-viz issues #5, #7, #10). Same store schema, feature schema
+and production model (v5n) as v1.3.3.
+
+- **VCF coordinates (format change)** — `POS` is now the padding base before
+  the event and `END` its last base (VCF 4.3, symbolic alleles), with
+  `SVLEN = ±(END - POS)`. Vedette wrote `POS` on the first affected base and,
+  htslib setting `END = POS + |SVLEN|`, `END` one base past the last one: one
+  base to the right on both sides (a junction deletion's `POS` sat one base
+  after the breakpoint read from the clipped reads). The merge also read the
+  per-sample `END` as the end and wrote it +1 again, so a cohort site ran one
+  base past its calls. All reading and writing of SV coordinates now goes
+  through `vcfout.span` / `vcfout.sv_record`. New files carry
+  `##vedette_coords=padded`; Vedette files without it are read with the old
+  convention, so existing per-sample VCFs and cohorts stay usable. TSV outputs
+  keep their 0-based half-open intervals; their `end` loses the extra base.
+- **Family export** — `vedette report --family-events` writes
+  `families/<FID>/<FID>.vedette.tsv` (the events page's rows: `kind` site /
+  subthreshold / mosaic / chromosomal, cohort site ids, 1-based inclusive
+  bounds and `vcf_pos`, `impact_score` / `impact_level` / `impact_reason`,
+  complete exonic and intronic coding-gene lists with Ensembl ids, own-call
+  and support codes, per-member `GT`/`GQ`/`CN`, each child's inheritance code
+  and DNQ), `<FID>.vedette.qc.tsv` (per member: wave, PASS sites carried,
+  carrier excess, de novo candidates, karyotype, flag codes) and
+  `<FID>.vedette.json` (`schema_version` 1, Vedette and model versions,
+  member order). Format and coordinate convention: `docs/EXPORT.md`.
+- **Report** — merged rows keep every cohort site id through the second
+  collapse (the count of collapsed sites was reset to the rows of the second
+  pass).
+
 ## v1.3.3 — 2026-11-04
 
 - **pedigree** — a repeated sample line whose sex or phenotype differs from

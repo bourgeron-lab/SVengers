@@ -75,12 +75,15 @@ def _load_own_calls(vcf_path: str | Path) -> dict[tuple[str, str], list]:
     sample's own VCF, whatever its FILTER (the call exists)."""
     import pysam
 
+    from ..vcfout import span, spec_coords
+
     out: dict[tuple[str, str], list] = {}
     with pysam.VariantFile(str(vcf_path)) as vf:
+        spec = spec_coords(vf.header)
         for rec in vf:
             svtype = rec.info.get("SVTYPE")
             if svtype in ("DEL", "DUP"):
-                out.setdefault((rec.contig, svtype), []).append((rec.start, rec.stop, True, True))
+                out.setdefault((rec.contig, svtype), []).append((*span(rec, spec), True, True))
     for rows in out.values():
         rows.sort()
     return out

@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pysam
 
+from ..vcfout import span, spec_coords
+
 logger = logging.getLogger(__name__)
 
 TRUVARI_ARGS = [
@@ -89,8 +91,9 @@ def _fp_intervals(vcf_path: str | Path):
 
     bed: dict[str, list[tuple[int, int]]] = {}
     with pysam.VariantFile(str(vcf_path)) as vcf:
+        spec = spec_coords(vcf.header)
         for rec in vcf:
-            bed.setdefault(rec.contig, []).append((rec.start, max(rec.stop, rec.start + 1)))
+            bed.setdefault(rec.contig, []).append(span(rec, spec))
     return IntervalSet(
         {c: np.array(sorted(ivs), dtype=np.int64) for c, ivs in bed.items()}
     )

@@ -20,6 +20,7 @@ import pysam
 
 from ..filter.annotate import IntervalSet
 from ..train.label import run_truvari_bench
+from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -54,20 +55,22 @@ def _records(vcf_path: Path):
         # returning None; CMRG's explicit-allele VCF declares neither
         has_svtype = "SVTYPE" in vcf.header.info
         has_svlen = "SVLEN" in vcf.header.info
+        spec = spec_coords(vcf.header)
         for rec in vcf:
+            start, end = span(rec, spec)
             svtype = rec.info.get("SVTYPE") if has_svtype else None
             svlen = rec.info.get("SVLEN") if has_svlen else None
             if isinstance(svlen, tuple):
                 svlen = svlen[0]
             if svtype in ("DEL", "DUP", "INS"):
-                size = abs(int(svlen)) if svlen is not None else rec.stop - rec.start
+                size = abs(int(svlen)) if svlen is not None else end - start
             else:  # explicit-allele truth record
                 rlen, alen = len(rec.ref), len(rec.alts[0]) if rec.alts else 0
                 size = abs(alen - rlen)
                 svtype = "DEL" if rlen > alen else "INS"
             if svtype == "DUP":
                 svtype = "INS"  # matched in insertion space; report jointly
-            yield svtype, size, rec.contig, rec.start, max(rec.stop, rec.start + 1)
+            yield svtype, size, rec.contig, start, end
 
 
 class Stratifier:

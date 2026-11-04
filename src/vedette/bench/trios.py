@@ -23,6 +23,7 @@ from ..cohort.mendel import (
     transmit_parents,
 )
 from ..ped import Pedigree
+from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +52,13 @@ def _sweep_region(task) -> list[dict[str, int]]:
     with pysam.VariantFile(str(cohort_vcf)) as vcf:
         vcf.subset_samples(sorted({i.sample_id for t in usable for i in t}))
         records = fetch_region(vcf, region) if region is not None else vcf
+        spec = spec_coords(vcf.header)
         for rec in records:
             if pass_only and set(rec.filter.keys()) - {"PASS"}:
                 continue
             if exclude_rescue and rec.info.get("RESCUE"):
                 continue
-            mode = site_mode(rec.contig, rec.start, rec.stop)
+            mode = site_mode(rec.contig, *span(rec, spec))
             for child, father, mother in usable:
                 cgt, _ = _gt_of(rec, child.sample_id)
                 fgt, _ = _gt_of(rec, father.sample_id)

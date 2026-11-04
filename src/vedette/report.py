@@ -31,9 +31,12 @@ import numpy as np
 import pysam
 
 from . import __version__
+from .export import qc_row, write_family_export
 from .karyotype import aneuploid_sex_chromosomes, is_anomaly
 from .ped import Pedigree
 from .qc import WAVE_WARN
+from .vcfout import span as vcf_span
+from .vcfout import spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -324,17 +327,18 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
         try:
             with pysam.VariantFile(str(vcf_path)) as vf:
                 lengths = {c.name: c.length for c in vf.header.contigs.values()}
+                spec = spec_coords(vf.header)
                 for rec in vf:
                     svtype = rec.info.get("SVTYPE")
                     if svtype:
                         # per-sample VCFs written before vcfout clamped END
                         # run up to one depth bin past the contig end, and
                         # own_span hands these ends straight to the rows
-                        stop = rec.stop
+                        start, stop = vcf_span(rec, spec)
                         if lengths.get(rec.contig):
                             stop = min(stop, lengths[rec.contig])
                         idx[(rec.contig, svtype)].append(
-                            (rec.pos, stop, list(rec.filter.keys()) == ["PASS"], m)
+                            (start + 1, stop, list(rec.filter.keys()) == ["PASS"], m)
                         )
         except (OSError, ValueError):  # a report must survive a missing VCF
             continue
@@ -741,7 +745,7 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
         for e in evs:
             if cur is not None and _bridges(cur["pos"], cur["end"], e["pos"], e["end"]):
                 cur["end"] = max(cur["end"], e["end"])
-                cur["_ids"].append(e["id"])
+                cur["_ids"].extend(e.get("_ids") or [e["id"]])
                 for k in ("sqmax", "cfrac", "refcf"):
                     a, b = cur.get(k) or "", e.get(k) or ""
                     if b and (not a or float(b) > float(a)):
@@ -751,12 +755,15 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                 if e.get("own") == "PASS" or (e.get("own") and not cur.get("own")):
                     cur["own"] = e["own"]
                 cur["_inh"].append(e.get("inherit") or "")
+                for c, labels in (e.get("_inh_by") or {}).items():
+                    cur["_inh_by"].setdefault(c, []).extend(labels)
                 if e.get("rescue"):
                     cur["rescue"] = e["rescue"]
                 continue
             if cur is not None:
                 out.append(cur)
-            cur = dict(e, _ids=[e["id"]], _inh=[e.get("inherit") or ""])
+            cur = dict(e, _ids=list(e.get("_ids") or [e["id"]]), _inh=[e.get("inherit") or ""],
+                       _inh_by={c: list(v) for c, v in (e.get("_inh_by") or {}).items()})
         if cur is not None:
             out.append(cur)
     # re-annotate merged spans: genes, impact and masks describe the union
@@ -811,6 +818,10 @@ def _write_all_family_events(
     denovo_families: dict[str, int] | None = None,
     low_quality_prefixes: tuple[str, ...] = (),
     jobs: int = 1,
+    gene_lists_fn=None,
+    export: bool = True,
+    sample_info: dict[str, dict] | None = None,
+    export_meta: dict | None = None,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
@@ -897,8 +908,10 @@ def _write_all_family_events(
                                 for m, _ in fam_members[fid]):
             return 0
         inherit: dict[str, list[tuple[str, str]]] = defaultdict(list)
-        for site_id, child, inh in inh_spill.read(fid):
+        inh_by: dict[str, dict[str, list[tuple[str, str]]]] = defaultdict(dict)
+        for site_id, child, inh, *dnq in inh_spill.read(fid):
             inherit[site_id].append((child, inh))
+            inh_by[site_id].setdefault(child, []).append((inh, dnq[0] if dnq else ""))
         members = [m for m, _ in fam_members[fid]]
         events = []
         for r in rows:
@@ -921,6 +934,7 @@ def _write_all_family_events(
                 "impact": r[9], "sqmax": r[10], "cfrac": r[11], "refcf": r[12],
                 "lcr": r[13], "segdup": r[14], "support": r[15],
                 "inherit": inh_s, "carriers": carriers, "gt": gts,
+                "_inh_by": inh_by.get(site_id, {}),
             })
         own_idx = own_call_index(run_dir, members)
         own_idx = {
@@ -1006,6 +1020,27 @@ def _write_all_family_events(
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
+        if export:
+            qc_rows = []
+            for m in members:
+                info = dict((sample_info or {}).get(m, {}))
+                codes = list(info.get("flags") or [])
+                text = list((sample_qc or {}).get(m, []))
+                w = (wave_scores or {}).get(m)
+                if w is not None and w >= WAVE_WARN:
+                    codes.append("wavy")
+                    text.append(f"wave {w:.3f}")
+                if big[m] >= BIG_CNV_WARN:
+                    codes.append("big_cnv")
+                    text.append(f"grands CNV {big[m]}")
+                if any(g["mosaic"] for g in (mosaic_by_sample or {}).get(m, [])):
+                    codes.append("mosaic")
+                if sub_masked.get(m):
+                    codes.append("subthreshold_masked")
+                    text.append(f"sous le seuil NDD {sub_masked[m]} masqués")
+                info["flags"] = codes
+                qc_rows.append(qc_row(m, info, text))
+            write_family_export(fam_dir, fid, members, events, gene_lists_fn, qc_rows, export_meta)
         return 1
 
     from .parallel import pmap
@@ -1259,6 +1294,12 @@ class _GeneIndex:
                 if "protein_coding" in f[8]:
                     g[2] = True
         return list(genes.values())
+
+    def gene_lists(self, contig: str, start: int, end: int):
+        """([(name, ensg)] exonic, [(name, ensg)] intronic only): every
+        protein-coding gene the span overlaps, in position order, untruncated."""
+        hits = sorted((h for h in self._hits(contig, start, end) if h[2]), key=lambda h: h[4])
+        return ([(h[0], h[1]) for h in hits if h[3]], [(h[0], h[1]) for h in hits if not h[3]])
 
     def genes(self, contig: str, start: int, end: int, max_names: int = 6) -> str:
         hits = self._hits(contig, start, end)
@@ -1676,6 +1717,7 @@ def _sample_subthreshold(vcf_path: Path) -> list[tuple] | None:
     try:
         with pysam.VariantFile(str(vcf_path)) as vf:
             lengths = {c.name: c.length for c in vf.header.contigs.values()}
+            spec = spec_coords(vf.header)
             for rec in vf:
                 if list(rec.filter.keys()) != ["LowSQ"]:
                     continue
@@ -1686,10 +1728,11 @@ def _sample_subthreshold(vcf_path: Path) -> list[tuple] | None:
                     continue
                 if not ((svtype == "DEL" and cn <= 1) or (svtype == "DUP" and cn >= 3)):
                     continue
-                end = min(rec.stop, lengths.get(rec.contig) or rec.stop)
-                if end - rec.start < SUB_MIN_SIZE:
+                start, end = vcf_span(rec, spec)
+                end = min(end, lengths.get(rec.contig) or end)
+                if end - start < SUB_MIN_SIZE:
                     continue
-                calls.append((rec.contig, svtype, rec.start, end, min(int(cn), 127),
+                calls.append((rec.contig, svtype, start, end, min(int(cn), 127),
                               min(int(gq), 32767), fmt.get("SQ")))
     except (OSError, ValueError):  # a report must survive a missing VCF
         return None
@@ -1977,12 +2020,13 @@ def _read_cohort_region(task):
         has_carrier_frac = "CARRIER_FRAC" in vcf.header.info
         has_ref_carrier_frac = "REF_CARRIER_FRAC" in vcf.header.info
         lengths = {c.name: c.length for c in vcf.header.contigs.values()}
+        spec = spec_coords(vcf.header)
         records = fetch_region(vcf, region) if region is not None else vcf
         for rec in records:
             # sites merged before merge clamped END run up to one depth bin
             # past the contig end, and family rows without an own span keep
             # the site's ends (same bound as own_call_index)
-            stop = rec.stop
+            start, stop = vcf_span(rec, spec)
             if lengths.get(rec.contig):
                 stop = min(stop, lengths[rec.contig])
             af = rec.info.get("AF", (0.0,))
@@ -2001,8 +2045,8 @@ def _read_cohort_region(task):
                     if v is not None:
                         cn[i] = min(int(v), 127)
             sites.append({
-                "id": rec.id, "contig": rec.contig, "start": rec.start, "end": stop,
-                "svtype": rec.info.get("SVTYPE", "?"), "size": stop - rec.start,
+                "id": rec.id, "contig": rec.contig, "start": start, "end": stop,
+                "svtype": rec.info.get("SVTYPE", "?"), "size": stop - start,
                 "af": float(af), "ns": int(rec.info.get("NS", 0)),
                 "ncarrier": int(rec.info.get("NCARRIER", 0)),
                 "hwe": float(rec.info.get("HWE_P", 1.0)),
@@ -2172,6 +2216,27 @@ STORE_SECTIONS = ("« Chromosomes sexuels » (caryotype X/Y)", "score de vague p
                   "(colonne QC, alertes des lignes famille)", "bornes des lignes ajustées sur la profondeur")
 
 
+def _model_version(run_dir: Path, samples: list[str]) -> str:
+    """Filter model behind the per-sample calls (MODEL_VER of the first
+    scored record found), "" when none is found."""
+    for s in samples[:20]:
+        path = run_dir / "samples" / s / f"{s}.filtered.vcf.gz"
+        if not path.exists():
+            continue
+        try:
+            with pysam.VariantFile(str(path)) as vf:
+                if "MODEL_VER" not in vf.header.info:
+                    continue
+                for i, rec in enumerate(vf):
+                    if "MODEL_VER" in rec.info:
+                        return str(rec.info["MODEL_VER"])
+                    if i > 1000:
+                        break
+        except (OSError, ValueError):
+            continue
+    return ""
+
+
 def check_evidence_stores(run_dir: Path, samples: list[str], require: bool = True) -> list[str]:
     """The samples without an evidence store under samples/<S>/ of the run.
 
@@ -2249,6 +2314,9 @@ def generate_report(
     def _impact(contig: str, start: int, end: int, svtype: str = "DEL") -> tuple[float, str]:
         return gene_idx.impact(contig, start, end, svtype) if gene_idx else (0.0, "")
 
+    def _gene_lists(contig: str, start: int, end: int):
+        return gene_idx.gene_lists(contig, start, end) if gene_idx else ([], [])
+
     samples, sites, nalt_m, gq_m, cn_m = _read_cohort_vcf(vcf_path, with_cn=family_events, jobs=jobs)
     passing = [s for s in sites if s["filter"] == "PASS"]
     n_artifact = sum(1 for s in sites if "CohortArtifact" in s["filter"])
@@ -2296,7 +2364,8 @@ def generate_report(
                     if inh.startswith("denovo") and \
                             r["contig"].removeprefix("chr") in aneu.get(r["child"], ()):
                         inh = f'karyotype_{karyo[r["child"]]["karyotype"]}'
-                    inh_spill.add(r["family_id"], f'{r["site_id"]}\t{r["child"]}\t{inh}')
+                    inh_spill.add(r["family_id"],
+                                  f'{r["site_id"]}\t{r["child"]}\t{inh}\t{r.get("dnq") or ""}')
                 if r["violation"] == "1":
                     viol_counts[r["family_id"]] += 1
                     if make_family_workspaces:
@@ -2591,6 +2660,23 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
         if sub_cands is not None:
             logger.info("events: %d appels sous le seuil candidats (%d échantillons)",
                         len(sub_cands), len(sub_cands.samples))
+        col = {s_: i for i, s_ in enumerate(samples)}
+        sample_info = {
+            s_: {
+                "wave_score": wave_scores.get(s_),
+                "pass_sites_carried": int(n_pass_carrier[col[s_]]),
+                "carrier_excess": sample_stats[s_]["carrier_excess"],
+                "denovo_candidates": dn_counts.get(s_),
+                "karyotype": (karyo.get(s_) or {}).get("karyotype"),
+                "flags": [code for code, hit in (
+                    ("carrier_load", s_ in overloaded), ("denovo_outlier", s_ in dn_outliers),
+                    ("karyotype", s_ in karyo and is_anomaly(karyo[s_])),
+                ) if hit],
+            }
+            for s_ in samples
+        }
+        export_meta = {"cohort": cohort_name, "model_version": _model_version(run_dir, samples),
+                       "min_carrier_gq": min_carrier_gq, "events_pass_only": events_pass_only}
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
@@ -2599,7 +2685,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             wave_scores=wave_scores, wave_by_contig=wave_by_contig,
             mosaic_by_sample=mosaic_by_sample, subthreshold=sub_cands,
             denovo_families=dn_families, low_quality_prefixes=tuple(low_quality_prefixes),
-            jobs=jobs,
+            jobs=jobs, gene_lists_fn=_gene_lists, sample_info=sample_info,
+            export_meta=export_meta,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

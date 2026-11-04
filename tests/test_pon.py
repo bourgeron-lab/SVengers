@@ -144,6 +144,7 @@ def test_svd_denoising_removes_batch_wave_keeps_cnv(tmp_path):
 
 def test_artifacts_bed(tmp_path):
     h = pysam.VariantHeader()
+    h.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
     h.contigs.add("chr1", length=1_000_000)
     for line in (
         ("SVTYPE", "1", "String", "t"), ("END", "1", "Integer", "e"),

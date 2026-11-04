@@ -19,8 +19,21 @@ fausses « mosaïques » d'X/Y sur des génomes très ondulés, contraste GC
 supprimés (862 Go). Sorties exportées dans l'arborescence GHFC
 (`samples|families|cohorts/…/svs/vedette/`, scripts non suivis sous
 `runs/_export/`) : à rafraîchir après chaque relance de production.
-Pedigree PMS à corriger côté GHFC : deux familles avec un individu en
-double, cinq couples de parents aux sexes apparemment inversés.
+Pedigrees corrigés d'après les génomes (caryotype, parenté sur les sites
+BAF) à côté des originaux, `*.pedigree.fix.tsv` + journal : PMS 33
+corrections (77 -> 94 trios analysés, relancé), dataset_paper 4 corrections
+(aucun trio ne change, à intégrer à la prochaine relance de production).
+
+Issues genetics-viz (onglet Vedette de l'outil de curation GHFC, #5-#11) :
+v1.4.0 FAIT — coordonnées VCF à la norme (`POS` = base de padding, `END` =
+dernière base ; avant : les deux une base à droite, et le merge ajoutait +1
+au site), export machine des pages familles (`<FID>.vedette.tsv/.qc.tsv/
+.json`, docs/EXPORT.md : #5, #7, #10). Restent : v1.5.0 = clé de site stable
+entre re-merges + table de correspondance (#9), `vedette labels
+--from-genetics-viz` (#11, `validations/vedette.tsv`, absent à ce jour) ;
+v1.6.0 = indices par porteur depuis le merge (appel propre, SOURCE,
+précision, SQ/PE/SR : #8) et Parquet long (#6) ; lignes non-PASS dans
+l'export sans les mettre sur la page (#10, reste).
 
 Priorités :
 1. **Labels indépendants pour la profondeur** — EN COURS : lot IGV v5 de 141
@@ -41,12 +54,30 @@ Priorités :
    même profil. Reste : tenseurs des cohortes, CNN 1D léger (log1p sur les
    comptages), usage « RESCUE_CNN » sur les LowSQ une fois les labels IGV
    disponibles.
-3. **v11** : labels IGV + transmission + GIAB, contrôles de déploiement
-   habituels (PASS par génome vs production, récurrence, trios, HG002 hors
-   échantillon).
-4. **Export GHFC par le pipeline** : le wrapper Nextflow publie directement
+3. **BAF depuis le VCF DeepVariant, sans seuil de QUAL** (constat du
+   2026-11-04). La piste VAF GHFC garde `PASS && QUAL >= 30 && DP >= 10` ;
+   DeepVariant 1.9 donne un QUAL < 30 à beaucoup de vrais hétérozygotes
+   (VAF moyenne 0,47, 90 % entre 0,3 et 0,7). Un génome ordinaire en perd
+   ~40 % ; les génomes à forte profondeur (>= 60x) et tous les génomes IP
+   jusqu'à 98 % (rapport het/hom 0,05-0,85 au lieu de 1,33 : 6 génomes hors
+   IP sur 2 825, les 135 IP). Leur BAF est quasi vide : ni perte
+   d'hétérozygotie pour confirmer une DEL, ni déséquilibre allélique pour une
+   DUP, et la parenté IBS0 y lit des paires parent-enfant comme non
+   apparentées. Les génomes à 11-18x perdent des sites par DP >= 10 mais
+   gardent un rapport het/hom normal. Le store reproduit la piste à
+   l'identique : l'import n'est pas en cause. Plan : commande qui réécrit
+   `baf/` des stores existants depuis le VCF DeepVariant (PASS, DP >= 10,
+   sans QUAL ; pas de relecture des CRAM, comme `vedette wave`), montée de
+   `SCHEMA_VERSION`. Les traits BAF du modèle changent de distribution :
+   réentraîner (à faire avec v11 pour ne réentraîner qu'une fois) et
+   contrôles de déploiement habituels. Recensement : script non suivi
+   `runs/_sexpon/vaf_census.py`.
+4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),
+   contrôles de déploiement habituels (PASS par génome vs production,
+   récurrence, trios, HG002 hors échantillon).
+5. **Export GHFC par le pipeline** : le wrapper Nextflow publie directement
    dans `samples|families|cohorts/…/svs/vedette/`, plus de copie manuelle.
-5. **Génomes très bruités à l'appel** (budget des hidden splits, détection
+6. **Génomes très bruités à l'appel** (budget des hidden splits, détection
    précoce, mémoire) ; **mosaïques** complexes et chrX ; publication en
    dernier.
 

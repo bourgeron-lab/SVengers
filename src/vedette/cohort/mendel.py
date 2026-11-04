@@ -24,6 +24,7 @@ from pathlib import Path
 import pysam
 
 from ..ped import Pedigree
+from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,8 @@ def hemizygous_children(
                 recs = list(vcf.fetch(contig))
             except ValueError:
                 recs = []
-            recs = [r for r in recs if site_mode(contig, r.start, r.stop) == "x"]
+            spec = spec_coords(vcf.header)
+            recs = [r for r in recs if site_mode(contig, *span(r, spec)) == "x"]
             for rec in recs[:: max(1, len(recs) // max_records)]:
                 for s in children:
                     fmt = rec.samples[s]
@@ -186,8 +188,10 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
         vcf.subset_samples(sorted({ind.sample_id for t in usable for ind in t}))
         writer = csv.DictWriter(fh, fieldnames=REPORT_COLUMNS, delimiter="\t")
         records = fetch_region(vcf, region) if region is not None else vcf
+        spec = spec_coords(vcf.header)
         for rec in records:
-            mode = site_mode(rec.contig, rec.start, rec.stop)
+            start, end = span(rec, spec)
+            mode = site_mode(rec.contig, start, end)
             for child, father, mother in usable:
                 cgt, cgq = _gt_of(rec, child.sample_id)
                 fgt, fgq = _gt_of(rec, father.sample_id)
@@ -220,7 +224,8 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                     continue  # only report informative rows
                 writer.writerow({
                     "site_id": rec.id, "contig": rec.contig,
-                    "start": rec.start, "end": rec.stop,
+                    # 0-based half-open, as a BED interval
+                    "start": start, "end": end,
                     "svtype": rec.info.get("SVTYPE", ""),
                     "family_id": child.family_id, "child": child.sample_id,
                     "child_gt": "/".join(map(str, cgt)), "child_gq": cgq,

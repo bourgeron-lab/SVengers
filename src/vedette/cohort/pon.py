@@ -38,6 +38,7 @@ import numpy as np
 import zarr
 
 from ..extract.store import EvidenceStore, _create_array
+from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +281,7 @@ def artifacts_bed(
 
     n = 0
     with pysam.VariantFile(str(cohort_vcf)) as vcf, open(out_bed, "w") as out:
+        spec = spec_coords(vcf.header)
         for rec in vcf:
             af = rec.info.get("AF", (0.0,))
             af = af[0] if isinstance(af, tuple) else af
@@ -291,8 +293,9 @@ def artifacts_bed(
             )
             if is_artifact:
                 reason = "HWE" if hwe <= max_hwe_p else "GTR_DISC"
+                start, end = span(rec, spec)
                 out.write(
-                    f"{rec.contig}\t{rec.start}\t{rec.stop}\t"
+                    f"{rec.contig}\t{start}\t{end}\t"
                     f"{rec.info.get('SVTYPE', '.')};AF={af:.4f};{reason}\n"
                 )
                 n += 1

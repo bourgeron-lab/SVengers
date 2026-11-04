@@ -44,6 +44,7 @@ import numpy as np
 import pysam
 
 from ..extract.store import PE_DEL, PE_DUP, SR_LEFT_CLIP, SR_RIGHT_CLIP, EvidenceStore
+from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
@@ -206,10 +207,14 @@ def _info(rec: pysam.VariantRecord, key: str, default):
     return rec.info.get(key, default) if key in rec.header.info else default
 
 
-def scalars(rec: pysam.VariantRecord, normal: int, wave: float, coverage: float) -> np.ndarray:
+def scalars(rec: pysam.VariantRecord, normal: int, wave: float, coverage: float,
+            size: int | None = None) -> np.ndarray:
     src = _info(rec, "SOURCE", "DEPTH")
+    if size is None:
+        start, end = span(rec, spec_coords(rec.header))
+        size = end - start
     vals = {
-        "size_log10": math.log10(max(rec.stop - rec.start, 1)),
+        "size_log10": math.log10(max(size, 1)),
         "is_dup": float(rec.info["SVTYPE"] == "DUP"),
         "src_depth": float(src == "DEPTH"),
         "src_both": float(src == "BOTH"),
@@ -255,9 +260,11 @@ def run_tensors(
     tracks: dict[str, _ContigTracks] = {}
     with pysam.VariantFile(str(vcf_in)) as vcf:
         sample = list(vcf.header.samples)[0]
+        spec = spec_coords(vcf.header)
         for rec in vcf:
             flt = ",".join(rec.filter.keys()) or "PASS"
-            if rec.stop - rec.start < min_size or (filters is not None and flt not in filters):
+            start, end = span(rec, spec)
+            if end - start < min_size or (filters is not None and flt not in filters):
                 continue
             if not store.has_contig(rec.contig):
                 continue
@@ -268,11 +275,11 @@ def run_tensors(
                 tracks.clear()  # one contig in memory at a time (records are sorted)
                 tracks[rec.contig] = _ContigTracks(store, rec.contig,
                                                    _pon_profile(pon_root, rec.contig, normal), normal)
-            xs.append(tracks[rec.contig].tensor(rec.start, rec.stop))
-            ss.append(scalars(rec, normal, wave, coverage))
+            xs.append(tracks[rec.contig].tensor(start, end))
+            ss.append(scalars(rec, normal, wave, coverage, end - start))
             sq = rec.samples[sample].get("SQ")
-            for k, v in (("call_id", rec.id), ("contig", rec.contig), ("start", rec.start),
-                         ("end", rec.stop), ("svtype", rec.info["SVTYPE"]), ("filter", flt),
+            for k, v in (("call_id", rec.id), ("contig", rec.contig), ("start", start),
+                         ("end", end), ("svtype", rec.info["SVTYPE"]), ("filter", flt),
                          ("sq", np.nan if sq is None else sq)):
                 meta[k].append(v)
 

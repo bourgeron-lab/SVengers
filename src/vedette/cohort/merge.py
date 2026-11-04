@@ -23,7 +23,7 @@ import pysam
 from .. import __version__
 from ..parallel import pmap
 from ..reference import Contig
-from ..vcfout import clamp_end
+from ..vcfout import add_coords_line, clamp_end, span, spec_coords, sv_record
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +150,7 @@ def read_sample_calls(
     out: dict[tuple[str, str], list[MemberCall]] = {}
     with pysam.VariantFile(str(vcf_path)) as vcf:
         sample = list(vcf.header.samples)[0]
+        spec = spec_coords(vcf.header)
         for rec in vcf:
             svtype = rec.info.get("SVTYPE")
             if svtype not in ("DEL", "DUP"):
@@ -175,11 +176,12 @@ def read_sample_calls(
             gq = int(fmt.get("GQ") or 0)
             if gq < min_gq:
                 continue
+            start, end = span(rec, spec)
             out.setdefault((rec.contig, svtype), []).append(
                 MemberCall(
                     sample=sample,
-                    start=rec.start,
-                    end=rec.stop,
+                    start=start,
+                    end=end,
                     precise="IMPRECISE" not in rec.info,
                     gq=gq,
                     passing=passing or not pass_only,
@@ -225,12 +227,6 @@ def _contig_sites(work: tuple) -> list[tuple[int, int, str, list[tuple]]]:
         start = cl.start
         end = clamp_end(start, cl.end, length)
         info = [
-            ("SVTYPE", cl.svtype),
-            # NB: with SVLEN set on a symbolic allele, htslib forces
-            # END = POS + |SVLEN|, one base past the half-open end — the
-            # same convention every vedette VCF carries (see ROADMAP,
-            # coordinate-normalization item)
-            ("SVLEN", (end - start) * (1 if cl.svtype == "DUP" else -1)),
             ("NMEMBERS", len(cl.members)),
             ("NSAMPLES", len({m.sample for m in cl.members})),
             ("SPREAD", cl.spread),
@@ -280,6 +276,7 @@ def run_merge(
 
     header = pysam.VariantHeader()
     header.add_line(f"##source=vedette-merge-{__version__}")
+    add_coords_line(header)
     for c in contigs:
         header.contigs.add(c.name, length=c.length)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
@@ -323,13 +320,7 @@ def run_merge(
         for (contig, *_), sites in zip(work, per_contig, strict=True):
             for start, end, svtype, info in sites:
                 n_sites += 1
-                rec = out.new_record(
-                    contig=contig,
-                    start=start,
-                    stop=end,
-                    alleles=("N", f"<{svtype}>"),
-                    id=f"vedette_site_{n_sites}",
-                )
+                rec = sv_record(out, contig, start, end, svtype, f"vedette_site_{n_sites}")
                 for k, v in info:
                     rec.info[k] = v
                 out.write(rec)

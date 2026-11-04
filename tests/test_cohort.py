@@ -3,6 +3,7 @@ import pytest
 
 from vedette.cohort.merge import MemberCall, SiteCluster, _compatible, cluster_calls
 from vedette.cohort.metrics import hwe_exact
+from vedette.vcfout import add_coords_line, span, sv_record
 
 
 def _mc(sample, start, end, precise=True, gq=99):
@@ -99,7 +100,9 @@ def _write_filtered_vcf(path, sample, records, contigs=(("chr22", 50_818_468),))
         header.contigs.add(name, length=length)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
     header.add_line('##ALT=<ID=DUP,Description="Duplication">')
+    add_coords_line(header)
     header.info.add("SVTYPE", "1", "String", "SV type")
+    header.info.add("SVLEN", "1", "Integer", "Signed length")
     header.info.add("END", "1", "Integer", "End")
     header.filters.add("LowSQ", None, None, "below SQ threshold")
     header.filters.add("MaxN", None, None, "N overlap")
@@ -109,11 +112,7 @@ def _write_filtered_vcf(path, sample, records, contigs=(("chr22", 50_818_468),))
     header.add_sample(sample)
     with pysam.VariantFile(str(path), "wz", header=header) as out:
         for contig, start, end, svtype, filters, sq in sorted(records):
-            rec = out.new_record(
-                contig=contig, start=start, stop=end,
-                alleles=("N", f"<{svtype}>"),
-            )
-            rec.info["SVTYPE"] = svtype
+            rec = sv_record(out, contig, start, end, svtype)
             for f in filters:
                 rec.filter.add(f)
             rec.samples[sample]["GT"] = (0, 1)
@@ -146,9 +145,7 @@ def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     out = tmp_path / "sites.vcf.gz"
     contigs = [Contig("chr22", 50_818_468, "autosome")]
     n = run_merge(paths, contigs, out)
-    # read-back stop is END = POS + |SVLEN| (htslib symbolic-allele rule),
-    # one base past the half-open end — the codebase-wide convention
-    sites = {(r.start, r.stop - 1): r for r in pysam.VariantFile(str(out))}
+    sites = {span(r): r for r in pysam.VariantFile(str(out))}
     # rescued familial site present and flagged
     assert (50_654_000, 50_684_001) in sites
     assert sites[(50_654_000, 50_684_001)].info["RESCUE"] == "RECURRENT"
@@ -186,9 +183,9 @@ def test_merge_clamps_site_end_to_contig(tmp_path):
     out = tmp_path / "sites.vcf.gz"
     assert run_merge(paths, [Contig("chr12", chr12_len, "autosome")], out) == 1
     (site,) = pysam.VariantFile(str(out))
-    assert site.start == 133_250_000
+    assert span(site) == (133_250_000, chr12_len)
     assert site.stop == chr12_len  # was 133,276,002
-    assert site.info["SVLEN"] == -(chr12_len - 1 - 133_250_000)
+    assert site.info["SVLEN"] == -(chr12_len - 133_250_000)
 
 
 def _write_sites_vcf(path, records):
@@ -201,14 +198,14 @@ def _write_sites_vcf(path, records):
     header.contigs.add("chrY", length=57_227_415)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
     header.add_line('##ALT=<ID=DUP,Description="Duplication">')
+    add_coords_line(header)
     header.info.add("SVTYPE", "1", "String", "SV type")
+    header.info.add("SVLEN", "1", "Integer", "Signed length")
     header.info.add("END", "1", "Integer", "End")
     header.info.add("NSAMPLES", "1", "Integer", "carriers")
     with pysam.VariantFile(str(path), "wz", header=header) as out:
         for sid, contig, start, end, svtype, ns in records:
-            rec = out.new_record(contig=contig, start=start, stop=end,
-                                 alleles=("N", f"<{svtype}>"), id=sid)
-            rec.info["SVTYPE"] = svtype
+            rec = sv_record(out, contig, start, end, svtype, sid)
             rec.info["NSAMPLES"] = ns
             out.write(rec)
     pysam.tabix_index(str(path), preset="vcf", force=True)
@@ -222,7 +219,9 @@ def _write_reference_cohort(path, records):
     header.contigs.add("chr22", length=50_818_468)
     header.add_line('##ALT=<ID=DEL,Description="Deletion">')
     header.add_line('##ALT=<ID=DUP,Description="Duplication">')
+    add_coords_line(header)
     header.info.add("SVTYPE", "1", "String", "SV type")
+    header.info.add("SVLEN", "1", "Integer", "Signed length")
     header.info.add("END", "1", "Integer", "End")
     header.info.add("AF", "A", "Float", "AF")
     header.info.add("NS", "1", "Integer", "NS")
@@ -231,9 +230,7 @@ def _write_reference_cohort(path, records):
     header.filters.add("HighCarrierFrac", None, None, "carried by most samples")
     with pysam.VariantFile(str(path), "wz", header=header) as out:
         for contig, start, end, svtype, af, ns, ncar, filters in records:
-            rec = out.new_record(contig=contig, start=start, stop=end,
-                                 alleles=("N", f"<{svtype}>"))
-            rec.info["SVTYPE"] = svtype
+            rec = sv_record(out, contig, start, end, svtype)
             rec.info["AF"] = (af,)
             rec.info["NS"] = ns
             rec.info["NCARRIER"] = ncar

@@ -47,6 +47,7 @@ import pysam
 
 from .. import __version__
 from ..ped import Pedigree
+from ..vcfout import span, spec_coords
 from .mendel import site_mode
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,7 @@ class _KnownSites:
         self.vcf = pysam.VariantFile(str(path), drop_samples=True)
         self.min_ro = min_ro
         self._contigs = set(self.vcf.header.contigs)
+        self._spec = spec_coords(self.vcf.header)
 
     def lookup(self, contig: str, start: int, stop: int, svtype: str):
         if contig not in self._contigs:
@@ -135,10 +137,11 @@ class _KnownSites:
         for rec in it:
             if rec.info.get("SVTYPE") != svtype:
                 continue
-            ov = min(rec.stop, stop) - max(rec.start, start)
+            r_start, r_end = span(rec, self._spec)
+            ov = min(r_end, stop) - max(r_start, start)
             if ov <= 0:
                 continue
-            ro = ov / max(rec.stop - rec.start, size)
+            ro = ov / max(r_end - r_start, size)
             if ro >= self.min_ro and ro > best_ro:
                 best, best_ro = rec, ro
         if best is None:
@@ -262,12 +265,14 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
               "common_ref": 0, "chry_no_depth": 0, "pass": 0}
     fo = BGZFile(part, "wb") if part.endswith(".gz") else open(part, "wb")
     with pysam.VariantFile(str(sh["sites_vcf"])) as sites, fo:
+        spec = spec_coords(sites.header)
         for i, rec in enumerate(sites):
             if i < i0:
                 continue
             if i >= i1:
                 break
             counts["sites"] += 1
+            start, end = span(rec, spec)
             new = header.new_record(
                 contig=rec.contig, start=rec.start, stop=rec.stop,
                 alleles=rec.alleles, id=rec.id,
@@ -359,16 +364,16 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                 new.info["CN_DISC"] = round(cn_disc, 4)
                 if cn_disc >= cn_discordant_frac:
                     tags.append("CNDiscordant")
-            if len(carrier_cn) and site_mode(rec.contig, rec.start, rec.stop) == "y":
+            if len(carrier_cn) and site_mode(rec.contig, start, end) == "y":
                 support = (
                     (carrier_cn > carrier_pl) if svtype == "DUP" else (carrier_cn < carrier_pl)
                 )
                 # below one depth bin the carrier CN comes from the junctions
-                if support.mean() < 0.5 or rec.stop - rec.start < CHRY_MIN_SIZE:
+                if support.mean() < 0.5 or end - start < CHRY_MIN_SIZE:
                     tags.append("ChrYNoDepth")
 
             if known is not None:
-                hit = known.lookup(rec.contig, rec.start, rec.stop, svtype)
+                hit = known.lookup(rec.contig, start, end, svtype)
                 if hit is not None:
                     new.info["REF_AF"] = round(hit["af"], 6)
                     new.info["REF_CARRIER_FRAC"] = round(hit["carrier_frac"], 4)
