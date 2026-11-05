@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **`vedette regenotype`** — recomputes GT, GQ, CN, CNQ, RD, BAFN and BAFDEV
+  of a sample's raw calls from its evidence store, junction support and
+  source kept (INSERT calls copied), so that the filter can be re-run on a
+  BAF rewritten by `vedette baf`. On stores whose BAF was not rewritten it
+  reproduces the calling-time values: GT, CN and BAFN identical on 44,895
+  calls of two genomes, GQ on all but 2, and the filtered output is the same.
+
 ## v1.9.0 — 2026-11-05
 
 - **`vedette labels --from-genetics-viz`** (#11) — reads the curators'

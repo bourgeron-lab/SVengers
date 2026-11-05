@@ -384,6 +384,21 @@ def baf(
     typer.echo(f"{len(pairs)} stores: {n_written} rewritten, {n_failed} failed")
 
 
+@app.command()
+def regenotype(
+    vcf: Path = typer.Argument(..., help="The sample's raw calls VCF (<S>.vedette.vcf.gz)"),
+    store: Path = typer.Option(..., help="The sample's evidence store"),
+    out: Path = typer.Option(..., help="Output VCF (bgzipped, indexed)"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="TOML configuration"),
+) -> None:
+    """Recompute GT, GQ, CN, CNQ, RD, BAFN, BAFDEV of a sample's calls from its store (after `vedette baf`)."""
+    from .genotype.regenotype import regenotype_calls
+
+    c = regenotype_calls(vcf, store, out, load_config(config_file))
+    typer.echo(f"{c['calls']} calls: {c['regenotyped']} re-genotyped ({c['gt_changed']} GT changed), "
+               f"{c['unchanged']} unchanged (INSERT or no depth) -> {out}")
+
+
 @app.command("site-map")
 def site_map(
     old: Path = typer.Argument(..., help="Cohort VCF of the previous run"),

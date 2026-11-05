@@ -100,7 +100,8 @@ Priorités :
    0,02-0,03 (seuil « un seul X » 0,15). Reste : passage sur les stores de
    production, contrôle cohorte (caryotypes, parenté IBS0 des paires
    parent-enfant IP), puis recalcul de BAFN/BAFDEV des appels depuis le
-   store et v11. À part : les génomes IP gardent ~22k sites RefCall non
+   store (`vedette regenotype`, FAIT, non publié : reproduit les valeurs de
+   l'appel sur un store non réécrit) et v11. À part : les génomes IP gardent ~22k sites RefCall non
    génotypés (`./.`) à VAF 0,3-0,7 sur chr20 (~6k sur un génome ordinaire),
    vrais hétérozygotes refusés ou paralogues : non repris.
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),

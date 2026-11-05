@@ -151,7 +151,11 @@ vedette baf --manifest stores_vcfs.tsv --jobs 8     # store<TAB>vcf per line
 
 Only the stores change. The BAF features of the per-sample calls (`BAFN`, `BAFDEV`, used by
 the filter model) were computed at calling time and stay as they are; the karyotype, mosaic
-scan, cohort re-genotyping and tensors read the new BAF.
+scan, cohort re-genotyping and tensors read the new BAF. `vedette regenotype
+S1.vedette.vcf.gz --store S1.evidence.zarr --out S1.regeno.vcf.gz` recomputes the store-derived
+fields of the calls (GT, GQ, CN, CNQ, RD, BAFN, BAFDEV; junction support and source kept) for
+the filter to be re-run; on stores whose BAF was not rewritten it reproduces the calling-time
+values (GT, CN, BAFN identical on 44,895 calls of two genomes, GQ on all but 2).
 
 ### A cohort with Nextflow
 
@@ -819,6 +823,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette mosaic` | chromosomal-scale mosaic and constitutional segments from a store, or a whole run (`--run-dir`) |
 | `vedette wave` | write the wave QC score into stores called before schema 0.4 (`--run-dir`, `--force`, `--jobs`) |
 | `vedette baf` | rewrite the BAF of stores from SNV VCFs, PASS, no QUAL threshold (`STORE --vcf`, `--manifest`, `--min-dp`, `--force`, `--jobs`) |
+| `vedette regenotype` | recompute GT/GQ/CN/CNQ/RD/BAFN/BAFDEV of a sample's calls from its store (after `vedette baf`) |
 | `vedette merge` | cluster filtered calls across samples into cohort sites |
 | `vedette genotype` | re-genotype every cohort site in one sample, from its evidence store |
 | `vedette cohort-filter` | cohort VCF with AF, HWE, artefact and consistency metrics |
