@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v1.4.2 — 2026-11-05
+
+- **docs** — ROADMAP: `CohortArtifact` is unstable on a small cohort. On
+  PMS (214 founders), about 140 common sites sit right at the HWE threshold
+  (1e-6), so one founder fewer flips 163 FILTERs; rare sites are unaffected.
+  Options listed: a one-sided heterozygote-excess test, a threshold scaled to
+  the founder count, an F margin. No change to the package.
+
 ## v1.4.1 — 2026-11-05
 
 - **docs** — `docs/EXPORT.md` gave the `wavy` QC flag at wave ≥ 0.2; the

@@ -80,6 +80,20 @@ Priorités :
 6. **Génomes très bruités à l'appel** (budget des hidden splits, détection
    précoce, mémoire) ; **mosaïques** complexes et chrX ; publication en
    dernier.
+7. **`CohortArtifact` instable sur une petite cohorte** (constat du
+   2026-11-05). Le drapeau tombe sur `AF > 0,02 et HWE_P < 1e-6`, HWE exact
+   sur les fondateurs. Sur PMS (214 fondateurs), ~140 sites courants ont un
+   `HWE_P` collé au seuil (excès d'hétérozygotes typique des paralogues) :
+   un seul fondateur de moins (un lien parent-enfant ajouté au pedigree)
+   double leur p-valeur et 163 sites changent de FILTER (25 deviennent PASS,
+   AF 0,13-0,29). Sans effet sur les sites rares (pages famille identiques),
+   mais le statut des sites courants dépend du pedigree à un individu près.
+   Pistes : test unilatéral d'excès d'hétérozygotes (ce qui signale un
+   artefact de paralogue ; un défaut d'hétérozygotes est un autre signal),
+   seuil fonction du nombre de fondateurs, ou F d'hétérozygotie avec une
+   marge (|F| plutôt que p) ; vérifier sur dataset_paper (2 670) que les
+   artefacts connus restent signalés. Le statut actuel est dans `HWE_P` (INFO,
+   arrondi à 6 décimales : l'arrondir moins pour l'audit).
 
 ### État au 2026-11-02 et priorités
 
