@@ -126,6 +126,21 @@ Priorités :
    marge (|F| plutôt que p) ; vérifier sur dataset_paper (2 670) que les
    artefacts connus restent signalés. Le statut actuel est dans `HWE_P` (INFO,
    arrondi à 6 décimales : l'arrondir moins pour l'audit).
+   Analyse (2026-11-05, `runs/_cohortart/`, non suivi) : l'instabilité n'est
+   pas propre au lien corrigé. Retirer n'importe quel fondateur fait basculer
+   ~150 sites sur PMS (206 fondateurs, 0,46 % des 31 928 signalés), 59 sur
+   dataset_paper (1 688 fondateurs, 0,04 %) : c'est le lot de tout seuil dur,
+   amplifié par une petite cohorte, et les sites à la limite sont courants (AF
+   médiane 0,45), jamais sur les pages famille. Un test unilatéral d'excès
+   d'hétérozygotes ou un seuil sur F ne réduit les bascules que de 3-50 % et
+   relâcherait les sites en défaut d'hétérozygotes (557 PMS, 4 420
+   dataset_paper : F 0,4-0,9, 88-93 % < 1 kb, génotypes biaisés vers 1/1) :
+   règle actuelle gardée. Le vrai manque d'une petite cohorte est la
+   puissance : sur les 54 492 sites courants de PMS appariés à dataset_paper,
+   celle-ci en signale 10 767 de plus (PMS seul : 76 de plus) ; 93 % des sites
+   PMS à la limite (p 1e-8..1e-4) y sont appariés, CohortArtifact à 97 %.
+   Piste : avec `--known-sites`, reprendre le CohortArtifact du site de
+   référence (puissance et stabilité de la grande cohorte).
 
 ### État au 2026-11-02 et priorités
 
