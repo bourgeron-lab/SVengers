@@ -111,7 +111,7 @@ Priorités :
    0 changement sur 2 989. v5n sur appels re-génotypés : PASS par génome
    -1,1 % DEL, -2,5 % DUP hors IP (max ~3 %). Mosaïques : 9 segments de
    faible fraction sur génomes ondulés passaient le test BAF, d'où le
-   plancher de fraction 0,3 sur génome ondulé (FAIT, non publié) ; ensuite
+   plancher de fraction 0,3 sur génome ondulé (FAIT, v1.11.0) ; ensuite
    identiques à l'ancien BAF plus une perte 22q13 à f = 0,18 (à revoir dans
    IGV). À part : les génomes IP gardent ~22k sites RefCall non
    génotypés (`./.`) à VAF 0,3-0,7 sur chr20 (~6k sur un génome ordinaire),

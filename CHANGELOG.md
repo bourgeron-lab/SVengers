@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.11.0 — 2026-11-05
 
 - **Mosaic scan: a wavy genome needs a fraction of at least 0.3** — depth
   waves of ±15 % read as 15-25 % clones. On the BAF rewritten by `vedette
