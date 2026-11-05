@@ -36,14 +36,24 @@ précision, SQ/PE/SR : #8) et Parquet long (#6) ; lignes non-PASS dans
 l'export sans les mettre sur la page (#10, reste).
 
 Priorités :
-1. **Labels indépendants pour la profondeur** — EN COURS : lot IGV v5 de 141
-   appels par la profondeur seule (enfants de trios dataset_paper,
-   production actuelle), stratifié type × taille (1-10 kb, 10-100 kb,
-   ≥ 100 kb) × zone de score (PASS, SQ 1-5, SQ < 1) × transmission
-   apparente, à l'aveugle (`runs/validation/validation_v5.html`, non suivi).
-   Constat du tirage : aucune DUP de profondeur < 100 kb n'est PASS (5 sur
-   ~20 000 en zone grise) ; les DUP ≥ 100 kb PASS le sont par le sauvetage
-   BAF (SQ < 0,21). La relecture dira si v5n perd de vraies DUP.
+1. **Labels indépendants pour la profondeur** — lot IGV v5 RELU (2026-11-05) :
+   141 appels par la profondeur seule (enfants de trios dataset_paper),
+   stratifiés type × taille × zone de score × transmission apparente, à
+   l'aveugle (`runs/validation/`, non suivi ; analyse `analyse_v5.py`).
+   84 vrais, 47 faux, 10 incertains. PASS : 30/30 tranchés vrais. Sous le
+   seuil : 54 vrais / 47 faux, quelle que soit la zone (gris 55 %, bas 53 %) ;
+   le SQ n'y classe plus rien (AUC 0,44 DEL, 0,54 DUP). Ce qui sépare :
+   transmission apparente (71-75 % vrais contre 31-33 % pour les de novo
+   apparents ; la relecture voyait les profils des parents), génome ondulé
+   (33 % contre ~62 %), taille des DUP (80 % ≥ 100 kb, ~40 % en dessous).
+   **v5n perd de vraies grandes DUP** : 12/15 vraies sous le seuil (8/8
+   héritées), bornes trop courtes sur les 3 corrigées. Suites :
+   a. score d'impact avec la carte de dosage ClinGen — FAIT (non publié) :
+      une dup15q de novo (CN 4, enfant atteint) était à +0,15 ;
+   b. repêchage des grandes DUP nettes sous le seuil (rapport de profondeur
+      ≥ 1,4, génome non ondulé), comme « SOUS-SEUIL NDD » ;
+   c. v11 : les 131 labels tranchés à l'entraînement (caryotypes à part : les
+      DUP du X d'un XXY ont reçu des verdicts contraires).
 2. **Second avis CNN (1sexdecies)** — étape 1 FAITE (v1.3.0, 2026-11-04) :
    `vedette tensors`, 13 canaux x 256 points + 12 scalaires par appel
    (PASS/LowSQ >= 1 kb, ~1 200 par génome, ~20 s, ~1 Mo). Le contexte de

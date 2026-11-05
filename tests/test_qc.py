@@ -153,6 +153,61 @@ def test_impact_score_follows_the_clingen_grid(tmp_path):
     assert label.startswith("+1.00 — élevé") and "SHANK3" in label and "AD" in label
 
 
+def _clingen_fixture(tmp_path):
+    """ClinGen lists in the published layout: two comment lines, then a
+    '#'-prefixed header."""
+    reg = tmp_path / "regions.tsv"
+    reg.write_text(
+        "#ClinGen Region Curation Results\n#Genomic Locations are reported on GRCh38\n"
+        "#ISCA ID\tISCA Region Name\tcytoBand\tGenomic Location\tHaploinsufficiency Score\t"
+        "Triplosensitivity Score\n"
+        "ISCA-1\t22q99 recurrent region (includes PLAIN)\t22q99\tchr22:1000001-2000000\t3\t3\n"
+        "ISCA-2\t22q98 population region\t22q98\tchr22:3000001-3500000\t40\t0\n"
+        "ISCA-3\tpending region\t22q97\ttbd\t3\t3\n"
+    )
+    genes = tmp_path / "genes.tsv"
+    genes.write_text(
+        "#ClinGen Gene Curation Results\n"
+        "#Gene Symbol\tGene ID\tcytoBand\tGenomic Location\tHaploinsufficiency Score\t"
+        "Triplosensitivity Score\n"
+        "PLAIN\t1\t22q\tchr22:500001-520000\t3\t3\n"
+        "RECG\t2\t22q\tchr22:200001-220000\t30\tNot yet evaluated\n"
+    )
+    return str(genes), str(reg)
+
+
+def test_impact_score_reads_the_clingen_dosage_map(tmp_path):
+    """A recurrent region and ClinGen gene scores: the v5 review found a de
+    novo 15q11.2q13 duplication (TS 3 region) scored +0.15."""
+    from vedette.clingen import ClinGen
+    from vedette.export import impact_fields
+    from vedette.report import _GeneIndex
+
+    gff, tsv = _genetrek_fixture(tmp_path)
+    cg = ClinGen.load(*_clingen_fixture(tmp_path))
+    assert cg.n_regions == 2 and cg.gene("RECG") == (30, None)
+    idx = _GeneIndex(gff, tsv, cg)
+    def imp(a, b, t="DEL"):
+        return idx.impact("chr22", a, b, t)
+    score, label = imp(1_020_000, 1_980_000, "DUP")   # 96 % of the TS 3 region
+    assert score == 1.00 and "DUP complète de la région ClinGen 22q99 recurrent region" in label
+    assert "(ISCA-1, TS 3)" in label and "includes" not in label
+    assert imp(1_000_000, 1_300_000, "DUP")[0] == 0.45    # 30 %: partial, kept visible
+    assert imp(1_000_000, 1_100_000, "DUP")[0] == -0.60   # 10 %, no gene: nothing
+    assert imp(3_100_000, 3_200_000) == (-1.00, "-1.00 — bénin · dans la région ClinGen "
+                                         "22q98 population region (ISCA-2, HI 40)")
+    assert imp(3_100_000, 3_200_000, "DUP")[0] == -0.60   # benign for losses only
+    assert impact_fields(imp(3_100_000, 3_200_000)[1])[:2] == ("-1.00", "benign")
+    # ClinGen genes: PLAIN has no GeneTrek evidence, HI 3 and TS 3 in ClinGen
+    score, label = imp(490_000, 530_000)
+    assert score == 1.00 and "DEL complète PLAIN (ClinGen HI 3)" in label
+    assert imp(490_000, 530_000, "DUP")[0] == 1.00
+    assert imp(490_000, 505_000)[0] == 0.90                # exonic
+    assert imp(190_000, 230_000)[0] == 0.15                # RECG: AR either way
+    # without ClinGen, unchanged
+    assert _GeneIndex(gff, tsv).impact("chr22", 490_000, 530_000)[0] == 0.0
+
+
 def test_denovo_outlier_guard():
     from vedette.report import denovo_outliers
 

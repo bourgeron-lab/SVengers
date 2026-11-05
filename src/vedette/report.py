@@ -31,6 +31,7 @@ import numpy as np
 import pysam
 
 from . import __version__
+from .clingen import ClinGen, region_points
 from .export import qc_row, write_family_export
 from .karyotype import aneuploid_sex_chromosomes, is_anomaly
 from .ped import Pedigree
@@ -1236,8 +1237,10 @@ def _table(headers: list[str], rows: list[list], limit: int | None = None) -> st
 class _GeneIndex:
     """Overlap lookup of genes/exons in a tabix-indexed Ensembl GTF/GFF."""
 
-    def __init__(self, gff_path: str | Path, ndd_tsv: str | Path | None = None):
+    def __init__(self, gff_path: str | Path, ndd_tsv: str | Path | None = None,
+                 clingen: ClinGen | None = None):
         self._gff_path = str(gff_path)
+        self.clingen = clingen
         self._tbx, self._tbx_pid = pysam.TabixFile(self._gff_path), os.getpid()
         self._contigs = set(self._tbx.contigs)
         # GeneTrek gene annotations, keyed by ENSG and by symbol
@@ -1313,8 +1316,9 @@ class _GeneIndex:
     def impact(self, contig: str, start: int, end: int,
                svtype: str = "DEL") -> tuple[float, str]:
         """(points, label): gene-content score of a CNV, after the ACMG/ClinGen
-        CNV scoring rules (Riggs et al. 2020, sections 1-3), with GeneTrek
-        standing in for the ClinGen dosage map. Not an ACMG classification —
+        CNV scoring rules (Riggs et al. 2020, sections 1-3): the ClinGen
+        dosage map when given (regions and genes, see clingen.py), GeneTrek
+        for the genes ClinGen has not scored. Not an ACMG classification —
         inheritance and phenotype (sections 4-5) are left to the reader.
 
         The previous score (0 intergenic / 1 intronic / 2 exonic, +1/+2 for an
@@ -1322,32 +1326,42 @@ class _GeneIndex:
         type of event: half the coding genome landed on the same level.
         """
         hits = [h for h in self._hits(contig, start, end) if h[2]]  # coding
-        if not hits:
-            return -0.60, "-0.60 — aucun gène codant"
         dup = svtype == "DUP"
+        # ClinGen regions (section 2A/2B), scored like the best gene
+        reg_pts, reg_rule, benign = region_points(self.clingen, contig, start, end, dup)
+        if not hits and not reg_pts:
+            if benign:
+                return -1.00, f"-1.00 — bénin · {benign}"
+            return -0.60, "-0.60 — aucun gène codant"
         scored = []
         for name, ensg, _coding, exonic, gs, ge in hits:
             g = self.gt.get(ensg) or self.gt.get(name)
+            cg = self.clingen.gene(name) if self.clingen else None
             whole = gs > 0 and start < gs and end >= ge
             inside = gs > 0 and start >= gs and end <= ge
-            pts, rule = _gene_points(g, dup, whole, exonic, inside)
-            scored.append((pts, name, rule, g))
+            pts, rule, desc = _gene_points(g, dup, whole, exonic, inside, cg)
+            scored.append((pts, name, rule, desc))
+        if reg_pts:
+            scored.append((reg_pts, "", reg_rule, ""))
         scored.sort(key=lambda t: -t[0])
-        best_pts, best_name, best_rule, best_g = scored[0]
+        best_pts, best_name, best_rule, best_desc = scored[0]
         n_coding = sum(1 for h in hits if h[3] or (h[4] > 0 and start < h[4] and end >= h[5]))
         # section 3: number of protein-coding genes (losses 25/35, gains 35/50)
         lo, hi = (35, 50) if dup else (25, 35)
         n_pts = 0.90 if n_coding >= hi else 0.45 if n_coding >= lo else 0.0
         total = round(best_pts + n_pts, 2)
+        if benign and best_pts < 0.45:
+            # inside a region curated "dosage sensitivity unlikely" (2F, 2C-2D)
+            return -1.00, f"-1.00 — bénin · {benign}"
         band = ("élevé" if total >= 0.90 else "modéré" if total >= 0.45
                 else "faible" if total >= 0 else "aucun gène codant")
         parts = [f"{total:+.2f} — {band}"]
         if best_pts > 0:
-            parts.append(f"{best_rule} {best_name} ({best_g.describe()})")
+            parts.append(f"{best_rule} {best_name} ({best_desc})" if best_name else best_rule)
         else:
             exonic_any = any(h[3] for h in hits)
             parts.append("exonique" if exonic_any else "intronique")
-        others = sum(1 for p, *_ in scored[1:] if p >= 0.45)
+        others = sum(1 for p, name, *_ in scored[1:] if p >= 0.45 and name)
         if others:
             parts.append(f"+{others} gène{'s' if others > 1 else ''} NDD")
         if n_coding > 1:
@@ -1410,40 +1424,61 @@ class _GeneTrek:
         return ", ".join(bits)
 
 
-def _gene_points(g, dup: bool, whole: bool, exonic: bool, inside: bool) -> tuple[float, str]:
-    """(points, rule) of one coding gene hit by a CNV; see _GeneIndex.impact.
+def _gene_points(g, dup: bool, whole: bool, exonic: bool, inside: bool,
+                 cg: tuple[int | None, int | None] | None = None) -> tuple[float, str, str]:
+    """(points, rule, description) of one coding gene hit by a CNV; see
+    _GeneIndex.impact. ``cg``: the gene's ClinGen (HI, TS) scores.
 
-    Losses (section 2): an established NDD gene with dominant inheritance is
-    the stand-in for a ClinGen haploinsufficient gene — complete deletion
-    1.00 (2A), exonic 0.90 (2C/2D, 5'/3' not distinguished). Unknown mode
-    0.45, recessive only 0.15 (a heterozygous loss is a carrier state).
-    Candidate NDD genes 0.30, 0.45 when also constrained; a constrained gene
-    with no NDD evidence 0.15 (2H). Intronic: 0.
+    Losses (section 2): a ClinGen haploinsufficient gene (HI 3), or else an
+    established NDD gene with dominant inheritance — complete deletion 1.00
+    (2A), exonic 0.90 (2C/2D, 5'/3' not distinguished). Unknown mode 0.45,
+    recessive only (or ClinGen HI 30) 0.15 (a heterozygous loss is a carrier
+    state). Candidate NDD genes 0.30, 0.45 when also constrained; a
+    constrained gene with no NDD evidence 0.15 (2H). Intronic: 0.
 
-    Gains: triplosensitivity is not in GeneTrek, so a complete duplication
-    scores 0.15 at most (dominant NDD gene, "TS non évaluée"). A duplication
-    with both breakpoints inside a gene can disrupt it (2I) and is scored as
-    a partial loss: 0.45 for a dominant NDD gene, 0.15 otherwise.
+    Gains: a complete duplication of a ClinGen triplosensitive gene (TS 3)
+    scores 1.00 (2A). Without it, triplosensitivity is unknown (GeneTrek has
+    none) and a complete duplication scores 0.15 at most (dominant NDD gene).
+    A duplication with both breakpoints inside a gene can disrupt it (2I)
+    and is scored as a partial loss: 0.45 for a dominant NDD gene or an HI 3
+    gene, 0.15 otherwise.
     """
-    if g is None or not (whole or exonic):
-        return 0.0, ""
+    hi, ts = cg if cg else (None, None)
+    if (g is None and hi not in (3, 30) and ts != 3) or not (whole or exonic):
+        return 0.0, "", ""
+    desc = g.describe() if g is not None else ""
+
+    def with_clingen(score: str) -> str:
+        return f"ClinGen {score}, {desc}" if desc else f"ClinGen {score}"
+
     if not dup:
         rule = "DEL complète" if whole else "DEL exonique"
+        if hi == 3:
+            return (1.00 if whole else 0.90), rule, with_clingen("HI 3")
+        if g is None:
+            return (0.15, rule, with_clingen("HI 30")) if hi == 30 else (0.0, "", "")
         if g.established and g.dominant:
-            return (1.00 if whole else 0.90), rule
+            return (1.00 if whole else 0.90), rule, desc
         if g.established:
-            return (0.15 if g.recessive_only else 0.45), rule
+            return (0.15 if g.recessive_only else 0.45), rule, desc
         if g.candidate:
-            return (0.45 if g.constrained else 0.30), rule
-        return 0.15, rule
+            return (0.45 if g.constrained else 0.30), rule, desc
+        return 0.15, rule, desc
+    if whole and ts == 3:
+        return 1.00, "DUP complète", with_clingen("TS 3")
     if inside and exonic and not whole:
         rule = "DUP intragénique"
+        if hi == 3:
+            return 0.45, rule, with_clingen("HI 3")
+        if g is None:
+            return 0.0, "", ""
         if g.established and g.dominant:
-            return 0.45, rule
-        return 0.15, rule
-    if whole and g.established and g.dominant:
-        return 0.15, "DUP complète (TS non évaluée)"
-    return 0.0, ""
+            return 0.45, rule, desc
+        return 0.15, rule, desc
+    if whole and g is not None and g.established and g.dominant:
+        return 0.15, ("DUP complète (TS non évaluée)" if ts is None
+                      else f"DUP complète (TS {ts})"), desc
+    return 0.0, "", ""
 
 
 def sample_qc_flags(overloaded: dict, dn_outliers: dict) -> dict[str, list[str]]:
@@ -2273,6 +2308,8 @@ def generate_report(
     min_denovo_gq: int = 20,
     genes_gff: str | Path | None = None,
     ndd_tsv: str | Path | None = None,
+    clingen_genes: str | Path | None = None,
+    clingen_regions: str | Path | None = None,
     segdup_bed: str | Path | None = None,
     lcr_bed: str | Path | None = None,
     max_denovo_per_child: int = 20,
@@ -2297,7 +2334,11 @@ def generate_report(
     out_html = Path(out_html) if out_html else run_dir / "report.html"
     cohort_name = cohort_name or run_dir.name
 
-    gene_idx = _GeneIndex(genes_gff, ndd_tsv) if genes_gff else None
+    clingen = None
+    if genes_gff and (clingen_genes or clingen_regions):
+        clingen = ClinGen.load(clingen_genes, clingen_regions)
+        logger.info("ClinGen: %d régions, %d gènes", clingen.n_regions, len(clingen.genes))
+    gene_idx = _GeneIndex(genes_gff, ndd_tsv, clingen) if genes_gff else None
     # segdup/LCR are properties of the locus, so they are annotated here from
     # the site span rather than carried through the merge: that keeps them
     # available on already-merged cohorts. lcr_ovl was dead in the model up
@@ -2676,7 +2717,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             for s_ in samples
         }
         export_meta = {"cohort": cohort_name, "model_version": _model_version(run_dir, samples),
-                       "min_carrier_gq": min_carrier_gq, "events_pass_only": events_pass_only}
+                       "min_carrier_gq": min_carrier_gq, "events_pass_only": events_pass_only,
+                       "clingen": [Path(p).name for p in (clingen_genes, clingen_regions) if p]}
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,
@@ -2772,16 +2814,23 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
 
 <h2>Sites rares (≤ 2 porteurs)</h2>
 <p>Impact : points de contenu génique d'après la grille ACMG/ClinGen des CNV
-(Riggs et al. 2020, sections 1-3), GeneTrek tenant lieu de carte de dosage
-ClinGen — ce n'est pas une classification ACMG (hérédité et phénotype non
-comptés). DEL : gène NDD établi à transmission dominante délété en entier
-+1,00, atteinte exonique +0,90 ; mode inconnu +0,45 ; récessif seul +0,15 ;
-gène NDD candidat +0,30 (+0,45 si contraint) ; gène contraint seul
-(s_het ≥ 0,1 ou LOEUF &lt; 0,35) +0,15 ; ≥ 25 / ≥ 35 gènes codants +0,45 / +0,90.
-DUP : triplosensibilité non disponible — duplication intragénique d'un gène
-NDD dominant +0,45 (perte de fonction possible), duplication complète +0,15 ;
-≥ 35 / ≥ 50 gènes codants +0,45 / +0,90. Aucun gène codant −0,60. Niveaux :
-élevé ≥ 0,90, modéré ≥ 0,45. Tri par impact puis taille.</p>
+(Riggs et al. 2020, sections 1-3) : carte de dosage ClinGen (régions et gènes)
+quand elle est fournie, GeneTrek pour les gènes que ClinGen n'a pas notés — ce
+n'est pas une classification ACMG (hérédité et phénotype non comptés).
+Régions ClinGen de score 3 (HI pour une DEL, TS pour une DUP) : couverte à
+≥ 90 % +1,00, à ≥ 20 % +0,45 (chevauchement partiel, gardé visible : les appels
+s'arrêtent souvent dans les répétitions qui bornent les régions récurrentes) ;
+entièrement dans une région « sensibilité au dosage peu probable » (score 40)
+−1,00 (bénin). DEL : gène ClinGen HI 3, ou à défaut gène NDD établi à
+transmission dominante, délété en entier +1,00, atteinte exonique +0,90 ; mode
+inconnu +0,45 ; récessif seul +0,15 ; gène NDD candidat +0,30 (+0,45 si
+contraint) ; gène contraint seul (s_het ≥ 0,1 ou LOEUF &lt; 0,35) +0,15 ;
+≥ 25 / ≥ 35 gènes codants +0,45 / +0,90. DUP : gène ClinGen TS 3 dupliqué en
+entier +1,00 ; duplication intragénique d'un gène NDD dominant ou HI 3 +0,45
+(perte de fonction possible), duplication complète d'un gène NDD dominant de
+TS non établie +0,15 ; ≥ 35 / ≥ 50 gènes codants +0,45 / +0,90. Aucun gène
+codant −0,60. Niveaux : élevé ≥ 0,90, modéré ≥ 0,45, bénin −1,00. Tri par
+impact puis taille.</p>
 <h3>DEL ({sum(1 for s in rare if s["svtype"] == "DEL")})</h3>
 {_table(["site", "locus", "taille", "gènes", "impact", "AF", "porteurs"], _rare_rows("DEL"), limit=40)}
 <h3>DUP ({sum(1 for s in rare if s["svtype"] == "DUP")})</h3>

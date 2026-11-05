@@ -44,7 +44,8 @@ QC_COLUMNS = [
     "karyotype", "flags", "flags_text",
 ]
 
-IMPACT_LEVELS = {"élevé": "high", "modéré": "moderate", "faible": "low", "aucun gène codant": "none"}
+IMPACT_LEVELS = {"élevé": "high", "modéré": "moderate", "faible": "low", "aucun gène codant": "none",
+                 "bénin": "benign"}
 _IMPACT_RE = re.compile(
     r"^\s*([+-]\d+(?:\.\d+)?) — (" + "|".join(IMPACT_LEVELS) + r")(?: · (.*))?$"
 )

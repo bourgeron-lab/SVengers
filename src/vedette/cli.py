@@ -615,6 +615,12 @@ def report(
     ndd_tsv: Optional[Path] = typer.Option(
         None, help="GeneTrek TSV: NDD tiers feed the impact score of site tables"
     ),
+    clingen_genes: Optional[Path] = typer.Option(
+        None, help="ClinGen_gene_curation_list_GRCh38.tsv: gene HI/TS scores for the impact score"
+    ),
+    clingen_regions: Optional[Path] = typer.Option(
+        None, help="ClinGen_region_curation_list_GRCh38.tsv: recurrent and other dosage regions (15q11.2q13, 16p11.2, 22q11.2...) for the impact score"
+    ),
     segdup_bed: Optional[Path] = typer.Option(
         None, help="Segmental-duplication BED: adds a segdup overlap column to the family events pages"
     ),
@@ -668,6 +674,8 @@ def report(
             min_denovo_gq=min_denovo_gq,
             genes_gff=genes_gff,
             ndd_tsv=ndd_tsv,
+            clingen_genes=clingen_genes,
+            clingen_regions=clingen_regions,
             segdup_bed=segdup_bed,
             lcr_bed=lcr_bed,
             max_denovo_per_child=max_denovo_per_child,

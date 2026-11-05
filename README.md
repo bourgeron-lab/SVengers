@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.4.2** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.5.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -151,7 +151,7 @@ manifest and a 6-column pedigree.
    are accepted).
 3. **Site parameters.** Edit `workflows/nextflow/nextflow.config` (or pass `--param value`
    or `-params-file`): `vedette_bin`, `vedette_config`, `resources_dir`, `fasta`, `pon`,
-   `model_dir`, and for the report `genes_gff`, `ndd_tsv`, `segdup_bed`, `lcr_bed`,
+   `model_dir`, and for the report `genes_gff`, `ndd_tsv`, `clingen_genes`, `clingen_regions`, `segdup_bed`, `lcr_bed`,
    `low_quality_prefixes`. The values in the repository point to the GHFC cluster and must
    be replaced; the SLURM profiles (`slurm`, `slurm_common`) name GHFC partitions.
 4. **Run.**
@@ -545,8 +545,11 @@ status and own-call status, sortable, opened from disk. Each row has:
   with wave < 0.2, set on the carriers' depth against the family's non-carriers, as one
   would do by eye in IGV (start error from a median 0.5 Mb to a few kb on reviewed rows);
 - **genes** (`--genes-gff`) and an **impact score** after the ACMG/ClinGen CNV grid
-  (Riggs et al. 2020, sections 1-3), with GeneTrek NDD tiers (`--ndd-tsv`) standing in for
-  the ClinGen dosage map; high ≥ 0.90, moderate ≥ 0.45. It is not an ACMG classification;
+  (Riggs et al. 2020, sections 1-3): the ClinGen dosage map when given
+  (`--clingen-regions`, `--clingen-genes`: recurrent regions such as 15q11.2q13, 16p11.2 or
+  22q11.2, and gene HI/TS scores), GeneTrek NDD tiers (`--ndd-tsv`) for the genes ClinGen
+  has not scored; high ≥ 0.90, moderate ≥ 0.45, benign −1.00 (inside a region curated
+  "dosage sensitivity unlikely"). It is not an ACMG classification;
 - **inheritance**, carrier genotypes `GT:GQ:SQ` per member (a carrier needs
   GQ ≥ `--min-carrier-gq`, 20), whether a member has its **own call** or only a
   re-genotyped one, re-genotyped CN support, segmental-duplication and LCR overlap

@@ -59,8 +59,8 @@ sites are left out of the page and of this file.
 | `support` | code | `strong`: a carrier's re-genotyped copy number agrees with the type; `weak`: none does |
 | `own_call` | code | `pass`: a member's own call (before merging) passed the filter; `filtered`: an own call exists but was filtered; `none`: carriage from cohort re-genotyping only; `lowsq` for sub-threshold rows; empty for mosaic/chromosomal rows |
 | `mosaic_cn` | float | fractional copy number of mosaic and chromosomal rows |
-| `impact_score` | float | gene-content score (ACMG/ClinGen CNV sections 1-3, GeneTrek dosage) |
-| `impact_level` | code | `high` (≥ 0.90), `moderate` (≥ 0.45), `low` (≥ 0), `none` (no coding gene) |
+| `impact_score` | float | gene-content score (ACMG/ClinGen CNV sections 1-3: ClinGen dosage regions and genes, GeneTrek for the genes ClinGen has not scored) |
+| `impact_level` | code | `high` (≥ 0.90), `moderate` (≥ 0.45), `low` (≥ 0), `none` (no coding gene), `benign` (−1.00: inside a ClinGen region curated "dosage sensitivity unlikely" for its type) |
 | `impact_reason` | text | the rule and gene behind the score (French) |
 | `impact` | text | display label (French), the three fields above in one string |
 | `exonic_genes`, `exonic_gene_ids` | list | protein-coding genes with an exon in the row (symbols, Ensembl ids), position order, complete |

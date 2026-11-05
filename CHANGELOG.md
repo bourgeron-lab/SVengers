@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v1.5.0 — 2026-11-05
+
+- **Impact score: ClinGen dosage map** — `vedette report --clingen-regions
+  --clingen-genes` read the ClinGen curation lists (GRCh38). A CNV covering
+  >= 90 % of a region scored 3 (HI for a loss, TS for a gain) gets +1.00
+  (2A), >= 20 % +0.45 (partial overlap kept visible: depth calls stop in the
+  repeats flanking recurrent regions); one lying inside a region curated
+  "dosage sensitivity unlikely" (score 40) gets -1.00, new level `bénin` /
+  `benign`. Gene HI 3 counts as an established dominant NDD gene for losses,
+  gene TS 3 gives +1.00 to a complete duplication. GeneTrek still scores the
+  genes ClinGen has not. Found by the v5 IGV review: a de novo 15q11.2q13
+  duplication (copy number 4, affected child) was on its family page at
+  +0.15 ("TS non évaluée"); it is now +0.45, a complete 16p11.2 BP4-BP5
+  duplication +1.00 instead of +0.15. On PMS's PASS sites: 14 levels up,
+  212 to benign, none down otherwise. The export JSON names the ClinGen files.
+
 ## v1.4.2 — 2026-11-05
 
 - **docs** — ROADMAP: `CohortArtifact` is unstable on a small cohort. On
