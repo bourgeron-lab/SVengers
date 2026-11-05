@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **`vedette labels --from-genetics-viz`** (#11) — reads the curators'
+  validations of genetics-viz (`validations/vedette.tsv`, append-only: the
+  last row of a family, variant and sample not marked Ignore wins) into one
+  label table (`present` = 1, `absent` = 0; `uncertain` and `different`
+  listed, no training label), with the curated-minus-called breakpoint
+  offsets; `--model-version` keeps the validations of one model, and
+  `--features` labels one sample's feature rows for `vedette train` (same
+  type, reciprocal overlap >= 0.5).
+
 ## v1.8.0 — 2026-11-05
 
 - **`vedette baf`: BAF without a QUAL threshold** — rewrites the BAF of

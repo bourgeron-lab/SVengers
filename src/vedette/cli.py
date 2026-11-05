@@ -775,6 +775,53 @@ def label(
     )
 
 
+@app.command()
+def labels(
+    from_genetics_viz: Path = typer.Option(
+        ..., "--from-genetics-viz", help="genetics-viz validations/vedette.tsv (curators' validations)"
+    ),
+    out: Path = typer.Option(..., help="Output TSV: one current validation per (family, variant, sample)"),
+    model_version: Optional[str] = typer.Option(
+        None, "--model-version", help="Keep only validations of calls made with this model (e.g. v5n)"
+    ),
+    features: Optional[Path] = typer.Option(
+        None, help="Feature TSV of one sample (`vedette filter --features-out`) to label for training"
+    ),
+    sample: Optional[str] = typer.Option(None, help="With --features: the sample those features belong to"),
+    labeled_out: Optional[Path] = typer.Option(None, help="With --features: labeled feature TSV"),
+) -> None:
+    """Curators' genetics-viz validations as labels: present = 1, absent = 0 (uncertain, different: none)."""
+    import statistics
+
+    from .train.validations import (
+        breakpoint_offsets,
+        label_features,
+        read_genetics_viz,
+        write_labels,
+    )
+
+    vals, counts = read_genetics_viz(from_genetics_viz)
+    if model_version:
+        vals = [v for v in vals if v.model_version == model_version]
+    write_labels(vals, out)
+    by = {k: sum(v.validation == k for v in vals) for k in ("present", "absent", "uncertain", "different")}
+    typer.echo(f"{counts['rows']} rows ({counts['ignored']} ignored, {counts['superseded']} superseded, "
+               f"{counts['unreadable']} unreadable) -> {len(vals)} validations: "
+               + ", ".join(f"{n} {k}" for k, n in by.items()) + f" -> {out}")
+    offs = breakpoint_offsets(vals)
+    for side in ("start", "end"):
+        if offs[side]:
+            a = [abs(x) for x in offs[side]]
+            typer.echo(f"curated {side}: n={len(a)}, median |offset| {statistics.median(a):.0f} bp, "
+                       f"<= 1 kb: {sum(x <= 1000 for x in a)}")
+    if features is not None:
+        if not sample or labeled_out is None:
+            raise typer.BadParameter("--features needs --sample and --labeled-out")
+        c = label_features(features, vals, sample, labeled_out)
+        typer.echo(f"{c['tp']} TP, {c['fp']} FP, {c['unlabeled']} unlabeled, "
+                   f"{c['conflict']} conflicting -> {labeled_out}")
+
+
 @app.command("label-trio")
 def label_trio(
     features: Path = typer.Argument(..., help="Feature TSV of the truth-less (wavy) child"),

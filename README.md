@@ -736,6 +736,22 @@ vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out 
    artefact-flagged or common sites get no label (recurrent artefacts are "transmitted"
    too).
 
+   **Curators' validations.** Validations made in genetics-viz (the GHFC curation tool,
+   `validations/vedette.tsv`: `FID Variant Sample … Validation CuratedStart CuratedEnd …
+   Ignore Timestamp SiteId CallerVersion ModelVersion`, append-only) become labels too:
+
+   ```bash
+   vedette labels --from-genetics-viz validations/vedette.tsv --out labels.tsv \
+       --model-version v5n --features child.features.tsv --sample CHILD \
+       --labeled-out child.curated.labeled.tsv
+   ```
+
+   The last row of a (family, variant, sample) not marked `Ignore` wins; `present` = 1,
+   `absent` = 0 (`events.html`'s vrai / faux); `uncertain` and `different` (wrong type or
+   breakpoints) are listed but give no training label. A feature row takes the label of
+   the validations it overlaps (same type, reciprocal overlap ≥ 0.5). `labels.tsv` adds the
+   curated-minus-called breakpoint offsets, summarised on the terminal.
+
 4. **Train:**
 
    ```bash
@@ -806,6 +822,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette manifest discover` / `validate` | build (GHFC layout) or check a cohort sample manifest |
 | `vedette pon build` / `artifacts` | panel of normals from stores; recurrent-artefact BED from a cohort VCF |
 | `vedette label` / `label-trio` | training labels: Truvari against a truth set, or transmission in trios |
+| `vedette labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
 | `vedette train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
 | `vedette bench truth` / `compare` / `dup-truth` / `trios` | benchmark harness |
 
