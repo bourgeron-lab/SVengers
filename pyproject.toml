@@ -33,6 +33,7 @@ dependencies = [
 
 [project.optional-dependencies]
 bigwig = ["pyBigWig>=0.3.22"]
+parquet = ["pyarrow>=14"]
 dev = ["pytest>=8", "ruff>=0.4"]
 
 [project.scripts]

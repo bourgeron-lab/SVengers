@@ -600,9 +600,15 @@ status and own-call status, sortable, opened from disk. Each row has:
 Each page comes with a **machine-readable export** for curation tools: `<FID>.vedette.tsv`
 (the page's rows with typed, coded columns: `kind`, 1-based inclusive `start`/`end`, the
 impact split into score, level and reason, complete exonic and intronic gene lists with
-Ensembl ids, per-member `GT`/`GQ`/`CN`, each child's inheritance code and DNQ),
-`<FID>.vedette.qc.tsv` (per-member QC: wave, carrier load, de novo count, karyotype, flag
-codes) and `<FID>.vedette.json` (schema and caller versions). Format: [docs/EXPORT.md](docs/EXPORT.md).
+Ensembl ids, per-member `GT`/`GQ`/`CN`, each child's inheritance code and DNQ, each
+member's own call behind the row with its source, precision and SQ, the cohort site's key
+and INFO evidence), `<FID>.vedette.qc.tsv` (per-member QC: wave, carrier load, de novo
+count, karyotype, flag codes), `<FID>.vedette.json` (schema and caller versions) and, with
+pyarrow (`pip install vedette[parquet]`), `<FID>.vedette.parquet` (the same rows in long
+form, one line per row × member, typed, with the own call's full evidence: PE, SR, CG, RD,
+CNQ, CIPOS/CIEND). `vedette site-map OLD.vcf.gz NEW.vcf.gz` follows cohort sites across a
+re-merge (same, moved, split, merged, lost, new), for validations keyed on a site. Format:
+[docs/EXPORT.md](docs/EXPORT.md).
 
 `--events-pass-only` restricts the pages to PASS sites, which is required at cohort scale
 (non-PASS artefacts are carried by nearly every family); the family export still holds the
@@ -823,6 +829,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette pon build` / `artifacts` | panel of normals from stores; recurrent-artefact BED from a cohort VCF |
 | `vedette label` / `label-trio` | training labels: Truvari against a truth set, or transmission in trios |
 | `vedette labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
+| `vedette site-map` | correspondence of cohort sites between two runs (same, moved, split, merged, lost, new) |
 | `vedette train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
 | `vedette bench truth` / `compare` / `dup-truth` / `trios` | benchmark harness |
 

@@ -10,6 +10,23 @@
   offsets; `--model-version` keeps the validations of one model, and
   `--features` labels one sample's feature rows for `vedette train` (same
   type, reciprocal overlap >= 0.5).
+- **Family export: per-carrier evidence** (#8) — for each member, the own
+  call behind the row (its filtered VCF, same type, reciprocal overlap >=
+  0.5, a PASS call first): `OWN_`, `SQ_`, `SRC_`, `PRECISE_` columns in the
+  TSV, and in the Parquet file its id, FILTER, bounds, CIPOS/CIEND, GQ, PE,
+  SR, CG, RD, CNQ and model version; per row, the cohort site's AF,
+  NSAMPLES, PRECISE_FRAC, SQMEAN, HWE_P, CN_DISC and REF_AF.
+- **Site keys** (#9) — `site_key` (`chr:start-end:del|dup`, the cohort
+  site's own 1-based bounds) in the family export, and `vedette site-map OLD
+  NEW` for the correspondence of sites across a re-merge: same bounds first,
+  then mutual best matches by reciprocal overlap (>= 0.5), then leftovers as
+  split or merged; on two identical cohort VCFs every site is `same`
+  (pairing every overlap read 92,004 PMS sites as "complex": sites overlap
+  their neighbours in a real cohort).
+- **Family export as Parquet** (#6) — `<FID>.vedette.parquet` with pyarrow
+  (`vedette[parquet]`): one line per row x member, typed, list columns,
+  versions and the panel of normals in the file metadata; the `.json` gives
+  `pon` too.
 
 ## v1.8.0 — 2026-11-05
 

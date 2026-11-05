@@ -315,8 +315,12 @@ def _events_link(fid: str, n_members: int) -> str:
             f"tous les événements (filtres chr/type)</a>")
 
 
-def own_call_index(run_dir: Path, members: list[str]) -> dict:
+def own_call_index(run_dir: Path, members: list[str], details: dict | None = None) -> dict:
     """{(contig, svtype): [(start, stop, is_pass, member)]} of the family's OWN calls.
+
+    ``details``, when given, is filled in the same pass with
+    {(member, contig, svtype): [(start, stop, own_call_fields(rec))]}, for the
+    per-carrier evidence of the family export (#8).
 
     A cohort site records a breakpoint cluster; re-genotyping then assigns a
     genotype to every sample, whether or not that sample ever produced a call
@@ -346,11 +350,64 @@ def own_call_index(run_dir: Path, members: list[str]) -> dict:
                         idx[(rec.contig, svtype)].append(
                             (start + 1, stop, list(rec.filter.keys()) == ["PASS"], m)
                         )
+                        if details is not None:
+                            details.setdefault((m, rec.contig, svtype), []).append(
+                                (start + 1, stop, own_call_fields(rec, start + 1, stop)))
         except (OSError, ValueError):  # a report must survive a missing VCF
             continue
     for k in idx:
         idx[k].sort()
+    for v in (details or {}).values():
+        v.sort(key=lambda t: (t[0], t[1]))
     return idx
+
+
+def own_call_fields(rec, pos: int, end: int) -> dict:
+    """A member's own call as the family export gives it (#8): id, FILTER,
+    bounds (1-based inclusive), SOURCE, precision, CIPOS/CIEND and the
+    sample's evidence (SQ, PE, SR, CG, RD, CNQ), and the model that scored it."""
+    info, fmt = rec.info, rec.samples[0]
+
+    def get(d, k):
+        try:
+            v = d.get(k)
+        except (KeyError, ValueError):  # undeclared in an older header
+            return None
+        return v
+
+    def ci(k):
+        v = get(info, k)
+        return None if v is None else tuple(int(x) for x in v)
+    return {
+        "id": rec.id or "", "filter": ";".join(rec.filter.keys()) or "PASS",
+        "start": pos, "end": end, "source": get(info, "SOURCE") or "",
+        "precise": not bool(get(info, "IMPRECISE")),
+        "cipos": ci("CIPOS"), "ciend": ci("CIEND"),
+        "sq": get(fmt, "SQ"), "gq": get(fmt, "GQ"), "pe": get(fmt, "PE"), "sr": get(fmt, "SR"),
+        "cg": get(fmt, "CG"), "rd": get(fmt, "RD"), "cnq": get(fmt, "CNQ"),
+        "model_version": get(info, "MODEL_VER") or "",
+    }
+
+
+def own_call_detail(details: dict, member: str, contig: str, pos: int, end: int,
+                    svtype: str, min_ro: float = 0.5) -> dict | None:
+    """The member's own call behind a row: same type, reciprocal overlap >=
+    ``min_ro`` (the rule of ``own_call_status``), a PASS call before a
+    filtered one, then the larger overlap; None without one."""
+    best, best_key = None, None
+    for op, oe, f in details.get((member, contig, svtype), ()):
+        if op > end:
+            break
+        ov = min(end, oe) - max(pos, op)
+        if ov <= 0:
+            continue
+        ro = ov / max(end - pos, oe - op, 1)
+        if ro < min_ro:
+            continue
+        key = (f["filter"] == "PASS", ro)
+        if best_key is None or key > best_key:
+            best, best_key = f, key
+    return best
 
 
 def own_call_status(idx: dict, contig: str, pos: int, end: int, svtype: str,
@@ -913,6 +970,7 @@ def _write_all_family_events(
     ev_spill.flush()
 
     site_idx = _site_index(sites)
+    site_by_id = {s["id"]: s for s in sites if s.get("id")}
 
     def _family_page(fid: str) -> int:
         rows = ev_spill.read(fid)
@@ -949,7 +1007,8 @@ def _write_all_family_events(
                 "inherit": inh_s, "carriers": carriers, "gt": gts,
                 "_inh_by": inh_by.get(site_id, {}),
             })
-        own_idx = own_call_index(run_dir, members)
+        own_details: dict = {}
+        own_idx = own_call_index(run_dir, members, own_details if export else None)
         own_idx = {
             k: [(op, oe, ok, who,
                  _cohort_site_pass(site_idx, k[0], op, oe, k[1]) if ok else None)
@@ -1049,6 +1108,12 @@ def _write_all_family_events(
                 n_fam = max((denovo_families or {}).get(i, 0) for i in ids)
                 alerts += denovo_alerts(e["size"], n_fam)
             e["qc"] = " · ".join(alerts)
+        if export:
+            for e in events + hidden:
+                if e.get("own") not in ("mosaïque", "chromosomique"):
+                    e["own_by"] = {m: own_call_detail(own_details, m, e["contig"], e["pos"],
+                                                      e["end"], e["svtype"])
+                                   for m in members}
         fam_dir = run_dir / "families" / fid
         fam_dir.mkdir(parents=True, exist_ok=True)
         _write_events_page(fam_dir / "events.html", f"Famille {fid}", members, events)
@@ -1073,7 +1138,7 @@ def _write_all_family_events(
                 info["flags"] = codes
                 qc_rows.append(qc_row(m, info, text))
             write_family_export(fam_dir, fid, members, events + hidden, gene_lists_fn, qc_rows,
-                                export_meta)
+                                export_meta, site_by_id)
         return 1
 
     from .parallel import pmap
@@ -2190,6 +2255,9 @@ def _read_cohort_region(task):
         has_sqmax = "SQMAX" in vcf.header.info
         has_carrier_frac = "CARRIER_FRAC" in vcf.header.info
         has_ref_carrier_frac = "REF_CARRIER_FRAC" in vcf.header.info
+        # site-level evidence of the family export (#8), when declared
+        extra = [k for k in ("PRECISE_FRAC", "SQMEAN", "NSAMPLES", "CN_DISC", "REF_AF")
+                 if k in vcf.header.info]
         lengths = {c.name: c.length for c in vcf.header.contigs.values()}
         spec = spec_coords(vcf.header)
         records = fetch_region(vcf, region) if region is not None else vcf
@@ -2226,6 +2294,7 @@ def _read_cohort_region(task):
                 "sqmax": rec.info.get("SQMAX") if has_sqmax else None,
                 "carrier_frac": rec.info.get("CARRIER_FRAC") if has_carrier_frac else None,
                 "ref_carrier_frac": rec.info.get("REF_CARRIER_FRAC") if has_ref_carrier_frac else None,
+                **{k.lower(): rec.info.get(k) for k in extra},
             })
             nalt_rows.append(nalt)
             gq_rows.append(gq)
@@ -2723,6 +2792,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
     # ---- per-sample wave QC (evidence-store meta, absent on old stores)
     wave_scores: dict[str, float | None] = {}
     wave_by_contig: dict[str, dict] = {}
+    pons: Counter = Counter()
     for s in samples:
         store_path = run_dir / "samples" / s / f"{s}.evidence.zarr"
         wave_scores[s] = None
@@ -2731,6 +2801,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
                 from .extract.store import EvidenceStore
 
                 meta = EvidenceStore(store_path).meta
+                if meta.get("pon"):
+                    pons[meta["pon"]] += 1
                 wave_scores[s] = meta.get("wave_score")
                 wave_by_contig[s] = meta.get("wave_by_contig") or {}
             except Exception:  # report survives a broken/foreign store
@@ -2857,7 +2929,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
                        "min_carrier_gq": min_carrier_gq, "events_pass_only": events_pass_only,
                        "export_nonpass_max_carrier_frac":
                            export_nonpass_max_cf if events_pass_only else None,
-                       "clingen": [Path(p).name for p in (clingen_genes, clingen_regions) if p]}
+                       "clingen": [Path(p).name for p in (clingen_genes, clingen_regions) if p],
+                       "pon": pons.most_common(1)[0][0] if pons else None}
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
             _genes, _impact, inh_spill, pass_only=events_pass_only,

@@ -35,12 +35,12 @@ au site), export machine des pages familles (`<FID>.vedette.tsv/.qc.tsv/
 par <= 20 % de la cohorte dans l'export, pas sur la page (#10, reste ; les
 autres, sur dataset_paper, sont à 88 % portés par plus de la moitié
 de la cohorte). Restent, à faire ensemble pendant les recalculs du BAF
-(point 3) : `vedette labels --from-genetics-viz` (#11) FAIT (non publié ;
-`validations/vedette.tsv` absent à ce jour), puis en une seule évolution du
-format d'export : indices par porteur (appel propre, SOURCE, précision,
-SQ/PE/SR : #8), table de correspondance des sites entre re-merges (même
-type, chevauchement réciproque >= 0,9, sites coupés ou fusionnés : #9) et
-Parquet long (#6).
+(point 3) : FAIT (non publié) — `vedette labels --from-genetics-viz` (#11 ;
+`validations/vedette.tsv` absent à ce jour), et en une seule évolution du
+format d'export : appel propre de chaque membre avec SOURCE, précision,
+SQ/PE/SR/CG/RD/CNQ et INFO du site (#8), `site_key` + `vedette site-map`
+(mêmes bornes, puis meilleures paires mutuelles à chevauchement réciproque
+>= 0,5, puis sites coupés ou fusionnés : #9) et Parquet long (#6).
 
 Priorités :
 1. **Labels indépendants pour la profondeur** — lot IGV v5 RELU (2026-11-05) :

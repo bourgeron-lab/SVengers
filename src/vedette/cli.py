@@ -384,6 +384,22 @@ def baf(
     typer.echo(f"{len(pairs)} stores: {n_written} rewritten, {n_failed} failed")
 
 
+@app.command("site-map")
+def site_map(
+    old: Path = typer.Argument(..., help="Cohort VCF of the previous run"),
+    new: Path = typer.Argument(..., help="Cohort VCF of the new run"),
+    out: Path = typer.Option(..., help="Output TSV: old site -> new site(s), with the relation"),
+    min_ro: float = typer.Option(0.5, help="Reciprocal overlap for two sites to be the same event"),
+) -> None:
+    """Correspondence of cohort sites between two runs (same, moved, split, merged, lost, new)."""
+    from .cohort.sitemap import map_sites, write_map
+
+    rows, counts = map_sites(old, new, min_ro)
+    write_map(rows, out)
+    order = ("same", "moved", "split", "merged", "complex", "lost", "new")
+    typer.echo(", ".join(f"{counts.get(k, 0)} {k}" for k in order) + f" -> {out}")
+
+
 @app.command("cohort-filter")
 def cohort_filter(
     sites: Path = typer.Argument(..., help="Sites VCF from `vedette merge`"),

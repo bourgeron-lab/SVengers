@@ -21,15 +21,58 @@ def _rows(path):
         return list(csv.DictReader(fh, delimiter="\t"))
 
 
+def _own_call_vcf(path, sample, records):
+    """A per-sample filtered VCF: (contig, start0, end, svtype, filter, source, imprecise, fmt)."""
+    import pysam
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    hdr = pysam.VariantHeader()
+    hdr.add_line("##vedette_coords=padded")
+    hdr.contigs.add("chr1", length=1_000_000)
+    for k, d in (("DEL", "Deletion"), ("DUP", "Duplication")):
+        hdr.add_line(f'##ALT=<ID={k},Description="{d}">')
+    hdr.add_line('##FILTER=<ID=LowSQ,Description="low SQ">')
+    for k, n, t in (("SVTYPE", "1", "String"), ("END", "1", "Integer"), ("SOURCE", "1", "String"),
+                    ("CIPOS", "2", "Integer"), ("CIEND", "2", "Integer"),
+                    ("IMPRECISE", "0", "Flag"), ("MODEL_VER", "1", "String")):
+        hdr.info.add(k, n, t, k)
+    for k, t in (("GT", "String"), ("GQ", "Integer"), ("SQ", "Float"), ("PE", "Integer"),
+                 ("SR", "Integer"), ("CG", "Integer"), ("RD", "Float"), ("CNQ", "Float")):
+        hdr.formats.add(k, "1", t, k)
+    hdr.add_sample(sample)
+    with pysam.VariantFile(str(path), "wz", header=hdr) as vf:
+        for contig, start0, end, svtype, filt, source, imprecise, fmt in records:
+            rec = vf.new_record(contig=contig, start=start0 - 1, stop=end,
+                                alleles=("N", f"<{svtype}>"), id=f"vedette_{svtype}_{start0}")
+            rec.info["SVTYPE"], rec.info["SOURCE"], rec.info["MODEL_VER"] = svtype, source, "v5n"
+            rec.info["CIPOS"], rec.info["CIEND"] = (-5, 5), (-10, 10)
+            if imprecise:
+                rec.info["IMPRECISE"] = True
+            rec.filter.add(filt)
+            for k, v in fmt.items():
+                rec.samples[sample][k] = v
+            vf.write(rec)
+    pysam.tabix_index(str(path), preset="vcf", force=True)
+
+
 def test_family_export_rows(tmp_path):
-    """genetics-viz issues #5/#7/#10: the family export carries every row of
-    the events page, typed and coded columns, 1-based inclusive bounds, the
-    per-child inheritance with the de novo DNQ, and the members' QC."""
+    """genetics-viz issues #5/#7/#10, #8, #9, #6: the family export carries
+    every row of the events page, typed and coded columns, 1-based inclusive
+    bounds, the per-child inheritance with the de novo DNQ, the members' QC,
+    each member's own call (SOURCE, precision, SQ/PE/SR...), the cohort
+    site's key and evidence, and the same rows in long Parquet form."""
     samples = ["kid", "dad", "mum"]
+    _own_call_vcf(tmp_path / "samples" / "kid" / "kid.filtered.vcf.gz", "kid", [
+        ("chr1", 999, 2000, "DEL", "PASS", "BOTH", False,
+         {"GT": (0, 1), "GQ": 60, "SQ": 12.3, "PE": 5, "SR": 3, "CG": 0, "RD": 0.52, "CNQ": 0.98}),
+        ("chr1", 9999, 12000, "DUP", "LowSQ", "DEPTH", True,
+         {"GT": (0, 1), "GQ": 30, "SQ": 2.1, "PE": 0, "SR": 0, "CG": 0, "RD": 1.45, "CNQ": 0.7}),
+    ])
     sites = [
         {"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL", "size": 1001,
          "filter": "PASS", "rescue": "", "idx": 0, "sqmax": 12.0, "carrier_frac": 0.001,
-         "ref_carrier_frac": None},
+         "ref_carrier_frac": None, "af": 0.0005, "hwe": 1.0, "nsamples": 1,
+         "precise_frac": 1.0, "sqmean": 12.0, "cn_disc": 0.0, "ref_af": 0.0},
         {"id": "s2", "contig": "chr1", "start": 9999, "end": 12000, "svtype": "DUP", "size": 2001,
          "filter": "PASS", "rescue": "", "idx": 1, "sqmax": None, "carrier_frac": None,
          "ref_carrier_frac": None},
@@ -76,3 +119,38 @@ def test_family_export_rows(tmp_path):
     meta = json.loads((fam / "F1.vedette.json").read_text())
     assert meta["schema_version"] == SCHEMA_VERSION and meta["members"] == samples
     assert meta["cohort"] == "test"
+
+    # #9: the cohort site's own bounds; #8: site evidence and own calls
+    assert r["site_key"] == "chr1:1000-2000:del" and rows["s2"]["site_key"] == "chr1:10000-12000:dup"
+    assert (r["af"], r["nsamples"], r["precise_frac"], r["hwe_p"]) == ("0.00050", "1", "1.000", "1")
+    assert (r["OWN_kid"], r["SQ_kid"], r["SRC_kid"], r["PRECISE_kid"]) == ("pass", "12.30", "BOTH", "1")
+    assert (r["OWN_dad"], r["SQ_dad"]) == ("none", "")
+    s2 = rows["s2"]
+    assert (s2["OWN_kid"], s2["SRC_kid"], s2["PRECISE_kid"]) == ("filtered", "DEPTH", "0")
+
+    # #6: long Parquet, one line per row x member, typed, versions in the metadata
+    import pyarrow.parquet as pq
+
+    assert meta["parquet"] == "F1.vedette.parquet"
+    t = pq.read_table(fam / "F1.vedette.parquet")
+    assert t.num_rows == 2 * len(samples)
+    assert str(t.schema.field("start").type) == "int64" and str(t.schema.field("sq").type) == "double"
+    import pyarrow as pa
+
+    assert pa.types.is_list(t.schema.field("exonic_genes").type)
+    md = {k.decode(): v.decode() for k, v in t.schema.metadata.items()}
+    assert md["schema_version"] == str(SCHEMA_VERSION) and md["cohort"] == "test"
+    assert json.loads(md["vedette"])["members"] == samples
+    d = t.to_pylist()
+    kid = next(x for x in d if x["row_id"] == "s1" and x["sample"] == "kid")
+    assert (kid["carrier"], kid["gt"], kid["cn"], kid["inheritance"], kid["dnq"]) == (
+        True, "0/1", 1, "denovo", 45)
+    assert (kid["own_call_id"], kid["own_filter"], kid["source"], kid["precise"]) == (
+        "vedette_DEL_999", "PASS", "BOTH", True)
+    assert (kid["own_start"], kid["own_end"], kid["cipos"], kid["pe"], kid["sr"]) == (
+        1000, 2000, [-5, 5], 5, 3)
+    assert kid["sq"] == 12.3 or abs(kid["sq"] - 12.3) < 1e-4
+    assert kid["own_model_version"] == "v5n" and kid["exonic_genes"] == ["GENE1"]
+    dad = next(x for x in d if x["row_id"] == "s1" and x["sample"] == "dad")
+    assert (dad["carrier"], dad["member_own_call"], dad["own_filter"], dad["sq"]) == (
+        False, "none", None, None)
