@@ -140,7 +140,11 @@ Priorités :
    celle-ci en signale 10 767 de plus (PMS seul : 76 de plus) ; 93 % des sites
    PMS à la limite (p 1e-8..1e-4) y sont appariés, CohortArtifact à 97 %.
    Piste : avec `--known-sites`, reprendre le CohortArtifact du site de
-   référence (puissance et stabilité de la grande cohorte).
+   référence (puissance et stabilité de la grande cohorte). FAIT (non
+   publié, `REF_ARTIFACT`, sites courants seulement) ; test PMS
+   (`runs/_test_refart_PMS`) : 11 597 sites repris, PASS 28 093 -> 23 129
+   (tous courants), lignes de page -39 %, candidats de novo PASS 2 203 ->
+   1 302, aucune délétion 22q13 touchée.
 
 ### État au 2026-11-02 et priorités
 

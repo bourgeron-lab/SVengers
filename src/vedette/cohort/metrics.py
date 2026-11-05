@@ -15,6 +15,14 @@ CohortArtifact at 46-100 % carriers in the 2670-sample cohort):
   2670-sample run), the matching site (same type, RO >= 0.5) is carried by
   >= ``known_common_frac`` of that cohort. REF_AF / REF_CARRIER_FRAC /
   REF_FILTER are annotated whenever a match exists.
+- ``CohortArtifact`` from the reference (``known_artifacts``, INFO
+  REF_ARTIFACT): a site common here (AF > ``artifact_af``) whose matching
+  reference site is CohortArtifact. A small cohort has neither the power nor
+  the stability of the founders' HWE test: PMS (206 founders) flags 0.46 % of
+  its HWE failures differently whenever one founder is left out, against
+  0.04 % on dataset_paper (1,688), and of PMS's 54,492 common sites matched
+  in dataset_paper, dataset_paper flags 10,767 that PMS does not (76 the
+  other way). Rare sites keep their own verdict.
 
 On chrX / chrY a man carries one copy (his genotypes are 0/0 or 1/1, his
 reference CN 1): HWE is tested on the female founders only (none on chrY),
@@ -208,6 +216,7 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
         ("REF_AF", "1", "Float", "Allele frequency of the matching site in the reference cohort (--known-sites)"),
         ("REF_CARRIER_FRAC", "1", "Float", "Carrier fraction of the matching site in the reference cohort"),
         ("REF_FILTER", "1", "String", "FILTER of the matching site in the reference cohort, '|'-separated"),
+        ("REF_ARTIFACT", "0", "Flag", "CohortArtifact taken from the matching reference site (common site, --known-sites)"),
     ):
         if line[0] not in header.info:
             header.info.add(*line)
@@ -255,13 +264,14 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
     carrier_frac_max = sh["carrier_frac_max"]
     cn_discordant_frac = sh["cn_discordant_frac"]
     known_common_frac = sh["known_common_frac"]
+    known_artifacts = sh.get("known_artifacts", True)
     header = _cohort_header(
         sh["sites_vcf"], samples, carrier_frac_max, cn_discordant_frac,
         known_common_frac,
     )
     known = _KnownSites(sh["known_sites"]) if sh["known_sites"] else None
     gt_of_nalt = {0: (0, 0), 1: (0, 1), 2: (1, 1)}
-    counts = {"sites": 0, "artifact": 0, "high_carrier": 0, "cn_discordant": 0,
+    counts = {"sites": 0, "artifact": 0, "ref_artifact": 0, "high_carrier": 0, "cn_discordant": 0,
               "common_ref": 0, "chry_no_depth": 0, "pass": 0}
     fo = BGZFile(part, "wb") if part.endswith(".gz") else open(part, "wb")
     with pysam.VariantFile(str(sh["sites_vcf"])) as sites, fo:
@@ -380,6 +390,11 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                     new.info["REF_FILTER"] = hit["filter"]
                     if hit["carrier_frac"] >= known_common_frac:
                         tags.append("CommonRef")
+                    if (known_artifacts and af > artifact_af and "CohortArtifact" not in tags
+                            and "CohortArtifact" in hit["filter"].split("|")):
+                        tags.append("CohortArtifact")
+                        new.info["REF_ARTIFACT"] = True
+                        counts["ref_artifact"] += 1
 
             for tag in tags or ["PASS"]:
                 new.filter.add(tag)
@@ -407,6 +422,7 @@ def run_cohort_filter(
     cn_discordant_frac: float = 0.5,
     known_sites: str | Path | None = None,
     known_common_frac: float = 0.5,
+    known_artifacts: bool = True,
     jobs: int = 1,
 ) -> dict[str, int]:
     """``jobs`` > 1 loads the genotype tables and writes the records in
@@ -464,6 +480,7 @@ def run_cohort_filter(
             carrier_frac_max=carrier_frac_max,
             cn_discordant_frac=cn_discordant_frac,
             known_common_frac=known_common_frac,
+            known_artifacts=known_artifacts,
         )
 
         out_path = str(out_vcf)
@@ -478,7 +495,7 @@ def run_cohort_filter(
                 (int(bounds[k]), int(bounds[k + 1]), f"{tmp}/part{k:05d}{ext}")
                 for k in range(n_chunks)
             ]
-            counts = {"sites": 0, "artifact": 0, "high_carrier": 0,
+            counts = {"sites": 0, "artifact": 0, "ref_artifact": 0, "high_carrier": 0,
                       "cn_discordant": 0, "common_ref": 0, "chry_no_depth": 0,
                       "pass": 0}
             for c in pmap(_write_chunk, tasks, jobs):
@@ -500,9 +517,10 @@ def run_cohort_filter(
     if gz:
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info(
-        "cohort-filter: %d sites, %d PASS, %d CohortArtifact, %d HighCarrierFrac, "
-        "%d CNDiscordant, %d CommonRef, %d ChrYNoDepth, %d samples",
-        counts["sites"], counts["pass"], counts["artifact"], counts["high_carrier"],
+        "cohort-filter: %d sites, %d PASS, %d CohortArtifact (%d from the reference), "
+        "%d HighCarrierFrac, %d CNDiscordant, %d CommonRef, %d ChrYNoDepth, %d samples",
+        counts["sites"], counts["pass"], counts["artifact"], counts["ref_artifact"],
+        counts["high_carrier"],
         counts["cn_discordant"], counts["common_ref"], counts["chry_no_depth"],
         len(samples),
     )

@@ -438,6 +438,10 @@ def cohort_filter(
     known_common_frac: float = typer.Option(
         0.5, help="CommonRef: reference-cohort carrier fraction at or above which the site is flagged"
     ),
+    known_artifacts: bool = typer.Option(
+        True, "--known-artifacts/--no-known-artifacts",
+        help="With --known-sites: a site common here (AF > --artifact-af) whose reference site is CohortArtifact is CohortArtifact too (INFO REF_ARTIFACT)",
+    ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics."""
@@ -459,10 +463,12 @@ def cohort_filter(
         cn_discordant_frac=cn_discordant_frac,
         known_sites=known_sites,
         known_common_frac=known_common_frac,
+        known_artifacts=known_artifacts,
         jobs=resolve_jobs(jobs),
     )
     typer.echo(
-        f"{counts['sites']} sites, {counts['pass']} PASS, {counts['artifact']} CohortArtifact, "
+        f"{counts['sites']} sites, {counts['pass']} PASS, {counts['artifact']} CohortArtifact "
+        f"({counts['ref_artifact']} from the reference), "
         f"{counts['high_carrier']} HighCarrierFrac, {counts['cn_discordant']} CNDiscordant, "
         f"{counts['common_ref']} CommonRef, {counts['chry_no_depth']} ChrYNoDepth -> {out}"
     )

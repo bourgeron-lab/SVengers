@@ -439,7 +439,7 @@ five site filters:
 
 | FILTER | rule (defaults) |
 |---|---|
-| `CohortArtifact` | AF > 0.02 (`--artifact-af`) and founder HWE p < 1e-6; or ≥ 3 nominating samples and re-genotyping finds > 50 % fewer carriers than were nominated |
+| `CohortArtifact` | AF > 0.02 (`--artifact-af`) and founder HWE p < 1e-6; or ≥ 3 nominating samples and re-genotyping finds > 50 % fewer carriers than were nominated; or, with `--known-sites`, AF > 0.02 here and the matching reference site is `CohortArtifact` (INFO `REF_ARTIFACT`; `--no-known-artifacts` to turn off): a small cohort has neither the power nor the stability of the founders' HWE test |
 | `HighCarrierFrac` | carried by ≥ 0.85 of the genotyped samples (`--carrier-frac-max`, needs ≥ 4 samples): reference or mappability artefacts that HWE cannot see |
 | `CNDiscordant` | ≥ 0.5 of the carriers (`--cn-discordant-frac`, ≥ 2 carriers) have a re-genotyped CN that contradicts the type: a DUP below, or a DEL above, the carrier's own baseline |
 | `CommonRef` | with `--known-sites` (a reference cohort VCF, e.g. a large `cohort-filter` output), the matching site (same type, reciprocal overlap ≥ 0.5) is carried by ≥ 0.5 of that cohort (`--known-common-frac`); `REF_AF`, `REF_CARRIER_FRAC`, `REF_FILTER` are annotated whenever a match exists |

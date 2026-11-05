@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **`cohort-filter`: a small cohort takes the reference cohort's
+  CohortArtifact** — with `--known-sites`, a site common in the cohort (AF >
+  `--artifact-af`) whose matching reference site is CohortArtifact is
+  CohortArtifact too (INFO `REF_ARTIFACT`; `--no-known-artifacts` turns it
+  off). Rare sites keep their own verdict. The founders' HWE test lacks power
+  and stability on a small cohort: leaving out any one founder flips ~150
+  PMS sites (206 founders), 59 on dataset_paper (1,688), and of PMS's 54,492
+  common sites matched in dataset_paper, dataset_paper flags 10,767 that PMS
+  does not. On PMS: 11,597 sites flagged from the reference, PASS sites
+  28,093 -> 23,129 (all lost ones common: carrier fraction 0.03-0.6, median
+  0.33), family-page rows -39 %, PASS de novo candidates 2,203 -> 1,302; no
+  22q13 deletion touched (lost chr22 sites > 45 Mb all < 2 kb).
+
 - **`vedette regenotype`** — recomputes GT, GQ, CN, CNQ, RD, BAFN and BAFDEV
   of a sample's raw calls from its evidence store, junction support and
   source kept (INSERT calls copied), so that the filter can be re-run on a

@@ -487,3 +487,24 @@ def test_site_mode():
     assert site_mode("chrX", 2_781_000, 2_790_000) == "par"     # overlaps PAR1
     assert site_mode("chrX", 50_000_000, 50_010_000) == "x"
     assert site_mode("chrY", 7_000_000, 7_010_000) == "y"
+
+
+def test_cohort_filter_takes_the_reference_artifact_verdict(tmp_path):
+    """A small cohort has neither the power nor the stability of the
+    founders' HWE test: with --known-sites, a site common here whose
+    reference site is CohortArtifact is CohortArtifact too (REF_ARTIFACT);
+    a rare site keeps its own verdict."""
+    import pysam
+
+    from vedette.cohort.metrics import run_cohort_filter
+
+    test_cohort_filter_post_processing_flags(tmp_path)    # C: AF 1/12, reference CohortArtifact
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "cohort.vcf.gz"))}
+    assert "CohortArtifact" in out["C"].filter.keys() and out["C"].info.get("REF_ARTIFACT")
+    assert "REF_ARTIFACT" not in out["D"].info
+    gts = sorted(tmp_path.glob("S*.gt.tsv"))
+    for kw in ({"artifact_af": 0.1}, {"known_artifacts": False}):    # C rare, or option off
+        run_cohort_filter(tmp_path / "sites.vcf.gz", gts, tmp_path / "c2.vcf.gz",
+                          known_sites=tmp_path / "ref.vcf.gz", **kw)
+        c = {r.id: r for r in pysam.VariantFile(str(tmp_path / "c2.vcf.gz"))}["C"]
+        assert "CohortArtifact" not in c.filter.keys() and "REF_ARTIFACT" not in c.info
