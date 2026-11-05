@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.7.0 — 2026-11-05
+
+- **Family export: rare non-PASS sites** (#10) — with `--events-pass-only`
+  the events page keeps PASS sites only, and `<FID>.vedette.tsv` now also
+  holds the non-PASS sites carried by at most 20 % of the cohort
+  (`--export-nonpass-max-carrier-frac`, recorded in the `.json`), for a
+  reader to show behind a toggle. Most non-PASS sites are carried by over
+  half the cohort (dataset_paper: 167,560 of 190,367, 33x the carriers of the
+  PASS sites) and stay out; the export grows by about 7 %.
+- **Report: one row per inherited sub-threshold event** — members of a
+  family carrying the same sub-threshold event (same type, overlap > 50 % of
+  the larger) share one row instead of one row each (in v1.6.0, 7 PMS
+  events took 15 of the 41 large-DUP rows).
+
 ## v1.6.0 — 2026-11-05
 
 - **Report: large sub-threshold duplications** — the family pages keep, as

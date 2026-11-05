@@ -1006,6 +1006,63 @@ def test_large_subthreshold_dup_pieces_are_joined_into_a_row():
     assert len(two) == 2
 
 
+def test_inherited_subthreshold_dup_is_one_row():
+    """PMS v1.6.0: a parent and child carrying the same large sub-threshold
+    duplication came out as two rows; it is one row with both carriers."""
+    from vedette.report import SubCalls, subthreshold_events
+
+    sc = SubCalls()
+    sc.add("kid", [("chr4", "DUP", 77_824_000, 78_061_001, 3, 99, 0.1)])
+    sc.add("dad", [("chr4", "DUP", 77_825_000, 78_061_001, 3, 95, 0.3)])
+    sc.freeze()
+    rows, _ = subthreshold_events(["kid", "dad", "mum"], sc, [], None, lambda *a: (0.0, ""))
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["carriers"] == ["kid", "dad"] and r["sqmax"] == "0.30"
+    assert (r["pos"], r["end"]) == (77_824_001, 78_061_001)
+    assert [g[0] for g in r["gt"]] == ["0/1", "0/1", "—"]
+
+
+def test_family_export_holds_rare_non_pass_sites(tmp_path):
+    """#10: the page shows PASS sites only (--events-pass-only), the family
+    export also the non-PASS sites carried by at most 20 % of the cohort;
+    those carried by more (dataset_paper: 167k of 190k non-PASS sites) are
+    left out."""
+    import csv
+
+    import numpy as np
+
+    from vedette.report import _FamilySpill, _write_all_family_events
+
+    samples = ["kid", "dad", "mum"]
+
+    def site(i, start, filt, cf):
+        return {"id": f"s{i}", "contig": "chr1", "start": start, "end": start + 5_000,
+                "svtype": "DEL", "size": 5_000, "filter": filt, "rescue": "", "idx": i,
+                "sqmax": None, "carrier_frac": cf, "ref_carrier_frac": None}
+
+    sites = [site(0, 10_000, "PASS", 0.05), site(1, 100_000, "CohortArtifact", 0.12),
+             site(2, 200_000, "HighCarrierFrac", 0.90), site(3, 300_000, "CommonRef", None)]
+    nalt = np.array([[1, 0, 0]] * 4, dtype=np.int8)
+    gq = np.full((4, 3), 99, dtype=np.int16)
+    cn = np.array([[1, 2, 2]] * 4, dtype=np.int8)
+
+    def run(**kw):
+        _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
+                                 lambda *a: "", lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"),
+                                 pass_only=True, **kw)
+        with open(tmp_path / "families" / "F1" / "F1.vedette.tsv") as fh:
+            rows = list(csv.DictReader(fh, delimiter="\t"))
+        page = (tmp_path / "families" / "F1" / "events.html").read_text()
+        return [(r["row_id"], r["filter"], r["kind"]) for r in rows], page
+
+    rows, page = run()
+    assert rows == [("s0", "PASS", "site"), ("s1", "CohortArtifact", "site")]
+    assert "CohortArtifact" not in page and "100,001" not in page
+    rows, _ = run(export_nonpass_max_cf=0)
+    assert rows == [("s0", "PASS", "site")]
+
+
 def test_large_family_gets_no_dead_events_link():
     """A 38-member dataset_paper pedigree had a link to an events page that
     is never written (pages stop at _EVENTS_MAX_MEMBERS members)."""

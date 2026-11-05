@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.6.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.7.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -587,7 +587,9 @@ Ensembl ids, per-member `GT`/`GQ`/`CN`, each child's inheritance code and DNQ),
 codes) and `<FID>.vedette.json` (schema and caller versions). Format: [docs/EXPORT.md](docs/EXPORT.md).
 
 `--events-pass-only` restricts the pages to PASS sites, which is required at cohort scale
-(non-PASS artefacts are carried by nearly every family). Without `--no-family-workspaces`,
+(non-PASS artefacts are carried by nearly every family); the family export still holds the
+non-PASS sites carried by at most 20 % of the cohort (`--export-nonpass-max-carrier-frac`,
+0 for none), for a reader to show behind a toggle. Without `--no-family-workspaces`,
 each family also gets `families/<FID>/<FID>.vcf.gz` (sites carried by a member) and its
 Mendelian rows (`mendel.tsv`).
 

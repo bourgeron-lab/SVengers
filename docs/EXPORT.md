@@ -36,8 +36,15 @@ off by one at the start and at the end.
 Rows are the rows of the events page. Cohort sites carried by the same members
 are collapsed into one event (`site_ids` lists them), and their bounds are the
 carriers' own calls when there are any. Sub-threshold, mosaic and chromosomal
-rows are added. With `--events-pass-only` (GHFC production), non-PASS cohort
-sites are left out of the page and of this file.
+rows are added. With `--events-pass-only` (GHFC production) the page holds
+PASS sites only; this file also holds, from v1.7.0, the non-PASS sites carried
+by at most 20 % of the cohort (`--export-nonpass-max-carrier-frac`, written
+as `export_nonpass_max_carrier_frac` in the `.json`), as `site` rows whose
+`filter` is not `PASS`: a reader shows them behind a toggle. The non-PASS
+sites carried more widely (dataset_paper: 167,560 of 190,367, each carried by
+over half the cohort) are reference artefacts and are left out. Non-PASS
+sites are collapsed among themselves, never with PASS sites, and one that a
+sub-threshold, mosaic or chromosomal row already covers is not repeated.
 
 | column | type | values |
 |---|---|---|

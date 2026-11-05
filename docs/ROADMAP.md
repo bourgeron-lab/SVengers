@@ -6,10 +6,13 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
-### État au 2026-11-04 (v1.2.0) et priorités
+### État au 2026-11-05 (v1.7.0) et priorités
 
-En production : v1.2.0, `models/v5n`, SQ >= 5, PoN médiane, chromosomes
-sexuels traités de bout en bout. Fait depuis le 2026-11-02 (bloc 1 ci-dessous) :
+En production : v1.7.0, `models/v5n`, SQ >= 5, PoN
+médiane, chromosomes sexuels traités de bout en bout, impact lu sur la carte
+de dosage ClinGen (v1.5.0). Les VCF de cohorte de production restent à
+l'ancienne convention de coordonnées tant que le merge n'est pas relancé.
+Fait du 2026-11-02 au 2026-11-04 (bloc 1 ci-dessous) :
 pages « événements » d'une aneuploïdie des gonosomes (« caryotype XXY »),
 `ChrYNoDepth` étendu aux sites chrY < 1 kb (55 sites chrY PASS sur
 dataset_paper, discordance père/fils des DEL ≥ 1 kb 10 %, la DUP réelle
@@ -28,12 +31,16 @@ Issues genetics-viz (onglet Vedette de l'outil de curation GHFC, #5-#11) :
 v1.4.0 FAIT — coordonnées VCF à la norme (`POS` = base de padding, `END` =
 dernière base ; avant : les deux une base à droite, et le merge ajoutait +1
 au site), export machine des pages familles (`<FID>.vedette.tsv/.qc.tsv/
-.json`, docs/EXPORT.md : #5, #7, #10). Restent : v1.5.0 = clé de site stable
-entre re-merges + table de correspondance (#9), `vedette labels
---from-genetics-viz` (#11, `validations/vedette.tsv`, absent à ce jour) ;
-v1.6.0 = indices par porteur depuis le merge (appel propre, SOURCE,
-précision, SQ/PE/SR : #8) et Parquet long (#6) ; lignes non-PASS dans
-l'export sans les mettre sur la page (#10, reste).
+.json`, docs/EXPORT.md : #5, #7, #10). v1.7.0 FAIT — sites non-PASS portés
+par <= 20 % de la cohorte dans l'export, pas sur la page (#10, reste ; les
+autres, sur dataset_paper, sont à 88 % portés par plus de la moitié
+de la cohorte). Restent, à faire ensemble pendant les recalculs du BAF
+(point 3) : `vedette labels --from-genetics-viz` (#11 ;
+`validations/vedette.tsv` absent à ce jour), puis en une seule évolution du
+format d'export : indices par porteur (appel propre, SOURCE, précision,
+SQ/PE/SR : #8), table de correspondance des sites entre re-merges (même
+type, chevauchement réciproque >= 0,9, sites coupés ou fusionnés : #9) et
+Parquet long (#6).
 
 Priorités :
 1. **Labels indépendants pour la profondeur** — lot IGV v5 RELU (2026-11-05) :
@@ -48,13 +55,14 @@ Priorités :
    (33 % contre ~62 %), taille des DUP (80 % ≥ 100 kb, ~40 % en dessous).
    **v5n perd de vraies grandes DUP** : 12/15 vraies sous le seuil (8/8
    héritées), bornes trop courtes sur les 3 corrigées. Suites :
-   a. score d'impact avec la carte de dosage ClinGen — FAIT (non publié) :
+   a. score d'impact avec la carte de dosage ClinGen — FAIT (v1.5.0) :
       une dup15q de novo (CN 4, enfant atteint) était à +0,15 ;
    b. repêchage des grandes DUP sous le seuil — FAIT (v1.6.0) : « SOUS-SEUIL
       GRANDE DUP », DUP LowSQ à CN ≥ 3, GQ ≥ 90, jointes chez un même
       porteur (écart ≤ 10 % de l'étendue, ≤ 1 Mb), ≥ 100 kb, privées à la
       famille, hors génomes ondulés/IP et hors X/Y d'un caryotype atypique ;
       la dup15q (morceaux 22,6-30,2 Mb à CN 4) devient une ligne de 7,5 Mb ;
+      une ligne par événement porté par plusieurs membres (v1.7.0) ;
    c. v11 : les 131 labels tranchés à l'entraînement (caryotypes à part : les
       DUP du X d'un XXY ont reçu des verdicts contraires).
 2. **Second avis CNN (1sexdecies)** — étape 1 FAITE (v1.3.0, 2026-11-04) :

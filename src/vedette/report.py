@@ -298,6 +298,11 @@ class _FamilySpill:
 
 
 _EVENTS_MAX_MEMBERS = 20  # no events page for catch-all pseudo-families
+# non-PASS sites of the family export (with --events-pass-only): most of them
+# are carried by over half the cohort (dataset_paper: 167k of 190k non-PASS
+# sites, 33x the carriers of the PASS sites), reference artifacts of no
+# clinical use; at <= 20 % the export grows by 7 % (2,868 sites)
+EXPORT_NONPASS_MAX_CF = 0.20
 
 
 def _events_link(fid: str, n_members: int) -> str:
@@ -823,10 +828,15 @@ def _write_all_family_events(
     export: bool = True,
     sample_info: dict[str, dict] | None = None,
     export_meta: dict | None = None,
+    export_nonpass_max_cf: float = EXPORT_NONPASS_MAX_CF,
 ) -> int:
     """families/<FID>/events.html for every family, in ONE sweep of the
     genotype matrices (no per-family rescan of the cohort VCF — that was the
     36 h trap on 1207-family cohorts). Returns the number of pages written.
+
+    With ``pass_only`` the page holds PASS sites only, and the family export
+    also the non-PASS sites carried by at most ``export_nonpass_max_cf`` of
+    the cohort (see EXPORT_NONPASS_MAX_CF).
 
     The pages are independent: with ``jobs`` > 1 forked workers write them
     (own calls, depth bounds and collapsing were ~40 % of the report on one
@@ -847,7 +857,9 @@ def _write_all_family_events(
     ev_spill = _FamilySpill(run_dir / "families" / ".events_tmp")
     depth = _DepthCache(run_dir)
     for site in sites:
-        if pass_only and site["filter"] != "PASS":
+        if pass_only and site["filter"] != "PASS" and not (
+                export and site.get("carrier_frac") is not None
+                and 0 < site["carrier_frac"] <= export_nonpass_max_cf):
             continue
         idx = site["idx"]
         # a carrier is a confident carrier: re-genotyping emits GT>0 with a
@@ -952,6 +964,13 @@ def _write_all_family_events(
                 e["pos"], e["end"] = span
                 e["size"] = e["end"] - e["pos"]
                 _reannotate(e, genes_fn, impact_fn, segdup_iv, lcr_iv)
+        # non-PASS sites swept for the export only: kept apart, so the page
+        # and its collapsing stay those of the PASS sites
+        hidden = [e for e in events if pass_only and e["filter"] != "PASS"]
+        if hidden:
+            events = [e for e in events if e["filter"] == "PASS"]
+            if collapse:
+                hidden = collapse_events(hidden, genes_fn, impact_fn, segdup_iv, lcr_iv)
         if collapse:
             events = collapse_events(events, genes_fn, impact_fn, segdup_iv, lcr_iv)
         events += mosaic_events(members, mosaic_by_sample or {}, genes_fn, impact_fn,
@@ -974,7 +993,7 @@ def _write_all_family_events(
         # large rows: bounds set on the carriers' depth (refine_bounds), then
         # rows that now cover the same event are merged again
         depth.clear()
-        for e in events:
+        for e in events + hidden:
             if e.get("own") == "mosaïque" or not e["carriers"]:
                 continue
             span = refine_bounds(depth, e["contig"], e["pos"], e["end"], e["svtype"],
@@ -987,6 +1006,8 @@ def _write_all_family_events(
         others_rows = [e for e in events if e.get("sub") or e.get("own") == "mosaïque"]
         if collapse:
             plain = collapse_events(plain, genes_fn, impact_fn, segdup_iv, lcr_iv)
+            if hidden:
+                hidden = collapse_events(hidden, genes_fn, impact_fn, segdup_iv, lcr_iv)
         events = plain + [
             e for e in others_rows
             if not e.get("sub") or not any(
@@ -998,8 +1019,16 @@ def _write_all_family_events(
         events += constitutional_events(members, mosaic_by_sample or {}, events,
                                         genes_fn, impact_fn, segdup_iv, lcr_iv)
         events = fold_mosaic_fragments(events, depth)
+        # a non-PASS site the page already shows as a sub-threshold, mosaic
+        # or chromosomal row is not exported twice
+        hidden = [h for h in hidden if not any(
+            (e.get("sub") or e.get("own") in ("mosaïque", "chromosomique"))
+            and e["contig"] == h["contig"] and e["svtype"] == h["svtype"]
+            and min(e["end"], h["end"]) - max(e["pos"], h["pos"])
+            > 0.5 * max(e["end"] - e["pos"], h["end"] - h["pos"])
+            for e in events)]
         big = big_cnv_counts(events)
-        for e in events:
+        for e in events + hidden:
             alerts = []
             for m in e["carriers"]:
                 fl = []
@@ -1043,7 +1072,8 @@ def _write_all_family_events(
                     text.append(f"sous le seuil NDD {sub_masked[m]} masqués")
                 info["flags"] = codes
                 qc_rows.append(qc_row(m, info, text))
-            write_family_export(fam_dir, fid, members, events, gene_lists_fn, qc_rows, export_meta)
+            write_family_export(fam_dir, fid, members, events + hidden, gene_lists_fn, qc_rows,
+                                export_meta)
         return 1
 
     from .parallel import pmap
@@ -1912,7 +1942,39 @@ def subthreshold_events(members: list[str], cands: SubCalls,
             masked[m] = len(mine)
         else:
             rows += mine
-    return rows, masked
+    return _merge_member_rows(rows, members, genes_fn, impact_fn, segdup_iv, lcr_iv), masked
+
+
+def _merge_member_rows(rows: list[dict], members: list[str], genes_fn=None, impact_fn=None,
+                       segdup_iv=None, lcr_iv=None) -> list[dict]:
+    """One row per event: the sub-threshold rows of several members that
+    cover the same event (same type, overlap > 50 % of the larger) become one
+    row with every carrier. A parent and child carrying the same inherited
+    duplication came out as a row each (v1.6.0: 7 PMS events took 15 of the
+    41 large-DUP rows)."""
+    out: list[dict] = []
+    for e in rows:
+        m = e["carriers"][0]
+        twin = next((x for x in out
+                     if x["contig"] == e["contig"] and x["svtype"] == e["svtype"]
+                     and m not in x["carriers"]
+                     and min(x["end"], e["end"]) - max(x["pos"], e["pos"])
+                     > 0.5 * max(x["end"] - x["pos"], e["end"] - e["pos"])), None)
+        if twin is None:
+            out.append(e)
+            continue
+        k = members.index(m)
+        twin["carriers"].append(m)
+        twin["gt"][k] = e["gt"][k]
+        if e["rescue"] == "SOUS-SEUIL GRANDE DUP":
+            twin["rescue"] = e["rescue"]
+        if e["sqmax"] and (not twin["sqmax"] or float(e["sqmax"]) > float(twin["sqmax"])):
+            twin["sqmax"] = e["sqmax"]
+        if (e["pos"], e["end"]) != (twin["pos"], twin["end"]):
+            twin["pos"], twin["end"] = min(twin["pos"], e["pos"]), max(twin["end"], e["end"])
+            twin["size"] = twin["end"] - twin["pos"] + 1
+            _reannotate(twin, genes_fn, impact_fn, segdup_iv, lcr_iv)
+    return out
 
 
 def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
@@ -2389,6 +2451,7 @@ def generate_report(
     max_denovo_per_child: int = 20,
     family_events: bool = False,
     events_pass_only: bool = False,
+    export_nonpass_max_cf: float = EXPORT_NONPASS_MAX_CF,
     collapse_family_events: bool = True,
     min_carrier_gq: int = 20,
     mosaic_dir: str | Path | None = None,
@@ -2792,6 +2855,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
         }
         export_meta = {"cohort": cohort_name, "model_version": _model_version(run_dir, samples),
                        "min_carrier_gq": min_carrier_gq, "events_pass_only": events_pass_only,
+                       "export_nonpass_max_carrier_frac":
+                           export_nonpass_max_cf if events_pass_only else None,
                        "clingen": [Path(p).name for p in (clingen_genes, clingen_regions) if p]}
         n_pages = _write_all_family_events(
             run_dir, dict(families), samples, sites, nalt_m, gq_m, cn_m,
@@ -2802,7 +2867,7 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             mosaic_by_sample=mosaic_by_sample, subthreshold=sub_cands,
             denovo_families=dn_families, low_quality_prefixes=tuple(low_quality_prefixes),
             jobs=jobs, gene_lists_fn=_gene_lists, sample_info=sample_info,
-            export_meta=export_meta,
+            export_meta=export_meta, export_nonpass_max_cf=export_nonpass_max_cf,
         )
         inh_spill.cleanup()
         logger.info("events: %d pages familles écrites", n_pages)

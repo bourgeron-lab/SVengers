@@ -649,6 +649,10 @@ def report(
         False, "--events-pass-only",
         help="Restrict the family events pages to PASS sites (cohort scale: non-PASS artifacts are carried by nearly every family and make the pages unusable)",
     ),
+    export_nonpass_max_carrier_frac: float = typer.Option(
+        0.20, "--export-nonpass-max-carrier-frac",
+        help="With --events-pass-only: the family export (<FID>.vedette.tsv) still holds the non-PASS sites carried by at most this fraction of the cohort (0 = none)",
+    ),
     low_quality_prefix: list[str] = typer.Option(
         [], "--low-quality-prefix",
         help="Sample-ID prefix of older, lower-quality genomes (repeatable; IP at the GHFC): no sub-threshold rows for them",
@@ -681,6 +685,7 @@ def report(
             max_denovo_per_child=max_denovo_per_child,
             family_events=family_events,
             events_pass_only=events_pass_only,
+            export_nonpass_max_cf=export_nonpass_max_carrier_frac,
             collapse_family_events=not no_collapse_events,
             min_carrier_gq=min_carrier_gq,
             mosaic_dir=mosaic_dir,
