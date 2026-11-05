@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Mosaic scan: a wavy genome needs a fraction of at least 0.3** — depth
+  waves of ±15 % read as 15-25 % clones. On the BAF rewritten by `vedette
+  baf` (twice the heterozygous sites, a tighter window noise), 9 segments at
+  f = 0.15-0.26 passed the BAF test on genomes with a wave score (without
+  the segment's contig) of 0.134-0.210, mostly on GC-rich chromosomes. With
+  the floor, the 2,960 rewritten genomes give the 22 segments of the 9
+  carriers found on the old BAF, plus one 22q13 loss at f = 0.18 on a
+  genome at 0.10, the BAF exactly as expected. On the rewritten BAF the
+  known mosaics' BAF excess matches its expectation (0.146 for 0.146,
+  against 0.108 for 0.157 before).
+
 ## v1.10.0 — 2026-11-05
 
 - **`cohort-filter`: a small cohort takes the reference cohort's

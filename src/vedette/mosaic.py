@@ -36,6 +36,15 @@ excess exactly 0) through. Like depth, the BAF shift of a clone is the same
 in every window (BAF_HOMOG_*): a segment whose median rides on one or two
 LOH-like windows (excess 0.05-0.3) is not one.
 
+On a wavy genome a segment needs a fraction of at least WAVY_MIN_FRAC.
+Depth waves of ±15 % read as 15-25 % clones, and on GC-rich chromosomes such
+a genome's heterozygous sites spread wider: once the BAF was read without a
+QUAL threshold (`vedette baf`, twice the sites, a tighter window noise), 9
+segments at f = 0.15-0.26 passed the BAF test on genomes with a wave score of
+0.134-0.210 (chr16, chr17, chr19, chr22, 7q11.23), the carrier's own excess
+in all but chr16, where a 200-genome panel is as high. The mosaics known
+before sit at f >= 0.38 on wavy genomes, f = 0.16-0.21 on genomes below 0.1.
+
 A fixed floor of 0.03 missed a PMS proband's 20 % 22q13 loss (41.7 Mb to the
 end, observed 0.012, null 0.003, mosaic 0.016, seen in IGV); without the
 depth null, dataset_paper gained ~70 wave segments at CN ~1.83 (chr4, chr13,
@@ -52,6 +61,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
+
+from .qc import WAVE_WARN
 
 WINDOW_BP = 1_000_000
 # 3 Mb. At 5 Mb a PMS proband's terminal 22q13 loss at CN 1.62 (47.7 Mb to
@@ -75,6 +86,7 @@ BAF_HOMOG_FRAC = 0.5       # share of the windows between the floor and that cei
 # 1.03, 1.02) both read as "mosaic" without it.
 HOMOG_TOL = 0.2
 HOMOG_FRAC = 0.75
+WAVY_MIN_FRAC = 0.3        # least cell fraction on a wavy genome (see above)
 
 AUTOSOMES = tuple(f"chr{i}" for i in range(1, 23))
 
@@ -113,6 +125,17 @@ def baf_rise(het_dev: np.ndarray, depth_ratio: float, shift: float = 0.0) -> flo
     noise = het_dev / np.sqrt(min(max(depth_ratio, 0.05), 1.0))
     shifted = np.concatenate([np.abs(noise + shift), np.abs(noise - shift)])
     return float(np.median(shifted) - np.median(np.abs(het_dev)))
+
+
+def contig_wave(meta: dict, contig: str, min_contigs: int = 10) -> float | None:
+    """The genome's wave score without ``contig`` (a large CNV raises its own
+    contig's score), the sample score on stores without per-contig values."""
+    per = meta.get("wave_by_contig") or {}
+    vals = [v for k, v in per.items() if k != contig and v is not None]
+    if len(vals) >= min_contigs:
+        return float(np.mean(vals))
+    w = meta.get("wave_score")
+    return None if w is None else float(w)
 
 
 def homogeneous(win_cn: np.ndarray, cn: float) -> bool:
@@ -221,6 +244,9 @@ def scan_store(store) -> list[MosaicCall]:
                 continue                   # blend of levels, not one clone
             svtype = "DEL" if cn < 2 else "DUP"
             f = float(np.clip(abs(cn - 2.0), 0.0, 1.0))
+            w = contig_wave(store.meta, c)
+            if f < WAVY_MIN_FRAC and w is not None and w >= WAVE_WARN:
+                continue                   # a wave, not a clone
             wins = idx[i:j]
             d = dev[wins]
             if not np.isfinite(baf_base) or np.isfinite(d).sum() < 0.5 * len(wins):

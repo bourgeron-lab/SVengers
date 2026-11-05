@@ -101,7 +101,19 @@ Priorités :
    production, contrôle cohorte (caryotypes, parenté IBS0 des paires
    parent-enfant IP), puis recalcul de BAFN/BAFDEV des appels depuis le
    store (`vedette regenotype`, FAIT en v1.10.0 : reproduit les valeurs de
-   l'appel sur un store non réécrit) et v11. À part : les génomes IP gardent ~22k sites RefCall non
+   l'appel sur un store non réécrit) et v11.
+   Stores de production réécrits le 2026-11-05 (2 973, 0 échec). Bilan
+   (`runs/_baf/`) : parenté — KING médian des paires parent-enfant 0,116 ->
+   0,233 (IP -1,99 -> 0,205), IBS0 0,111 -> 0,018 ; 1 574/1 647 paires PO de
+   dataset_paper à KING >= 0,177 (aucune avant), les 73 autres surtout IP
+   (BAF encore incomplet : sites RefCall `./.`) ou limites ; deux paires
+   déclarées non apparentées à KING 0,48 (doublon ou jumeaux). Caryotypes :
+   0 changement sur 2 989. v5n sur appels re-génotypés : PASS par génome
+   -1,1 % DEL, -2,5 % DUP hors IP (max ~3 %). Mosaïques : 9 segments de
+   faible fraction sur génomes ondulés passaient le test BAF, d'où le
+   plancher de fraction 0,3 sur génome ondulé (FAIT, non publié) ; ensuite
+   identiques à l'ancien BAF plus une perte 22q13 à f = 0,18 (à revoir dans
+   IGV). À part : les génomes IP gardent ~22k sites RefCall non
    génotypés (`./.`) à VAF 0,3-0,7 sur chr20 (~6k sur un génome ordinaire),
    vrais hétérozygotes refusés ou paralogues : non repris.
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),

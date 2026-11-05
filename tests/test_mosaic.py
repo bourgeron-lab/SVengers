@@ -156,3 +156,26 @@ def test_low_fraction_mosaic_is_judged_on_the_attenuated_baf_shift(tmp_path):
     # region is not allelic imbalance
     (tmp_path / "b").mkdir()
     assert scan_store(_store(tmp_path / "b", {"chr8": (31, 40, 1.80, False)})) == []
+
+
+def test_low_fraction_segment_of_a_wavy_genome_is_not_a_mosaic(tmp_path):
+    """Depth waves of ±15 % read as 15-25 % clones: on the rewritten BAF, 9
+    such segments passed the BAF test on wavy genomes. Below WAVY_MIN_FRAC a
+    wavy genome's segment is left out; a strong clone is kept, and the wave
+    is read without the segment's own contig (a large CNV raises it)."""
+    import zarr
+
+    from vedette.mosaic import WAVY_MIN_FRAC, contig_wave
+
+    def wavy(path, chr8=0.13):
+        per = {f"chr{k}": 0.15 for k in range(1, 13)} | {"chr8": chr8}
+        zarr.open_group(str(path), mode="r+").attrs.update(wave_by_contig=per, wave_score=0.15)
+
+    st = _store(tmp_path, {"chr8": (31, 40, 1.80, True), "chr3": (10, 40, 1.33, True)})
+    wavy(st.path)
+    calls = {c.contig: c for c in scan_store(EvidenceStore(st.path))}
+    assert "chr8" not in calls                       # f 0.20 < WAVY_MIN_FRAC
+    assert calls["chr3"].fraction > WAVY_MIN_FRAC     # f 0.67: kept
+    assert contig_wave({"wave_by_contig": {f"chr{k}": 0.05 for k in range(1, 12)} | {"chr22": 0.6}},
+                       "chr22") == pytest.approx(0.05)
+    assert contig_wave({"wave_score": 0.2}, "chr1") == 0.2
