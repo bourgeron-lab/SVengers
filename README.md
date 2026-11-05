@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.7.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.8.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -123,7 +123,8 @@ vedette mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
 - `--pon` is optional but is what production runs use; you have to build the panel
   yourself ([Building your own panel of normals](#building-your-own-panel-of-normals)).
 - B-allele frequency comes from `--snv-vcf` (single-sample VCF of biallelic SNVs with
-  `FORMAT/AD`, sites with depth ≥ 8) or `--vaf-bedgraph`. Without either, the BAF channel is
+  `FORMAT/AD`; PASS or unfiltered sites with depth ≥ 8, `FORMAT/DP` when given, else the sum
+  of `AD`; no QUAL threshold) or `--vaf-bedgraph`. Without either, the BAF channel is
   empty: the HMM, the genotyper, the large-duplication rescue, the mosaic scan and the
   karyotype all lose their allelic evidence.
 - Smoke test: add `--contig chr20` to `call` (about a minute on the fast path).
@@ -135,6 +136,22 @@ Without a CRAM, calling is depth + BAF only. Our production tracks are
 `mosdepth -n -m -x -Q 40 --by 1000` (median depth per 1 kb bin, bgzipped and tabix-indexed)
 and DeepVariant 1.9 sites with `FILTER=PASS`, `QUAL ≥ 30`, `DP ≥ 10`, written as a
 tabix-indexed bedgraph `chrom  pos0  pos0+1  vaf`.
+
+The `QUAL ≥ 30` of that track is a mistake for BAF: DeepVariant 1.9 gives many true
+heterozygotes a lower QUAL. On chr20, an ordinary 39× genome keeps 44k of its 56k PASS
+heterozygotes, and old or deep genomes (≥ 60×) as few as 1.6k of 32k; the ones dropped have a
+median VAF of 0.50. `vedette baf` rewrites the BAF of existing stores from the DeepVariant VCF
+(PASS biallelic SNVs, `DP ≥ 10`, no QUAL threshold) in about a minute per genome, without the
+CRAM; the previous arrays stay as `<contig>/baf_track/`:
+
+```bash
+vedette baf runs/C1/samples/S1/S1.evidence.zarr --vcf S1.deepvariant.vcf.gz
+vedette baf --manifest stores_vcfs.tsv --jobs 8     # store<TAB>vcf per line
+```
+
+Only the stores change. The BAF features of the per-sample calls (`BAFN`, `BAFDEV`, used by
+the filter model) were computed at calling time and stay as they are; the karyotype, mosaic
+scan, cohort re-genotyping and tensors read the new BAF.
 
 ### A cohort with Nextflow
 
@@ -327,7 +344,8 @@ or 1 copy of the variant allele.
 <contig>/depth_raw         float32[n_bins]   raw binned depth
 <contig>/depth_corr        float32[n_bins]   GC- (and PoN-) corrected depth
 <contig>/mask              bool[n_bins]      bins excluded from depth modelling
-<contig>/baf/{pos,vaf,dp}                    per-site B-allele fraction
+<contig>/baf/{pos,vaf,dp}                    per-site B-allele fraction (attr baf_source)
+<contig>/baf_track/{pos,vaf,dp}              the BAF before `vedette baf` rewrote it
 <contig>/pe/{pos1,pos2,mate_tid,orient,mapq} discordant pairs
 <contig>/sr/{pos,side,mapq,cliplen,seq_*}    soft clips and their sequences
 <contig>/cig/{pos,svlen}                     large CIGAR deletions
@@ -778,6 +796,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette tensors` | per-call multi-channel tracks from the store (`.npz`), input of the planned CNN second opinion |
 | `vedette mosaic` | chromosomal-scale mosaic and constitutional segments from a store, or a whole run (`--run-dir`) |
 | `vedette wave` | write the wave QC score into stores called before schema 0.4 (`--run-dir`, `--force`, `--jobs`) |
+| `vedette baf` | rewrite the BAF of stores from SNV VCFs, PASS, no QUAL threshold (`STORE --vcf`, `--manifest`, `--min-dp`, `--force`, `--jobs`) |
 | `vedette merge` | cluster filtered calls across samples into cohort sites |
 | `vedette genotype` | re-genotype every cohort site in one sample, from its evidence store |
 | `vedette cohort-filter` | cohort VCF with AF, HWE, artefact and consistency metrics |

@@ -29,12 +29,14 @@ from typing import Any
 import numpy as np
 import zarr
 
-SCHEMA_VERSION = "0.5"
+SCHEMA_VERSION = "0.6"
 # 0.2 adds optional sr clip sequences; 0.3 adds large CIGAR deletions (cig/);
 # 0.4 adds wave QC meta (wave_score, wave_by_contig — absent on older stores)
 # 0.5: wave_score is measured before the PoN; wave_score_pon (after it) and
 # pon (the panel's path) are added — None without a PoN
-SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4", "0.5"}
+# 0.6: baf_source attr (vaf-bedgraph, vcf:<name> ...); a BAF rewritten from a
+# VCF (`vedette baf`) keeps the previous arrays as <contig>/baf_track/
+SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4", "0.5", "0.6"}
 
 PE_DEL, PE_DUP, PE_INV, PE_INTER = 0, 1, 2, 3
 SR_LEFT_CLIP, SR_RIGHT_CLIP = 0, 1
@@ -63,6 +65,16 @@ class InsertModel:
 
     def discordant_threshold(self, z: float) -> float:
         return self.mu + z * self.sigma
+
+
+def write_baf_group(contig_group: zarr.Group, pos: np.ndarray, vaf: np.ndarray,
+                    dp: np.ndarray) -> None:
+    """<contig>/baf/{pos,vaf,dp}, sorted by position."""
+    order = np.argsort(pos, kind="stable")
+    g = contig_group.create_group("baf")
+    _create_array(g, "pos", pos[order].astype(np.uint32), _EVENT_CHUNK)
+    _create_array(g, "vaf", vaf[order].astype(np.float32), _EVENT_CHUNK)
+    _create_array(g, "dp", dp[order].astype(np.uint16), _EVENT_CHUNK)
 
 
 class EvidenceStoreWriter:
@@ -95,11 +107,7 @@ class EvidenceStoreWriter:
         _create_array(g, "mask", mask.astype(bool), _DEPTH_CHUNK)
 
     def write_baf(self, contig: str, pos: np.ndarray, vaf: np.ndarray, dp: np.ndarray) -> None:
-        order = np.argsort(pos, kind="stable")
-        g = self._contig(contig).create_group("baf")
-        _create_array(g, "pos", pos[order].astype(np.uint32), _EVENT_CHUNK)
-        _create_array(g, "vaf", vaf[order].astype(np.float32), _EVENT_CHUNK)
-        _create_array(g, "dp", dp[order].astype(np.uint16), _EVENT_CHUNK)
+        write_baf_group(self._contig(contig), pos, vaf, dp)
 
     def write_pe(
         self,

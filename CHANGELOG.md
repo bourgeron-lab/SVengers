@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.8.0 — 2026-11-05
+
+- **`vedette baf`: BAF without a QUAL threshold** — rewrites the BAF of
+  existing evidence stores from the sample's SNV VCF (DeepVariant: PASS
+  biallelic SNVs, DP >= 10, no QUAL threshold), without the CRAM, about a
+  minute per genome; the previous arrays stay as `<contig>/baf_track/`. The
+  GHFC VAF track keeps QUAL >= 30, which drops many true heterozygotes: on
+  copies of production stores the autosomal het/hom ratio goes from 0.04 to
+  0.91 for an old (IP) genome, 0.08 to 1.18 for a 91x one, 1.40 to 1.70 for
+  ordinary genomes; karyotypes are unchanged, and a man's X heterozygosity
+  falls from 0.08-0.12 to 0.02-0.03 on the old genomes. Store schema 0.6
+  (`baf_source`). The calls' BAF features (BAFN, BAFDEV) are unchanged
+  until a new model is trained on them.
+- `--snv-vcf` reads PASS (or unfiltered) sites only, with FORMAT/DP as the
+  site depth when given: DeepVariant's RefCall records are no heterozygous
+  sites.
+
 ## v1.7.0 — 2026-11-05
 
 - **Family export: rare non-PASS sites** (#10) — with `--events-pass-only`

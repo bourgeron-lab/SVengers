@@ -93,6 +93,16 @@ Priorités :
    réentraîner (à faire avec v11 pour ne réentraîner qu'une fois) et
    contrôles de déploiement habituels. Recensement : script non suivi
    `runs/_sexpon/vaf_census.py`.
+   Commande `vedette baf` FAITE (v1.8.0, store 0.6, ancien BAF gardé en
+   `baf_track/`, ~1 min par génome). Sur des copies de 5 stores : het/hom
+   autosomique 0,04 -> 0,91 (IP 75x), 0,08 -> 1,18 (91x), 1,40 -> 1,70
+   (ordinaires) ; caryotypes inchangés, x_het des hommes IP 0,08-0,12 ->
+   0,02-0,03 (seuil « un seul X » 0,15). Reste : passage sur les stores de
+   production, contrôle cohorte (caryotypes, parenté IBS0 des paires
+   parent-enfant IP), puis recalcul de BAFN/BAFDEV des appels depuis le
+   store et v11. À part : les génomes IP gardent ~22k sites RefCall non
+   génotypés (`./.`) à VAF 0,3-0,7 sur chr20 (~6k sur un génome ordinaire),
+   vrais hétérozygotes refusés ou paralogues : non repris.
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),
    contrôles de déploiement habituels (PASS par génome vs production,
    récurrence, trios, HG002 hors échantillon).

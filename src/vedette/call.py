@@ -214,6 +214,9 @@ def run_call(
         wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
         wave_score_pon=wave_score_pon,
         pon=str(pon_path) if pon_path else None,
+        baf_source=("vaf-bedgraph" if vaf_bedgraph else
+                    f"vcf:{Path(snv_vcf).name} PASS DP>={config.extract.baf_min_dp}"
+                    if snv_vcf else None),
     )
     for name in call_names:
         writer.write_depth(name, raw[name], corr[name], mask[name])

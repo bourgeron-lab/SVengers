@@ -340,6 +340,50 @@ def wave(
                f"(wavy), {n_failed} failed")
 
 
+@app.command()
+def baf(
+    store: Optional[Path] = typer.Argument(None, help="Evidence store (.zarr)"),
+    vcf: Optional[Path] = typer.Option(None, "--vcf", help="Single-sample SNV VCF of the store's sample"),
+    manifest: Optional[Path] = typer.Option(
+        None, "--manifest", help="TSV of store<TAB>vcf pairs, one per line (instead of STORE --vcf)"
+    ),
+    min_dp: int = typer.Option(10, "--min-dp", help="Minimum site depth (FORMAT/DP, else the sum of AD)"),
+    force: bool = typer.Option(False, "--force", help="Rewrite stores whose BAF already comes from a VCF"),
+    jobs: int = typer.Option(1, "--jobs", help="Stores processed in parallel"),
+) -> None:
+    """Rewrite the BAF of evidence stores from SNV VCFs (PASS, no QUAL threshold), without the CRAM."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    from .extract.baf import backfill_baf
+
+    pairs: list[tuple[Path, Path]] = []
+    if store is not None:
+        if vcf is None:
+            raise typer.BadParameter("STORE needs --vcf")
+        pairs.append((store, vcf))
+    if manifest is not None:
+        for line in manifest.read_text().splitlines():
+            if line.strip() and not line.startswith("#"):
+                s, v = line.split("\t")[:2]
+                pairs.append((Path(s), Path(v)))
+    if not pairs:
+        raise typer.BadParameter("give STORE --vcf VCF or --manifest")
+    n_written = n_failed = 0
+    with ProcessPoolExecutor(max_workers=max(1, jobs)) as pool:
+        futures = {pool.submit(backfill_baf, s, str(v), min_dp, force): s for s, v in pairs}
+        for fut, s in futures.items():
+            try:
+                n_sites, n_het, written = fut.result()
+            except Exception as exc:  # one unreadable store or VCF must not stop the batch
+                typer.echo(f"{s}: skipped ({exc})", err=True)
+                n_failed += 1
+                continue
+            n_written += written
+            if written:
+                typer.echo(f"{s}: {n_sites} sites, {n_het} heterozygous")
+    typer.echo(f"{len(pairs)} stores: {n_written} rewritten, {n_failed} failed")
+
+
 @app.command("cohort-filter")
 def cohort_filter(
     sites: Path = typer.Argument(..., help="Sites VCF from `vedette merge`"),
