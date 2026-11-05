@@ -963,9 +963,11 @@ def _write_all_family_events(
             skip = {m for m in members
                     if (low_quality_prefixes and m.startswith(tuple(low_quality_prefixes)))
                     or ((wave_scores or {}).get(m) or -1.0) >= WAVE_WARN}
+            sex_aneu = {m: aneuploid_sex_chromosomes(k) for m in members
+                        if (k := ((sample_info or {}).get(m) or {}).get("karyotype"))}
             sub_rows, sub_masked = subthreshold_events(members, subthreshold, events,
                                                        genes_fn, impact_fn, segdup_iv, lcr_iv,
-                                                       skip=skip)
+                                                       skip=skip, sex_aneuploid=sex_aneu)
             events += sub_rows
         if not events:
             return 0
@@ -1181,6 +1183,9 @@ def _write_events_page(
         f'quel que soit son impact. Sous le seuil (rescue « SOUS-SEUIL NDD ») = appel propre '
         f'rejeté par le seul score SQ, avec un CN franc (DEL CN ≤ 1, DUP CN ≥ 3, GQ ≥ 90, ≥ 1 kb), '
         f'touchant un gène NDD établi (impact ≥ 0,90) et absent de tout génome hors de la famille '
+        f'; « SOUS-SEUIL GRANDE DUP » = duplications de même nature d\'au moins 100 kb une fois '
+        f'leurs morceaux joints (écart ≤ 10 % de l\'étendue, ≤ 1 Mb), quels que soient leurs gènes, '
+        f'hors chromosome sexuel d\'un caryotype atypique (relecture IGV v5 : 12 vraies sur 15) '
         f': une liste à relire dans IGV, pas des appels validés '
         f'(case « + sous le seuil » pour les masquer). Au-delà de 3 par génome, le génome est '
         f'jugé bruité : ses lignes sont masquées et ses autres lignes portent l\'alerte '
@@ -1666,6 +1671,17 @@ SUB_MIN_IMPACT = 0.90
 # 8 ... 71); past SUB_MAX_PER_SAMPLE the genome's rows are masked and its
 # other rows carry a QC alert instead. Left: PMS 8 rows, dataset_paper 39.
 SUB_MAX_PER_SAMPLE = 3
+# Large duplications: the v5 IGV review (blind, 141 depth-only calls) found
+# 12 of 15 sub-threshold DUPs >= 100 kb true; SQ ranks nothing below the
+# threshold (AUC 0.54 on DUPs). A de novo 15q11.2q13 duplication at CN 4 in
+# an affected child was cut into LowSQ pieces (1.1 Mb and 5.7 Mb, SQ <= 0.06)
+# by the repeats inside the region. Pieces of one carrier are joined across a
+# gap of at most SUB_DUP_JOIN_FRAC of the joined span (and SUB_DUP_JOIN_MAX);
+# a private join >= SUB_DUP_MIN_SIZE is a row whatever its genes. On the v5
+# pool (665 trio children): 0.06 such rows per child.
+SUB_DUP_MIN_SIZE = 100_000
+SUB_DUP_JOIN_FRAC = 0.10
+SUB_DUP_JOIN_MAX = 1_000_000
 
 
 class SubCalls:
@@ -1789,28 +1805,85 @@ def subthreshold_candidates(run_dir: Path, samples: list[str], jobs: int = 1) ->
     return out.freeze()
 
 
+def join_dup_pieces(calls: list[dict]) -> list[dict]:
+    """One carrier's sub-threshold DUP calls joined into events: neighbouring
+    pieces on a contig whose gap is at most SUB_DUP_JOIN_FRAC of the joined
+    span and SUB_DUP_JOIN_MAX, repeated until nothing joins (a large piece
+    can bring a small neighbour within reach). Each event keeps its pieces
+    (``pieces``), the highest CN and SQ and the lowest GQ."""
+    groups = [[c] for c in sorted((c for c in calls if c["svtype"] == "DUP"),
+                                  key=lambda c: (c["contig"], c["start"]))]
+    joined = True
+    while joined:
+        joined, out = False, []
+        for g in groups:
+            last = out[-1] if out else None
+            if last is not None and last[0]["contig"] == g[0]["contig"]:
+                left_end = max(c["end"] for c in last)
+                right_end = max(c["end"] for c in g)
+                span = max(left_end, right_end) - last[0]["start"]
+                if g[0]["start"] - left_end <= min(SUB_DUP_JOIN_FRAC * span, SUB_DUP_JOIN_MAX):
+                    last.extend(g)
+                    joined = True
+                    continue
+            out.append(list(g))
+        groups = out
+    events = []
+    for g in groups:
+        sqs = [c["sq"] for c in g if c["sq"] is not None]
+        events.append({**g[0], "end": max(c["end"] for c in g),
+                       "cn": max(c["cn"] for c in g), "gq": min(c["gq"] for c in g),
+                       "sq": max(sqs) if sqs else None, "pieces": g})
+    return events
+
+
 def subthreshold_events(members: list[str], cands: SubCalls,
                         shown: list[dict], genes_fn=None, impact_fn=None,
                         segdup_iv=None, lcr_iv=None,
-                        skip: set[str] | frozenset = frozenset()) -> tuple[list[dict], dict[str, int]]:
+                        skip: set[str] | frozenset = frozenset(),
+                        sex_aneuploid: dict[str, set[str]] | None = None,
+                        ) -> tuple[list[dict], dict[str, int]]:
     """(rows, masked): family-page rows for the members' sub-threshold calls
-    (see SUB_*) that hit an established NDD gene (impact >= SUB_MIN_IMPACT),
-    are found in no genome outside the family and are not already on the
-    page; `masked` = {member: n} of the members past SUB_MAX_PER_SAMPLE, whose
-    rows are left out."""
+    (see SUB_*) found in no genome outside the family and not already on the
+    page, that hit an established NDD gene (impact >= SUB_MIN_IMPACT,
+    "SOUS-SEUIL NDD") or are duplications >= SUB_DUP_MIN_SIZE once their
+    pieces are joined ("SOUS-SEUIL GRANDE DUP"; not on a sex chromosome whose
+    copy number the carrier's karyotype changes, ``sex_aneuploid``);
+    `masked` = {member: n} of the members past SUB_MAX_PER_SAMPLE, whose rows
+    are left out."""
     fam = set(members)
     rows, masked = [], {}
     for m in members:
         if m in skip:
             continue
         mine = []
-        for c in cands.calls(m):
-            # cheapest test first: ~2,240 candidates per genome, most shared
-            others = cands.sharers(m, c["contig"], c["start"], c["end"], c["svtype"])
+        calls = cands.calls(m)
+        aneu = {f"chr{x}" for x in (sex_aneuploid or {}).get(m, ())}
+        aneu |= {x.removeprefix("chr") for x in aneu}
+        units = []
+        in_big = set()
+        for j in join_dup_pieces(calls):
+            if j["end"] - j["start"] < SUB_DUP_MIN_SIZE or j["contig"] in aneu:
+                continue
+            # private: the joined event and its largest piece (not every
+            # piece: a small one can be a common CNV the event runs through,
+            # as 15q11.2 BP1-BP2 next to a 15q11.2q13 duplication)
+            big = max(j["pieces"], key=lambda c: c["end"] - c["start"])
+            others = (cands.sharers(m, j["contig"], j["start"], j["end"], "DUP")
+                      | cands.sharers(m, big["contig"], big["start"], big["end"], "DUP"))
+            units.append((j, others, "SOUS-SEUIL GRANDE DUP"))
+            in_big.update(id(c) for c in j["pieces"])
+        units += [(c, None, "SOUS-SEUIL NDD") for c in calls if id(c) not in in_big]
+        for c, others, rescue in units:
+            if others is None:
+                # cheapest test first: ~2,240 candidates per genome, most shared
+                others = cands.sharers(m, c["contig"], c["start"], c["end"], c["svtype"])
             if others - fam:
                 continue
             pos, end = c["start"] + 1, c["end"]
-            if impact_fn is None or impact_fn(c["contig"], c["start"], end, c["svtype"])[0] < SUB_MIN_IMPACT:
+            if rescue == "SOUS-SEUIL NDD" and (
+                    impact_fn is None
+                    or impact_fn(c["contig"], c["start"], end, c["svtype"])[0] < SUB_MIN_IMPACT):
                 continue
             if any(e["contig"] == c["contig"] and e["svtype"] == c["svtype"]
                    and min(e["end"], end) - max(e["pos"], pos) > 0.5 * max(e["end"] - e["pos"], end - pos)
@@ -1821,10 +1894,11 @@ def subthreshold_events(members: list[str], cands: SubCalls,
             e = {
                 "id": f"sub_{m}_{c['contig']}_{c['start']}",
                 "contig": c["contig"], "pos": pos, "end": end, "svtype": c["svtype"],
-                "size": end - c["start"], "filter": "LowSQ", "rescue": "SOUS-SEUIL NDD",
+                "size": end - c["start"], "filter": "LowSQ", "rescue": rescue,
                 "genes": "", "impact": "", "sqmax": sq, "cfrac": "", "refcf": "",
                 "lcr": "", "segdup": "", "support": "fort", "own": "LowSQ",
                 "inherit": f"sous le seuil (SQ {sq})"
+                           + (f" · {len(c['pieces'])} appels joints" if len(c.get("pieces", ())) > 1 else "")
                            + (f" · appel aussi chez {', '.join(also)}" if also else ""),
                 "carriers": [m],
                 "gt": [("0/1" if c["svtype"] == "DUP" or c["cn"] == 1 else "1/1",

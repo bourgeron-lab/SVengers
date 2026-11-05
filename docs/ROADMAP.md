@@ -50,8 +50,11 @@ Priorités :
    héritées), bornes trop courtes sur les 3 corrigées. Suites :
    a. score d'impact avec la carte de dosage ClinGen — FAIT (non publié) :
       une dup15q de novo (CN 4, enfant atteint) était à +0,15 ;
-   b. repêchage des grandes DUP nettes sous le seuil (rapport de profondeur
-      ≥ 1,4, génome non ondulé), comme « SOUS-SEUIL NDD » ;
+   b. repêchage des grandes DUP sous le seuil — FAIT (v1.6.0) : « SOUS-SEUIL
+      GRANDE DUP », DUP LowSQ à CN ≥ 3, GQ ≥ 90, jointes chez un même
+      porteur (écart ≤ 10 % de l'étendue, ≤ 1 Mb), ≥ 100 kb, privées à la
+      famille, hors génomes ondulés/IP et hors X/Y d'un caryotype atypique ;
+      la dup15q (morceaux 22,6-30,2 Mb à CN 4) devient une ligne de 7,5 Mb ;
    c. v11 : les 131 labels tranchés à l'entraînement (caryotypes à part : les
       DUP du X d'un XXY ont reçu des verdicts contraires).
 2. **Second avis CNN (1sexdecies)** — étape 1 FAITE (v1.3.0, 2026-11-04) :

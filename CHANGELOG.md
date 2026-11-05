@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## v1.6.0 — 2026-11-05
+
+- **Report: large sub-threshold duplications** — the family pages keep, as
+  "SOUS-SEUIL GRANDE DUP" rows, a carrier's LowSQ duplications (CN >= 3,
+  GQ >= 90) once joined across gaps of at most 10 % of the joined span
+  (1 Mb at most), when >= 100 kb, private to the family (the joined event
+  and its largest piece), on a genome neither wavy nor low quality, and not
+  on a sex chromosome the carrier's karyotype changes. The v5 IGV review
+  found 12 of 15 sub-threshold DUPs >= 100 kb true, and SQ ranking nothing
+  below the threshold; a de novo 15q11.2q13 duplication at CN 4 was cut
+  into LowSQ pieces (1.1 and 5.7 Mb). Same per-genome cap as the NDD tier.
 
 ## v1.5.0 — 2026-11-05
 

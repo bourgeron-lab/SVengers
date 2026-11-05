@@ -965,6 +965,47 @@ def test_subthreshold_rows_of_a_noisy_genome_are_masked():
     assert [r["carriers"] for r in rows] == [["clean"]]
 
 
+def test_large_subthreshold_dup_pieces_are_joined_into_a_row():
+    """The v5 IGV review: a de novo 15q11.2q13 duplication at CN 4 was cut
+    into LowSQ pieces by the repeats inside the region; joined, it is a row
+    whatever its genes. A common CNV it runs through does not make it shared;
+    a large DUP found outside the family, a short one with no NDD gene and the
+    X of an XXY boy are not rows."""
+    from vedette.report import SubCalls, join_dup_pieces, subthreshold_events
+
+    pieces = [("chr15", "DUP", 22_606_000, 23_124_001, 4, 99, 0.02),   # BP1-BP2, common
+              ("chr15", "DUP", 23_360_000, 24_427_001, 4, 99, 0.06),
+              ("chr15", "DUP", 24_477_000, 30_158_001, 4, 99, 0.03)]
+    sc = SubCalls()
+    sc.add("kid", pieces + [
+        ("chr7", "DUP", 10_000_000, 10_050_001, 3, 99, 0.1),          # 50 kb, no gene
+        ("chr8", "DUP", 2_190_000, 2_380_001, 3, 99, 0.15),           # shared outside
+        ("chrX", "DUP", 148_173_000, 149_654_001, 3, 99, 0.0),        # XXY: the extra X
+    ])
+    sc.add("stranger", [("chr15", "DUP", 22_610_000, 23_120_001, 3, 99, 0.1),
+                        ("chr8", "DUP", 2_200_000, 2_370_001, 3, 99, 0.2)])
+    sc.freeze()
+    joined = join_dup_pieces(sc.calls("kid"))
+    big = [j for j in joined if j["contig"] == "chr15"]
+    assert [(j["start"], j["end"], len(j["pieces"])) for j in big] == [(22_606_000, 30_158_001, 3)]
+    assert big[0]["sq"] == pytest.approx(0.06)
+
+    def impact(*a):
+        return 0.0, "+0.00 — faible"
+
+    rows, masked = subthreshold_events(["kid", "dad", "mum"], sc, [], None, impact,
+                                       sex_aneuploid={"kid": {"X"}})
+    assert masked == {}
+    assert [(r["contig"], r["pos"], r["end"], r["rescue"]) for r in rows] == [
+        ("chr15", 22_606_001, 30_158_001, "SOUS-SEUIL GRANDE DUP")]
+    assert "3 appels joints" in rows[0]["inherit"] and rows[0]["gt"][0] == ("0/1", "99", "4")
+    # pieces too far apart stay apart: 100 kb gap on a 250 kb span
+    two = join_dup_pieces([{"contig": "chr1", "svtype": "DUP", "start": a, "end": b,
+                            "cn": 3, "gq": 99, "sq": None}
+                           for a, b in ((0, 75_000), (175_000, 250_000))])
+    assert len(two) == 2
+
+
 def test_large_family_gets_no_dead_events_link():
     """A 38-member dataset_paper pedigree had a link to an events page that
     is never written (pages stop at _EVENTS_MAX_MEMBERS members)."""

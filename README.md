@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.5.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.6.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -563,7 +563,11 @@ status and own-call status, sortable, opened from disk. Each row has:
 - an optional **sub-threshold NDD tier**: own calls rejected by SQ alone with a clear copy
   number (DEL CN ≤ 1 or DUP CN ≥ 3, GQ ≥ 90, ≥ 1 kb) in an established NDD gene, private to
   the family, shown greyed for review; at most 3 per genome, none for wavy genomes or for
-  genomes whose ID starts with a `--low-quality-prefix`;
+  genomes whose ID starts with a `--low-quality-prefix`. The same tier keeps **large
+  duplications** whatever their genes: a carrier's sub-threshold DUP pieces joined across
+  gaps of at most 10 % of the joined span (and 1 Mb), ≥ 100 kb, private to the family, not
+  on a sex chromosome the carrier's karyotype changes ("SOUS-SEUIL GRANDE DUP"; 12 of 15
+  true in a blind IGV review);
 - **« CHROMOSOMIQUE » (chromosomal) rows** for constitutional whole-copy segments of the mosaic scan that no
   PASS row covers;
 - an **IGV button** that sends the locus (± 20 %) to a running IGV desktop on its batch port

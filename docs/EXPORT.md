@@ -50,7 +50,7 @@ sites are left out of the page and of this file.
 | `svtype` | code | `DEL`, `DUP` |
 | `size` | int | `end - start + 1` |
 | `filter` | string | cohort FILTER (`PASS`, or `;`-joined names); `LowSQ` for sub-threshold rows |
-| `rescue` | string | `RECURRENT`, `SOUS-SEUIL NDD`, `MOSAÏQUE`, `CHROMOSOMIQUE` or empty |
+| `rescue` | string | `RECURRENT`, `SOUS-SEUIL NDD`, `SOUS-SEUIL GRANDE DUP` (from v1.6.0), `MOSAÏQUE`, `CHROMOSOMIQUE` or empty |
 | `n_sites` | int | cohort sites collapsed into the row (`site` rows) |
 | `sqmax` | float | best per-sample SQ among the site's calls (sub-threshold rows: the call's SQ) |
 | `cohort_carrier_frac` | float | fraction of the cohort carrying the site |
