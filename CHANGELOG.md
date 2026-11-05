@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.10.0 — 2026-11-05
 
 - **`cohort-filter`: a small cohort takes the reference cohort's
   CohortArtifact** — with `--known-sites`, a site common in the cohort (AF >

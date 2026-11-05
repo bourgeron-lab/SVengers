@@ -100,7 +100,7 @@ Priorités :
    0,02-0,03 (seuil « un seul X » 0,15). Reste : passage sur les stores de
    production, contrôle cohorte (caryotypes, parenté IBS0 des paires
    parent-enfant IP), puis recalcul de BAFN/BAFDEV des appels depuis le
-   store (`vedette regenotype`, FAIT, non publié : reproduit les valeurs de
+   store (`vedette regenotype`, FAIT en v1.10.0 : reproduit les valeurs de
    l'appel sur un store non réécrit) et v11. À part : les génomes IP gardent ~22k sites RefCall non
    génotypés (`./.`) à VAF 0,3-0,7 sur chr20 (~6k sur un génome ordinaire),
    vrais hétérozygotes refusés ou paralogues : non repris.
@@ -140,8 +140,8 @@ Priorités :
    celle-ci en signale 10 767 de plus (PMS seul : 76 de plus) ; 93 % des sites
    PMS à la limite (p 1e-8..1e-4) y sont appariés, CohortArtifact à 97 %.
    Piste : avec `--known-sites`, reprendre le CohortArtifact du site de
-   référence (puissance et stabilité de la grande cohorte). FAIT (non
-   publié, `REF_ARTIFACT`, sites courants seulement) ; test PMS
+   référence (puissance et stabilité de la grande cohorte). FAIT (v1.10.0,
+   `REF_ARTIFACT`, sites courants seulement) ; test PMS
    (`runs/_test_refart_PMS`) : 11 597 sites repris, PASS 28 093 -> 23 129
    (tous courants), lignes de page -39 %, candidats de novo PASS 2 203 ->
    1 302, aucune délétion 22q13 touchée.
