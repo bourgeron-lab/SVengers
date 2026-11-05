@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.9.0 — 2026-11-05
 
 - **`vedette labels --from-genetics-viz`** (#11) — reads the curators'
   validations of genetics-viz (`validations/vedette.tsv`, append-only: the
