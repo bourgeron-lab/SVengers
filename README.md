@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.4.0** (plus the unreleased changes listed in `CHANGELOG.md`), in production
+Status: **v1.4.1** (plus the unreleased changes listed in `CHANGELOG.md`), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 

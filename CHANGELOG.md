@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.4.1 — 2026-11-05
+
+- **docs** — `docs/EXPORT.md` gave the `wavy` QC flag at wave ≥ 0.2; the
+  report flags it at ≥ 0.128 (`qc.WAVE_WARN`). No change to the package.
+
 ## v1.4.0 — 2026-11-04
 
 VCF coordinates follow the spec, and the family pages get a machine-readable

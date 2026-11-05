@@ -85,7 +85,7 @@ Then, for each member in the JSON's `members` order:
 | column | type | values |
 |---|---|---|
 | `sample` | string | |
-| `wave_score` | float | coverage waviness (≥ 0.2: wavy) |
+| `wave_score` | float | coverage waviness (≥ 0.128: `wavy` flag) |
 | `pass_sites_carried` | int | PASS cohort sites the sample carries |
 | `carrier_excess` | float | the same divided by the cohort median |
 | `denovo_candidates` | int | PASS de novo candidates (children) |
