@@ -22,7 +22,9 @@ segment is then gained). This pass reads both from the evidence store alone:
    fold-back on the retained side (inv-dup: the retained end duplicated
    inverted, folded back over a spacer), clipped reads made of TTAGGG
    repeats on the retained side or a subtelomeric junction (healed
-   telomere), otherwise unknown. A loss called in abutting pieces breaks at
+   telomere), a junction to a repeat within 2 kb of the breakpoint (rDNA,
+   acrocentric short arms: sequence the reference does not place),
+   otherwise unknown. A loss called in abutting pieces breaks at
    the inner piece.
 
 On the 63 PMS terminal 22q13 losses: ~20 healed telomeres (4-15 telomeric
@@ -70,7 +72,9 @@ CHAIN_MIN_BP = 50_000      # ... when this long (small noisy calls do not chain)
 MIN_LOSS_BP = 100_000      # ... and at least this long
 BREAK_WIN = 10_000         # evidence window at a loss's breakpoint
 BREAK_WIN_MOSAIC = 20_000  # mosaic edges are refined to ~10 kb
+TELO_WIN = 30_000          # telomeric clips this close: a depth-only edge is ~20 kb off
 TELO_MIN = 3               # telomeric clips for a healed telomere
+REPEAT_WIN = 2_000         # a junction to a repeat this close to the breakpoint is its own
 TELO_REPEATS = 3           # TTAGGG / CCCTAA repeats in a clip to call it telomeric
 INV_MIN_BP = 1_000         # shorter same-strand pairs are fold-back artefacts
 INVDUP_SPACER_BP = 1_000_000  # an inv-dup's fold-back is this close to its loss
@@ -102,7 +106,7 @@ class TerminalLoss:
     start: int
     end: int
     source: str           # "call" / "mosaic"
-    mechanism: str        # "translocation" / "inv-dup" / "telomere" / "unknown"
+    mechanism: str        # "translocation" / "inv-dup" / "telomere" / "repeat" / "unknown"
     partner: str          # chrB:pos of the junction, "" if none
     partner_gain: str     # the sample's gain at the partner's end (inv-dup: the
                           # inverted duplication), "" if none
@@ -331,13 +335,15 @@ def loss_mechanism(store, sample: str, loss: tuple, bnds: list[Bnd],
     # the retained side: left of a q-ter loss, so its reads clip on the right
     side = SR_RIGHT_CLIP if qter else SR_LEFT_CLIP
     win = BREAK_WIN_MOSAIC if source == "mosaic" else BREAK_WIN
-    telo = telomeric_clips(store, contig, bp, win, side)
-    near = []
+    telo = telomeric_clips(store, contig, bp, TELO_WIN, side)
+    near = []   # (junction, partner contig, partner pos, distance) by the end closer to bp
     for b in bnds:
-        if b.contig_a == contig and abs(b.pos_a - bp) <= win:
-            near.append((b, b.contig_b, b.pos_b))
-        elif b.contig_b == contig and abs(b.pos_b - bp) <= win:
-            near.append((b, b.contig_a, b.pos_a))
+        ends = [(abs(p - bp), oc, op) for c, p, oc, op in
+                ((b.contig_a, b.pos_a, b.contig_b, b.pos_b), (b.contig_b, b.pos_b, b.contig_a, b.pos_a))
+                if c == contig]
+        if ends and min(ends)[0] <= win:
+            dist, oc, op = min(ends)
+            near.append((b, oc, op, dist))
     # a fold-back on the retained side: the inverted duplication of an inv-dup-del
     fold = sorted((x for x in near if x[0].kind != "TRA" and x[0].flag == ""
                    and 0 < (bp - x[2] if qter else x[2] - bp) <= INVDUP_SPACER_BP),
@@ -345,21 +351,28 @@ def loss_mechanism(store, sample: str, loss: tuple, bnds: list[Bnd],
     trans = sorted((x for x in near if x[0].kind == "TRA" and x[0].flag == ""),
                    key=lambda x: -x[0].pe)
     subt = [x for x in near if x[0].kind == "TRA" and x[0].flag == "subtelomeric"]
+    # a junction to a repeat at the breakpoint itself: a translocation onto
+    # sequence the reference does not place (rDNA, acrocentric short arms)
+    rep = sorted((x for x in near if x[0].kind == "TRA" and x[3] <= REPEAT_WIN
+                  and x[0].flag in ("unplaced", "promiscuous")), key=lambda x: -x[0].pe)
     partner = gain = ""
     if trans:
-        b, pc, pp = trans[0]
+        b, pc, pp, _ = trans[0]
         mechanism, partner, pe = "translocation", f"{pc}:{pp}", b.pe
         for gc, gs, ge in gains:
             if gc == pc and min(abs(gs - pp), abs(ge - pp)) <= 100_000:
                 gain = f"{gc}:{gs}-{ge}"
     elif fold:
-        b, pc, pp = fold[0]
+        b, pc, pp, _ = fold[0]
         mechanism, partner, pe = "inv-dup", f"{pc}:{pp}", b.pe
         for gc, gs, ge in gains:
             if gc == pc and abs((ge if qter else gs) - pp) <= 100_000:
                 gain = f"{gc}:{gs}-{ge}"
     elif telo >= TELO_MIN or subt:
         mechanism, pe = "telomere", max((x[0].pe for x in subt), default=0)
+    elif rep:
+        b, pc, pp, _ = rep[0]
+        mechanism, partner, pe = "repeat", f"{pc}:{pp}", b.pe
     else:
         mechanism, pe = "unknown", 0
     return TerminalLoss(sample=sample, contig=contig, start=start, end=end, source=source,
@@ -385,7 +398,8 @@ def read_tsv(path: str | Path) -> list[dict]:
 
 
 MECHANISM_FR = {"translocation": "translocation", "inv-dup": "duplication inversée (inv-dup)",
-                "telomere": "télomère néoformé", "unknown": "mécanisme indéterminé"}
+                "telomere": "télomère néoformé",
+                "repeat": "jonction vers une séquence répétée", "unknown": "mécanisme indéterminé"}
 
 
 def read_terminal(path: str | Path) -> list[dict]:
@@ -495,6 +509,8 @@ def _annotate_one(args):
     rows = [loss_mechanism(store, s, loss, bnds, gains, lengths)
             for loss in terminal_losses(losses, mosaic, lengths, partial(callable_bins, store),
                                              store.bin_size, pieces)]
+    # ~13,000 clusters per genome, nearly all in repeats: the files keep the rest
+    bnds = [b for b in bnds if b.flag in ("", "subtelomeric")]
     write_tsv(bnds, BND_FIELDS, d / f"{s}.bnd.tsv")
     write_bnd_vcf(bnds, contigs, s, d / f"{s}.bnd.vcf.gz", fasta)
     write_tsv(rows, TERMINAL_FIELDS, d / f"{s}.terminal.tsv")
@@ -518,9 +534,6 @@ def run_bnd(run_dir: str | Path, fasta: str | Path, jobs: int = 1) -> tuple[int,
         found = pool.map(_scan_one, [(d, names) for d in dirs], chunksize=4)
         by_sample = {d.name: b for d, b in zip(dirs, found, strict=True)}
         flag_junctions(by_sample, lengths)
-        # ~18,000 clusters per genome, nearly all in repeats: keep what survives
-        by_sample = {s: [b for b in bnds if b.flag in ("", "subtelomeric")]
-                     for s, bnds in by_sample.items()}
         res = pool.map(_annotate_one, [(d, by_sample[d.name], lengths, contigs, fasta)
                                        for d in dirs], chunksize=4)
     terminal = [r for _, _, rows in res for r in rows]

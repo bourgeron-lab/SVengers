@@ -139,9 +139,13 @@ def test_mechanisms_translocation_telomere_unknown(tmp_path):
     (tmp_path / "b").mkdir()
     st = _store(tmp_path / "b", clips={"chr22": [(47_821_250, SR_LEFT_CLIP, TELO)] * 6})
     assert loss_mechanism(st, "S", loss, [], [], LENGTHS).mechanism == "unknown"
-    # a promiscuous junction does not make a translocation
-    junk = [dict(vars(trans[0]), flag="promiscuous")]
-    assert loss_mechanism(st, "S", loss, [Bnd(**junk[0])], [], LENGTHS).mechanism == "unknown"
+    # a junction to a repeat is no translocation: at the breakpoint itself it
+    # says the end went onto unplaced sequence (rDNA, acrocentric short arms)
+    junk = Bnd(**dict(vars(trans[0]), flag="promiscuous"))
+    m = loss_mechanism(st, "S", loss, [junk], [], LENGTHS)
+    assert m.mechanism == "repeat" and m.partner == "chr8:119479750"
+    far = Bnd(**dict(vars(junk), pos_b=47_826_250))     # 5 kb off
+    assert loss_mechanism(st, "S", loss, [far], [], LENGTHS).mechanism == "unknown"
 
 
 def test_telomeric_clip():
@@ -180,6 +184,11 @@ def test_inv_dup_del_is_a_fold_back_next_to_the_loss():
     m = loss_mechanism(_NoClips(), "S", loss, [fold], [("chr22", 41_536_000, 49_330_000)], LENGTHS)
     assert m.mechanism == "inv-dup" and m.partner == "chr22:49330000"
     assert m.partner_gain == "chr22:41536000-49330000" and m.junction_pe == 5
+    # a short spacer: both ends within the window, the one at the breakpoint is its own
+    short = Bnd("S", "chr22", 47_414_330, "L", "chr22", 47_420_204, "R", 19, 8, 9, 60.0, kind="FOLD")
+    m = loss_mechanism(_NoClips(), "S", ("chr22", 47_420_000, 50_818_468, "call"), [short], [],
+                       LENGTHS)
+    assert m.mechanism == "inv-dup" and m.partner == "chr22:47414330"
 
 
 def test_a_parent_with_the_junction_carries_the_balanced_translocation():

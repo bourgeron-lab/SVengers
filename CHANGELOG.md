@@ -42,8 +42,10 @@ and keeps a clone in one row. Same store schema, feature schema and model
   contig end, with at most 10 kb of callable sequence past it, then gets its
   mechanism (`<S>.terminal.tsv`): translocation (with the partner's gain when
   the sample has it), inv-dup (a fold-back on the retained side), healed
-  telomere (TTAGGG clips on the retained side, or a subtelomeric junction),
-  or unknown. A loss called in abutting pieces breaks at its inner piece: 10
+  telomere (TTAGGG clips within 30 kb on the retained side, or a
+  subtelomeric junction), a junction to a repeat within 2 kb of the
+  breakpoint (rDNA, acrocentric short arms, decoys: sequence the reference
+  does not place), or unknown. A loss called in abutting pieces breaks at its inner piece: 10
   PMS losses seemed to break at 49.32 Mb, the outer piece of losses from
   43.6-49.1 Mb. The report has a "Pertes terminales" section and flags the
   family rows of these losses; a parent with the same junction is a
@@ -52,8 +54,10 @@ and keeps a clone in one row. Same store schema, feature schema and model
   needs 12 discordant pairs: on 100 dataset_paper trios, junctions in the
   child and in neither parent number ~180 per trio with 4-7 pairs, 2.9 with
   8-11 and 0.2 with 12 or more. Same-strand junctions stay `Inversion`
-  (~1 per trio even at 12 pairs). On PMS: 9 translocations at terminal 22q13
-  losses (6 with the partner's end gained), 4 inv-dup, 28 healed telomeres.
+  (~1 per trio even at 12 pairs). On the 63 PMS terminal losses: 9
+  translocations (6 with the partner's end gained), 5 inv-dup (3 with the
+  adjacent duplication called), 29 healed telomeres, 6 junctions to a
+  repeat, 14 unknown (5 of them mosaic).
   The scan takes ~20 s per genome (pileups made once per contig).
 
 - **`vedette train`: optional `weight` column in the labeled TSVs** — the
