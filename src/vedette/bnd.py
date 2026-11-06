@@ -114,26 +114,28 @@ _SIDE = {SR_RIGHT_CLIP: "R", SR_LEFT_CLIP: "L"}
 
 
 class _Clips:
-    """A sample's clipped reads, read once per contig: `store.sr` loads the
-    contig's whole position array on every call, and a genome has thousands
-    of inter-chromosomal clusters to place."""
+    """A sample's split-read pileups, made once per contig: a genome has
+    ~13,000 pair clusters to place, those in repeats megabases wide, and
+    piling up each one's clips anew was 90 % of the scan."""
 
-    def __init__(self, store):
-        self.store, self._sr = store, {}
+    def __init__(self, store, config: BreakpointConfig):
+        self.store, self.config, self._piles = store, config, {}
 
-    def pileup(self, contig: str, lo: int, hi: int, config: BreakpointConfig):
-        """The strongest split-read pileup in [lo, hi], or None."""
-        if contig not in self._sr:
-            self._sr[contig] = (self.store.sr(contig, 0, 2**32 - 1)
-                                if self.store.has_contig(contig) else None)
-        sr = self._sr[contig]
-        if sr is None or not len(sr["pos"]):
-            return None
-        i, j = np.searchsorted(sr["pos"], [max(lo, 0), hi])
+    def pileup(self, contig: str, lo: int, hi: int):
+        """The strongest split-read pileup in [lo, hi] (the first of equals), or None."""
+        if contig not in self._piles:
+            bps = []
+            if self.store.has_contig(contig):
+                sr = self.store.sr(contig, 0, 2**32 - 1)
+                if len(sr["pos"]):
+                    bps = cluster_sr(sr, self.config)
+            self._piles[contig] = (np.array([b.pos for b in bps], dtype=np.int64),
+                                   np.array([b.n for b in bps], dtype=np.int64), bps)
+        pos, n, bps = self._piles[contig]
+        i, j = int(np.searchsorted(pos, max(lo, 0), "left")), int(np.searchsorted(pos, hi, "right"))
         if j <= i:
             return None
-        bps = cluster_sr({k: v[i:j] for k, v in sr.items()}, config)
-        return max(bps, key=lambda b: b.n) if bps else None
+        return bps[i + int(np.argmax(n[i:j]))]
 
 
 def scan_junctions(store, names: list[str], config: BreakpointConfig | None = None) -> list[Bnd]:
@@ -143,7 +145,7 @@ def scan_junctions(store, names: list[str], config: BreakpointConfig | None = No
     cfg = BreakpointConfig(**{**asdict(config), "min_pe": BND_MIN_PE})
     insert = store.insert_model()
     mu = int(insert.mu) or 500
-    clips = _Clips(store)
+    clips = _Clips(store, config)
     found: dict[tuple, Bnd] = {}
     for contig in store.contigs:
         g = store.root[contig]
@@ -151,7 +153,7 @@ def scan_junctions(store, names: list[str], config: BreakpointConfig | None = No
             continue
         pe = g["pe"]
         orient = np.asarray(pe["orient"][:])
-        found.update(_inversions(store, contig, pe, orient, insert, cfg, clips, config))
+        found.update(_inversions(store, contig, pe, orient, insert, cfg, clips))
         sel = orient == PE_INTER
         if sel.sum() < BND_MIN_PE:
             continue
@@ -165,8 +167,8 @@ def scan_junctions(store, names: list[str], config: BreakpointConfig | None = No
             for cl in cluster_pe({k: v[m] for k, v in cols.items()}, insert, cfg, PE_INTER):
                 if cl.mean_mapq < BND_MIN_MAPQ:
                     continue
-                a = clips.pileup(contig, cl.pos1_lo - mu, cl.pos1_hi + mu, config)
-                b = clips.pileup(mate, cl.pos2_lo - mu, cl.pos2_hi + mu, config)
+                a = clips.pileup(contig, cl.pos1_lo - mu, cl.pos1_hi + mu)
+                b = clips.pileup(mate, cl.pos2_lo - mu, cl.pos2_hi + mu)
                 bnd = Bnd(
                     sample=store.sample, contig_a=contig,
                     pos_a=a.pos if a else (cl.pos1_lo + cl.pos1_hi) // 2,
@@ -183,7 +185,7 @@ def scan_junctions(store, names: list[str], config: BreakpointConfig | None = No
     return list(found.values())
 
 
-def _inversions(store, contig, pe, orient, insert, cfg, clips, config) -> dict[tuple, Bnd]:
+def _inversions(store, contig, pe, orient, insert, cfg, clips) -> dict[tuple, Bnd]:
     """Same-strand pair clusters of one contig. Pairs are stored without
     strands: a junction's ++ pairs lie left of its first breakpoint, its --
     pairs right of it, so a reciprocal inversion has pairs on both sides and a
@@ -200,8 +202,8 @@ def _inversions(store, contig, pe, orient, insert, cfg, clips, config) -> dict[t
     for cl in cluster_pe(cols, insert, cfg, PE_INV):
         if cl.mean_mapq < BND_MIN_MAPQ:
             continue
-        a = clips.pileup(contig, cl.pos1_lo - mu, cl.pos1_hi + mu, config)
-        b = clips.pileup(contig, cl.pos2_lo - mu, cl.pos2_hi + mu, config)
+        a = clips.pileup(contig, cl.pos1_lo - mu, cl.pos1_hi + mu)
+        b = clips.pileup(contig, cl.pos2_lo - mu, cl.pos2_hi + mu)
         start = a.pos if a else (cl.pos1_lo + cl.pos1_hi) // 2
         m = ((cols["pos1"] >= cl.pos1_lo) & (cols["pos1"] <= cl.pos1_hi)
              & (cols["pos2"] >= cl.pos2_lo) & (cols["pos2"] <= cl.pos2_hi))

@@ -12,6 +12,8 @@ from vedette.bnd import (
     telomeric,
     terminal_losses,
 )
+from vedette.breakpoints.cluster import SRBreakpoint, cluster_sr
+from vedette.config import BreakpointConfig
 from vedette.extract.store import (
     PE_DEL,
     PE_INTER,
@@ -205,3 +207,37 @@ def test_terminal_flag_on_the_family_row_of_the_loss():
                                    "svtype": "DEL"}) == []
     assert terminal_flags(losses, {"contig": "chr22", "pos": 45_000_001, "end": 45_100_000,
                                    "svtype": "DUP"}) == []
+
+
+def _cluster_sr_loop(sr, config):
+    """The per-clip loop cluster_sr replaced: the reference it must match."""
+    out = []
+    for side in (SR_LEFT_CLIP, SR_RIGHT_CLIP):
+        sel = sr["side"] == side
+        if not sel.any():
+            continue
+        pos = sr["pos"][sel].astype(np.int64)
+        mapq = sr["mapq"][sel].astype(np.float64)
+        clip = sr["cliplen"][sel].astype(np.int64)
+        order = np.argsort(pos, kind="stable")
+        pos, mapq, clip = pos[order], mapq[order], clip[order]
+        start = 0
+        for i in range(1, len(pos) + 1):
+            if i == len(pos) or pos[i] - pos[i - 1] > config.sr_pos_tolerance:
+                n = i - start
+                if n >= config.min_sr:
+                    out.append(SRBreakpoint(int(np.median(pos[start:i])), side, n,
+                                            float(mapq[start:i].mean()), int(clip[start:i].max())))
+                start = i
+    out.sort(key=lambda b: b.pos)
+    return out
+
+
+def test_vectorised_cluster_sr_matches_the_loop():
+    rng = np.random.default_rng(7)
+    for _ in range(20):
+        k = int(rng.integers(1, 3000))
+        sr = {"pos": np.sort(rng.integers(0, 40_000, k)), "side": rng.integers(0, 2, k),
+              "mapq": rng.integers(0, 61, k), "cliplen": rng.integers(5, 150, k)}
+        cfg = BreakpointConfig(min_sr=int(rng.integers(1, 4)))
+        assert cluster_sr(sr, cfg) == _cluster_sr_loop(sr, cfg)
