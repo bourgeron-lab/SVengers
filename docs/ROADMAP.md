@@ -20,7 +20,8 @@ terminales, 9 translocations (6 avec le gain partenaire), 5 inv-dup,
 dataset_paper : jonctions de l'enfant seul 0,13 par trio au seuil PASS.
 
 Reste à faire :
-1. Étape du workflow Nextflow (aujourd'hui lancé à part, ~20 s par génome).
+1. ~~Étape du workflow Nextflow~~ : `VEDETTE_BND` avant le rapport (testé
+   sur le trio public, 2026-11-06).
 2. Inversions isolées : ~1 jonction de même brin chez l'enfant seul par trio
    même à 12 paires ; à calibrer (réciprocité exigée, MAPQ, répétitions
    inversées, benchmark HG002 / jeux d'inversions) avant tout PASS.

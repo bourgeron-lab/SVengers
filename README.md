@@ -121,8 +121,9 @@ vedette mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
 
 On a run (`samples/<S>/` directories), `vedette bnd --run-dir out --fasta ref.fa` adds the
 translocation and inversion junctions and the mechanism of terminal losses
-([section 8](#8-translocations-inversions-and-terminal-losses-vedette-bnd)); it is not yet
-a step of the Nextflow workflow.
+([section 8](#8-translocations-inversions-and-terminal-losses-vedette-bnd)); the Nextflow
+workflow runs it before the report (`--bnd false` to skip; it needs the `filter` step in
+the same run).
 
 - `my_site.toml` holds your reference paths (see [Configuration](#configuration)); the
   default threshold, SQ ≥ 5, is the operating point of the shipped model.
@@ -901,7 +902,7 @@ samples/<S>/<S>.evidence.zarr        evidence store
 samples/<S>/<S>.filtered.vcf.gz      filtered calls: FILTER, SQ (+ .tbi)
 samples/<S>/<S>.features.tsv         per-call feature matrix
 samples/<S>/<S>.mosaic.tsv           mosaic and constitutional segments
-samples/<S>/<S>.bnd.tsv, .bnd.vcf.gz junctions (`vedette bnd`, run separately)
+samples/<S>/<S>.bnd.tsv, .bnd.vcf.gz junctions (`vedette bnd`)
 samples/<S>/<S>.terminal.tsv         terminal losses and their mechanism (`vedette bnd`)
 genotypes/<S>.gt.tsv                 re-genotyped cohort sites
 cohort/sites.vcf.gz                  cohort sites (sites-only)
