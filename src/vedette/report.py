@@ -2537,7 +2537,7 @@ def _terminal_losses(run_dir: Path, samples: list[str], pedigree: Pedigree | Non
     """Per sample, its terminal losses with a one-line mechanism (family-page
     alerts), and the cohort section. A translocation or inv-dup junction also
     found in a parent marks that parent a balanced carrier."""
-    from .bnd import junction_carriers, read_terminal, read_tsv, terminal_label
+    from .bnd import junction_carriers, loss_carriers, read_terminal, read_tsv, terminal_label
 
     parents = {i.sample_id: [p for p in (i.father_id, i.mother_id) if p]
                for i in (pedigree.individuals.values() if pedigree else [])}
@@ -2553,16 +2553,24 @@ def _terminal_losses(run_dir: Path, samples: list[str], pedigree: Pedigree | Non
             bnd_cache[s] = read_tsv(p) if p.exists() else []
         return bnd_cache[s]
 
+    terminal_cache: dict[str, list[dict]] = {}
+
+    def terminal_of(s):
+        if s not in terminal_cache:
+            p = path_of(s, "terminal.tsv")
+            terminal_cache[s] = read_terminal(p) if p.exists() else []
+        return terminal_cache[s]
+
     by_sample: dict[str, list[dict]] = {}
     rows, scanned = [], False
     for s in samples:
-        p = path_of(s, "terminal.tsv")
-        if not p.exists():
+        if not path_of(s, "terminal.tsv").exists():
             continue
         scanned = True
-        for t in read_terminal(p):
+        for t in terminal_of(s):
             carriers = junction_carriers(t, {q: bnds_of(q) for q in parents.get(s, [])}, lengths)
-            label = terminal_label(t, carriers)
+            inherited = loss_carriers(t, {q: terminal_of(q) for q in parents.get(s, [])})
+            label = terminal_label(t, carriers, inherited)
             by_sample.setdefault(s, []).append({"contig": t["contig"], "start": t["start"],
                                                 "end": t["end"], "label": label})
             evidence = (f"{t['junction_pe']} paires" if t["junction_pe"] else "")
@@ -2581,7 +2589,8 @@ def _terminal_losses(run_dir: Path, samples: list[str], pedigree: Pedigree | Non
         "le gain de l'extrémité partenaire la confirme, et la même jonction chez un parent "
         "en fait un porteur équilibré), repli sur le côté conservé (duplication inversée "
         "adjacente, inv-dup), ou répétitions TTAGGG ajoutées à la cassure (télomère "
-        "néoformé). Jonctions récurrentes dans la cohorte et loci répétés exclus.</p>"
+        "néoformé). Jonctions récurrentes dans la cohorte et loci répétés exclus ; "
+        "« héritée de » : un parent porte la même perte.</p>"
         + _table(["échantillon", "chr", "Mb", "source", "mécanisme", "preuves"], rows)
     )
 

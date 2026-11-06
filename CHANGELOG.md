@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Report: a terminal loss a parent also carries is marked inherited** —
+  "héritée de <parent>" when a parent has the same terminal loss (same
+  contig, reciprocal overlap >= 0.5). With the callable-tail criterion, the
+  only terminal losses with identical bounds in two genomes of PMS and
+  dataset_paper are a mother's and her child's (chr5:0-141 kb, chr11:134.9
+  Mb to qter), both PASS sites carried by those two genomes only.
+
 - **Report: de novo candidates sorted by the child's genome quality** — a
   "qualité enfant" column names what weakens the child's genome (wavy
   coverage, old genome, excess of carried sites), and each family's table

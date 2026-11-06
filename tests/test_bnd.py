@@ -205,6 +205,18 @@ def test_a_parent_with_the_junction_carries_the_balanced_translocation():
     assert junction_carriers(dict(row, partner=""), {"mother": [jn]}, LENGTHS) == []
 
 
+def test_a_parent_with_the_same_loss_transmitted_it():
+    from vedette.bnd import loss_carriers, terminal_label
+
+    row = {"contig": "chr5", "start": 0, "end": 141_001, "partner": "", "partner_gain": "",
+           "mechanism": "telomere"}
+    mother = [dict(row, start=0, end=141_001)]
+    father = [dict(row, contig="chr22", start=49_000_000, end=50_818_468)]
+    shorter = [dict(row, end=60_000)]                       # overlap below one half
+    assert loss_carriers(row, {"father": father, "mother": mother, "other": shorter}) == ["mother"]
+    assert terminal_label(row, [], ["mother"]) == "télomère néoformé, héritée de mother"
+
+
 def test_terminal_flag_on_the_family_row_of_the_loss():
     from vedette.report import terminal_flags
 

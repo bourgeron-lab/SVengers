@@ -437,8 +437,21 @@ def junction_carriers(row: dict, others: dict[str, list[dict]],
             if any(_loci(b["contig_a"], b["pos_a"], b["contig_b"], b["pos_b"]) == j for b in bnds)]
 
 
-def terminal_label(row: dict, carriers: list[str] = ()) -> str:
-    """One line for a report: mechanism, partner, partner gain, carrier parent."""
+def loss_carriers(row: dict, others: dict[str, list[dict]]) -> list[str]:
+    """The samples of `others` ({sample: <S>.terminal.tsv rows}) with the same
+    terminal loss (same contig, reciprocal overlap >= 0.5): a parent with it
+    transmitted it. The only two losses with identical bounds in two genomes
+    of PMS and dataset_paper are a mother's and her child's."""
+    def same(u):
+        ov = min(u["end"], row["end"]) - max(u["start"], row["start"])
+        return (u["contig"] == row["contig"]
+                and ov >= 0.5 * max(u["end"] - u["start"], row["end"] - row["start"]))
+    return [s for s, rows in others.items() if any(same(u) for u in rows)]
+
+
+def terminal_label(row: dict, carriers: list[str] = (), inherited: list[str] = ()) -> str:
+    """One line for a report: mechanism, partner, partner gain, carrier parent,
+    parent with the same loss."""
     out = MECHANISM_FR.get(row["mechanism"], row["mechanism"])
     if row["partner"]:
         pc, pp = row["partner"].rsplit(":", 1)
@@ -449,6 +462,8 @@ def terminal_label(row: dict, carriers: list[str] = ()) -> str:
         out += f", gain {gc}:{gs / 1e6:.1f}-{ge / 1e6:.1f} Mb"
     if carriers:
         out += f", jonction chez {', '.join(carriers)}"
+    if inherited:
+        out += f", héritée de {', '.join(inherited)}"
     return out
 
 
