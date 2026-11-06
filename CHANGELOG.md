@@ -20,6 +20,18 @@
   lands on a limit of the search. On PMS and dataset_paper the same 20 and
   26 segments, edges moved by a median of 0.28 Mb (at most 0.72 Mb).
 
+- **Mosaic scan: segments no longer cut at their straddling windows** —
+  successive 1 Mb windows differ by ~0.01 of the diploid level, so every
+  step is significant and the window straddling a breakpoint, kept with two
+  neighbours to make the 3-window minimum, formed a blended segment the
+  homogeneity test dropped. Such windows are now left out of the
+  segmentation (the 1 kb refinement finds the breakpoint inside them), a
+  blended segment's end windows go back to the neighbour whose level they
+  share, and adjacent segments within 0.1 copies are joined. On PMS and
+  dataset_paper: no segment lost or gained; a 22q13 duplication goes from
+  44-48 Mb to 41.5-49.3 Mb, and one clone or trisomy split into 2-3 rows
+  is one row (a clonal 17q gain, chromosomes 8, 12 and 21): 57 rows -> 52.
+
 ## v1.11.0 — 2026-11-05
 
 - **Mosaic scan: a wavy genome needs a fraction of at least 0.3** — depth

@@ -10,7 +10,10 @@ were not called at all.
 This pass works at chromosomal scale, from the evidence store alone:
 
 1. the diploid-normalised depth ratio is summarised in 1 Mb windows;
-2. each autosome is segmented by binary segmentation on the window levels;
+2. each autosome is segmented by binary segmentation on the window levels,
+   without the windows that straddle a breakpoint (`straddling`); a blended
+   segment's end windows go back to the neighbour they match (`peel`), and
+   adjacent segments within MERGE_TOL copies are joined (`merge_close`);
 3. a segment away from CN 2 gets a cell fraction, assuming a single-copy
    change: loss CN = 2 - f, gain CN = 2 + f;
 4. it must be homogeneous (HOMOG_*): a blend of integer levels is not a clone;
@@ -86,6 +89,8 @@ BAF_HOMOG_FRAC = 0.5       # share of the windows between the floor and that cei
 # 3.0, 1.15) and a 22q13 deletion with an intermediate edge (1.66, 1.65,
 # 1.03, 1.02) both read as "mosaic" without it.
 HOMOG_TOL = 0.2
+STRADDLE_FRAC = 0.2        # a straddling window sits this far inside the step
+MERGE_TOL = 0.1            # copies: adjacent segments closer than this are one
 HOMOG_FRAC = 0.75
 WAVY_MIN_FRAC = 0.3        # least cell fraction on a wavy genome (see above)
 
@@ -181,6 +186,80 @@ def refine_edge(pos: np.ndarray, y: np.ndarray, edge: int, inner: float,
     if k == 0 or k == len(x):
         return edge
     return int(x[k]) if left else int(x[k - 1] + bin_size)
+
+
+def peel(segs: list[tuple[int, int]], lv: np.ndarray) -> list[tuple[int, int]]:
+    """End windows of a blended segment given back to the neighbour whose
+    level they share. An event shorter than MIN_WINDOWS cannot stand alone,
+    so the segmenter joins it to a window of the next one: a PMS genome's
+    2 Mb CN 3 run at the end of 22q (after CN 4 at 44-48 Mb, before a
+    terminal loss) took the last CN 4 window, and the CN 4 segment ended at
+    47 Mb."""
+    segs = list(segs)
+
+    def level(k):
+        i, j = segs[k]
+        return 2.0 * float(np.median(lv[i:j]))
+
+    def blended(k):
+        i, j = segs[k]
+        return not homogeneous(2.0 * lv[i:j], level(k))
+
+    for k in range(len(segs)):
+        if not blended(k):
+            continue
+        i, j = segs[k]
+        if k > 0 and not blended(k - 1):
+            ref = level(k - 1)
+            while j - i > 1 and abs(2.0 * lv[i] - ref) <= HOMOG_TOL:
+                i += 1
+            segs[k - 1] = (segs[k - 1][0], i)
+        if k + 1 < len(segs) and not blended(k + 1):
+            ref = level(k + 1)
+            while j - i > 1 and abs(2.0 * lv[j - 1] - ref) <= HOMOG_TOL:
+                j -= 1
+            segs[k + 1] = (j, segs[k + 1][1])
+        segs[k] = (i, j)
+    return segs
+
+
+def merge_close(segs: list[tuple[int, int]], lv: np.ndarray) -> list[tuple[int, int]]:
+    """Adjacent segments whose levels differ by less than MERGE_TOL copies,
+    joined: at a window noise of ~0.01 the segmenter also splits one clone on
+    a small depth drift (a clonal genome's 17q gain came out as two rows,
+    CN 2.68 and 2.61, with the same BAF shift)."""
+    out = list(segs[:1])
+    for i, j in segs[1:]:
+        a, b = out[-1]
+        if 2.0 * abs(np.median(lv[a:b]) - np.median(lv[i:j])) < MERGE_TOL:
+            out[-1] = (a, j)
+        else:
+            out.append((i, j))
+    return out
+
+
+def straddling(lv: np.ndarray) -> np.ndarray:
+    """Windows that straddle a breakpoint: strictly between the levels of the
+    two windows on each side, which differ by at least MIN_CN_SHIFT.
+
+    Successive 1 Mb windows are close (median window noise 0.009 of the
+    diploid level on the 447 GHFC genomes with a segment, floored at 0.01), so
+    any step is significant, and a straddling window, kept to MIN_WINDOWS
+    with two neighbours, made a blended segment the homogeneity test then
+    dropped: a 22q13 duplication (41.5-49.25 Mb) came out at 44-48 Mb, a
+    clonal genome's 17q gain at 73 Mb instead of before 70. Left out, the
+    segmenter cuts once, and `refine_edge` finds the breakpoint inside it."""
+    n = len(lv)
+    out = np.zeros(n, dtype=bool)
+    for i in range(2, n - 2):
+        left, right = np.median(lv[i - 2:i]), np.median(lv[i + 1:i + 3])
+        step = abs(right - left)
+        if 2.0 * step < MIN_CN_SHIFT:
+            continue
+        lo, hi = min(left, right), max(left, right)
+        margin = STRADDLE_FRAC * step
+        out[i] = lo + margin <= lv[i] <= hi - margin
+    return out
 
 
 def homogeneous(win_cn: np.ndarray, cn: float) -> bool:
@@ -283,7 +362,13 @@ def scan_store(store) -> list[MosaicCall]:
             continue
         idx = np.nonzero(ok)[0]
         lv = level[ok] / base
-        for i, j in _segments(lv, sd, MIN_WINDOWS, SPLIT_T):
+        keep = ~straddling(lv)
+        idx, lv = idx[keep], lv[keep]
+        if len(lv) < MIN_WINDOWS:
+            continue
+        for i, j in merge_close(peel(_segments(lv, sd, MIN_WINDOWS, SPLIT_T), lv), lv):
+            if j - i < MIN_WINDOWS:
+                continue
             cn = 2.0 * float(np.median(lv[i:j]))
             if abs(cn - 2.0) < MIN_CN_SHIFT:
                 continue

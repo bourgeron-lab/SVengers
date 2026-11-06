@@ -206,3 +206,36 @@ def test_edge_is_kept_when_no_step_is_within_reach():
     # no valid bins in the window out (a centromere): untouched
     keep = pos >= 44_000_000 - WINDOW_BP
     assert refine_edge(pos[keep], step[keep], 44_000_000, 45.0, 1000, True) == 44_000_000
+
+
+def test_event_is_not_cut_at_its_straddling_windows(tmp_path):
+    """Successive windows differ by ~0.01, so the segmenter cut a 22q13
+    duplication (41.5-49.25 Mb, then a terminal loss) at 44-48 Mb: the window
+    straddling each breakpoint, kept with two neighbours, made a blended
+    segment the homogeneity test dropped. Straddling windows are left out,
+    a blended segment's end windows go back to the neighbour they match."""
+    st = _store(tmp_path, {"chr8": [(31.5, 38.25, 3.0, True), (38.25, 40, 1.0, True)]})
+    dup = [c for c in scan_store(st) if c.contig == "chr8" and c.svtype == "DUP"]
+    assert len(dup) == 1
+    assert abs(dup[0].start - 31_500_000) <= 3 * BIN and abs(dup[0].end - 38_250_000) <= 3 * BIN
+
+
+def test_one_clone_on_a_small_drift_is_one_row(tmp_path):
+    """A clonal genome's 17q gain came out as two rows, CN 2.68 and 2.61."""
+    st = _store(tmp_path, {"chr3": [(10, 30, 2.68, True), (30, 40, 2.61, True)]})
+    chr3 = [c for c in scan_store(st) if c.contig == "chr3"]
+    assert len(chr3) == 1 and chr3[0].mosaic
+    assert abs(chr3[0].start - 10_000_000) <= 3 * BIN and chr3[0].end == CONTIG_MB * 1_000_000
+
+
+def test_straddling_window_and_peel():
+    from vedette.mosaic import merge_close, peel, straddling
+
+    lv = np.array([1.0, 1.0, 1.0, 1.25, 1.5, 1.5, 1.5]) / 1.0
+    assert straddling(lv).tolist() == [False, False, False, True, False, False, False]
+    # a drift inside one level is not a breakpoint
+    assert not straddling(np.array([1.0, 1.0, 1.02, 1.04, 1.04])).any()
+    # CN 4 x4, then a blended (4.05, 2.98, 0.94): the CN 4 window goes back
+    lv = np.array([2.0, 2.0, 2.0, 1.97, 1.98, 1.97, 2.02, 1.49, 0.47]) / 1.0
+    assert peel([(0, 3), (3, 6), (6, 9)], lv / 1.0) == [(0, 3), (3, 7), (7, 9)]
+    assert merge_close([(0, 3), (3, 6)], np.array([1.34, 1.34, 1.34, 1.31, 1.31, 1.31])) == [(0, 6)]
