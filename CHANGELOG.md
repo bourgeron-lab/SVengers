@@ -47,7 +47,14 @@ and keeps a clone in one row. Same store schema, feature schema and model
   PMS losses seemed to break at 49.32 Mb, the outer piece of losses from
   43.6-49.1 Mb. The report has a "Pertes terminales" section and flags the
   family rows of these losses; a parent with the same junction is a
-  balanced carrier.
+  balanced carrier. Junctions with split reads at both ends are also written
+  as VCF breakend pairs (`<S>.bnd.vcf.gz`, MATEID / EVENT / KIND); PASS
+  needs 12 discordant pairs: on 100 dataset_paper trios, junctions in the
+  child and in neither parent number ~180 per trio with 4-7 pairs, 2.9 with
+  8-11 and 0.2 with 12 or more. Same-strand junctions stay `Inversion`
+  (~1 per trio even at 12 pairs). On PMS: 9 translocations at terminal 22q13
+  losses (6 with the partner's end gained), 4 inv-dup, 28 healed telomeres.
+  The scan takes ~20 s per genome (pileups made once per contig).
 
 - **`vedette train`: optional `weight` column in the labeled TSVs** — the
   number of calls a row stands for (default 1), used by the trees and the

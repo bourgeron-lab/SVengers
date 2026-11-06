@@ -483,8 +483,9 @@ def _scan_one(args):
 def _annotate_one(args):
     from .extract.store import EvidenceStore
     from .mosaic import read_tsv as read_mosaic
+    from .vcfout import write_bnd_vcf
 
-    d, bnds, lengths = args
+    d, bnds, lengths, contigs, fasta = args
     s = d.name
     store = EvidenceStore(d / f"{s}.evidence.zarr")
     losses, gains, pieces = _pass_calls(d / f"{s}.filtered.vcf.gz")
@@ -495,13 +496,15 @@ def _annotate_one(args):
             for loss in terminal_losses(losses, mosaic, lengths, partial(callable_bins, store),
                                              store.bin_size, pieces)]
     write_tsv(bnds, BND_FIELDS, d / f"{s}.bnd.tsv")
+    write_bnd_vcf(bnds, contigs, s, d / f"{s}.bnd.vcf.gz", fasta)
     write_tsv(rows, TERMINAL_FIELDS, d / f"{s}.terminal.tsv")
     return s, len(bnds), rows
 
 
 def run_bnd(run_dir: str | Path, fasta: str | Path, jobs: int = 1) -> tuple[int, int, list]:
     """Every samples/<S>/ of a run: <S>.bnd.tsv (junctions, flagged over the
-    run) and <S>.terminal.tsv (terminal losses and their mechanism)."""
+    run), <S>.bnd.vcf.gz (those with split reads at both ends, as breakend
+    pairs) and <S>.terminal.tsv (terminal losses and their mechanism)."""
     from multiprocessing import get_context
 
     from .reference import read_fai
@@ -518,6 +521,7 @@ def run_bnd(run_dir: str | Path, fasta: str | Path, jobs: int = 1) -> tuple[int,
         # ~18,000 clusters per genome, nearly all in repeats: keep what survives
         by_sample = {s: [b for b in bnds if b.flag in ("", "subtelomeric")]
                      for s, bnds in by_sample.items()}
-        res = pool.map(_annotate_one, [(d, by_sample[d.name], lengths) for d in dirs], chunksize=4)
+        res = pool.map(_annotate_one, [(d, by_sample[d.name], lengths, contigs, fasta)
+                                       for d in dirs], chunksize=4)
     terminal = [r for _, _, rows in res for r in rows]
     return len(dirs), sum(n for _, n, _ in res), terminal

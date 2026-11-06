@@ -241,3 +241,36 @@ def test_vectorised_cluster_sr_matches_the_loop():
               "mapq": rng.integers(0, 61, k), "cliplen": rng.integers(5, 150, k)}
         cfg = BreakpointConfig(min_sr=int(rng.integers(1, 4)))
         assert cluster_sr(sr, cfg) == _cluster_sr_loop(sr, cfg)
+
+
+def test_breakend_vcf(tmp_path):
+    """der(22)t(8;22): chr22 kept left of its breakend (reads clipped on the
+    right) joined to chr8 right of its own (clipped on the left)."""
+    import pysam
+
+    from vedette.reference import Contig
+    from vedette.vcfout import write_bnd_vcf
+
+    fa = tmp_path / "ref.fa"
+    fa.write_text(">chr8\n" + "ACGT" * 500 + "\n>chr22\n" + "TTGCA" * 400 + "\n")
+    pysam.faidx(str(fa))
+    contigs = [Contig("chr8", 2000, "autosome"), Contig("chr22", 2000, "autosome")]
+    bnds = [Bnd("S", "chr8", 1_750, "L", "chr22", 1_250, "R", 16, 5, 6, 57.9),
+            Bnd("S", "chr8", 100, "?", "chr22", 200, "R", 4, 0, 3, 60.0),       # no orientation
+            Bnd("S", "chr22", 300, "R", "chr22", 1_000, "R", 6, 3, 2, 60.0, kind="FOLD",
+                flag="subtelomeric")]
+    out = tmp_path / "S.bnd.vcf.gz"
+    assert write_bnd_vcf(bnds, contigs, "S", out, fa) == 2
+    with pysam.VariantFile(str(out)) as v:
+        recs = {r.id: r for r in v}
+    a, b = recs["vedette_BND_1_1"], recs["vedette_BND_1_2"]
+    # chr8 left clip at 1,750 (0-based first aligned base): breakend base 1,751
+    assert (a.chrom, a.pos, a.ref) == ("chr8", 1_751, "ACGT"[1_750 % 4])
+    assert a.alts == (f"]chr22:1250]{a.ref}",) and a.info["MATEID"] == ("vedette_BND_1_2",)
+    # chr22 right clip at 1,250 (first clipped base): last kept base 1,250
+    assert (b.chrom, b.pos, b.ref) == ("chr22", 1_250, "TTGCA"[1_249 % 5])
+    assert b.alts == (f"{b.ref}[chr8:1751[",) and b.samples["S"]["SR"] == 6
+    assert list(a.filter) == ["PASS"]   # 16 pairs
+    fold = recs["vedette_BND_2_1"]
+    assert fold.alts == (f"{fold.ref}]chr22:1000]",) and fold.info["KIND"] == "FOLD"
+    assert list(fold.filter) == ["Subtelomeric"]

@@ -197,3 +197,89 @@ def write_vcf(
             out.write(rec)
     if mode == "wz":
         pysam.tabix_index(path, preset="vcf", force=True)
+
+
+BND_FILTERS = [
+    ("Subtelomeric", "A junction end within 500 kb of a contig end"),
+    ("LowSupport", "Fewer than BND_PASS_PE discordant pairs"),
+    ("Inversion", "Same-strand junction: not calibrated as a standalone call"),
+]
+# On 100 dataset_paper trios, kept junctions found in the child and in neither
+# parent (de novo ones being very rare: noise) per trio: inter-chromosomal
+# ~180 with 4-7 pairs, 2.9 with 8-11, 0.2 with 12 or more (inherited: 2.4);
+# same-strand ones ~1 even with 12 pairs and 5 split reads at each end.
+BND_PASS_PE = 12
+
+
+def bnd_filter(b) -> str:
+    """FILTER of a junction written as a standalone call. A junction at a
+    loss's breakpoint is read with any support by `vedette bnd`: there, a
+    chance junction within 10 kb is ~1 in 1,000."""
+    if b.flag == "subtelomeric":
+        return "Subtelomeric"
+    if b.kind != "TRA":
+        return "Inversion"
+    return "PASS" if b.pe >= BND_PASS_PE else "LowSupport"
+
+
+def breakend_alt(ref: str, side: str, mate_contig: str, mate_pos: int, mate_side: str) -> str:
+    """VCF breakend ALT of a junction end. `side` "R": the sequence left of
+    the breakend is joined (reads clipped on its right), "L": the sequence
+    right of it; `mate_pos` is the mate's 1-based breakend base."""
+    b = "[" if mate_side == "L" else "]"
+    mate = f"{b}{mate_contig}:{mate_pos}{b}"
+    return f"{ref}{mate}" if side == "R" else f"{mate}{ref}"
+
+
+def breakend_pos(pos: int, side: str) -> int:
+    """1-based base of a breakend at the store's clip position: a right clip
+    starts at ``pos`` (the last kept base is ``pos``, 1-based), a left clip's
+    first aligned base is ``pos`` (0-based)."""
+    return pos if side == "R" else pos + 1
+
+
+def write_bnd_vcf(bnds: list, contigs: list[Contig], sample: str, path: str | Path,
+                  fasta: str | Path, command: str = "") -> int:
+    """Junctions of `vedette bnd` (bnd.Bnd) as VCF breakend pairs (two records
+    per junction, MATEID / EVENT). Junctions whose ends have no split-read
+    pileup have no orientation (pairs are stored without strands) and are
+    left to the TSV. Returns the number of junctions written."""
+    header = make_header(contigs, sample, command)
+    for name, desc in BND_FILTERS:
+        header.filters.add(name, None, None, desc)
+    header.info.add("MATEID", ".", "String", "ID of the mate breakend")
+    header.info.add("EVENT", "1", "String", "ID of the junction")
+    header.info.add("KIND", "1", "String",
+                    "TRA: between contigs; INV: same-strand pairs on both sides; FOLD: on one side")
+    order = {c.name: i for i, c in enumerate(contigs)}
+    ref = pysam.FastaFile(str(fasta))
+    recs = []
+    placed = [b for b in bnds if {b.side_a, b.side_b} <= {"L", "R"}]
+    for i, b in enumerate(placed, 1):
+        ends = ((b.contig_a, b.pos_a, b.side_a, b.sr_a), (b.contig_b, b.pos_b, b.side_b, b.sr_b))
+        for k, ((c, p, sd, sr), (mc, mp, msd, _)) in enumerate((ends, ends[::-1]), 1):
+            pos1 = breakend_pos(p, sd)
+            base = ref.fetch(c, pos1 - 1, pos1).upper() or "N"
+            recs.append((order.get(c, 1_000_000), pos1, c, base,
+                         breakend_alt(base, sd, mc, breakend_pos(mp, msd), msd),
+                         f"vedette_BND_{i}_{k}", f"vedette_BND_{i}_{3 - k}", f"vedette_BND_{i}",
+                         b, sr))
+    recs.sort(key=lambda r: (r[0], r[1]))
+    path = str(path)
+    mode = "wz" if path.endswith(".gz") else "w"
+    with pysam.VariantFile(path, mode, header=header) as out:
+        for _, pos1, c, base, alt, rid, mate, event, b, sr in recs:
+            rec = out.new_record(contig=c, start=pos1 - 1, stop=pos1, alleles=(base, alt), id=rid)
+            rec.info["SVTYPE"] = "BND"
+            rec.info["MATEID"] = mate
+            rec.info["EVENT"] = event
+            rec.info["KIND"] = b.kind
+            rec.filter.add(bnd_filter(b))
+            fmt = rec.samples[sample]
+            fmt["GT"] = (None, None)
+            fmt["PE"] = b.pe
+            fmt["SR"] = sr
+            out.write(rec)
+    if mode == "wz":
+        pysam.tabix_index(path, preset="vcf", force=True)
+    return len(placed)
