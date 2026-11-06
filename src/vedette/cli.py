@@ -305,6 +305,25 @@ def mosaic(
 
 
 @app.command()
+def bnd(
+    run_dir: Path = typer.Option(..., "--run-dir", help="Run directory (samples/<S>/<S>.evidence.zarr)"),
+    fasta: Path = typer.Option(..., help="Reference FASTA (.fai: contig order of the stores' mate index)"),
+    jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
+) -> None:
+    """Inter-chromosomal junctions and the mechanism of terminal losses, from the stores:
+    <S>.bnd.tsv and <S>.terminal.tsv beside each store."""
+    from collections import Counter
+
+    from .bnd import run_bnd
+    from .parallel import resolve_jobs
+
+    n, n_bnd, terminal = run_bnd(run_dir, fasta, jobs=resolve_jobs(jobs))
+    mech = Counter(t.mechanism for t in terminal)
+    typer.echo(f"{n} samples, {n_bnd} junctions kept, {len(terminal)} terminal losses "
+               f"({', '.join(f'{k} {v}' for k, v in sorted(mech.items()))})")
+
+
+@app.command()
 def wave(
     stores: list[Path] = typer.Argument(None, help="Evidence stores (.zarr)"),
     run_dir: Optional[Path] = typer.Option(

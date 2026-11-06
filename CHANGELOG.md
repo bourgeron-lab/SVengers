@@ -28,6 +28,27 @@ and keeps a clone in one row. Same store schema, feature schema and model
   Takes effect on the next `vedette call`; store and feature schemas and
   the model are unchanged.
 
+- **`vedette bnd`: translocations, inversions and the mechanism of terminal
+  losses** — a run-level pass on the evidence stores (no CRAM). Inter-
+  chromosomal pairs make translocation junctions and same-strand pairs of
+  1 kb or more inversion junctions, reciprocal or fold-back (pairs on one
+  side: one junction of an inverted duplication), each end placed on its
+  split-read pileup (`<S>.bnd.tsv`; the raw scan is cached in
+  `<S>.junctions.tsv`). Over the run, a locus joined to 10 distinct loci or
+  more is a repeat (chr2:32.9 Mb: ~24,000 in PMS; a translocation's ends:
+  1-3) and two loci joined in 5 genomes or more (or 1 %) an artefact or a
+  common variant; counting genomes per locus does not work, a median locus
+  has junctions in 7 PMS genomes. Each deletion of 100 kb or more reaching a
+  contig end, with at most 10 kb of callable sequence past it, then gets its
+  mechanism (`<S>.terminal.tsv`): translocation (with the partner's gain when
+  the sample has it), inv-dup (a fold-back on the retained side), healed
+  telomere (TTAGGG clips on the retained side, or a subtelomeric junction),
+  or unknown. A loss called in abutting pieces breaks at its inner piece: 10
+  PMS losses seemed to break at 49.32 Mb, the outer piece of losses from
+  43.6-49.1 Mb. The report has a "Pertes terminales" section and flags the
+  family rows of these losses; a parent with the same junction is a
+  balanced carrier.
+
 - **`vedette train`: optional `weight` column in the labeled TSVs** — the
   number of calls a row stands for (default 1), used by the trees and the
   isotonic calibration; the manifest's metrics still count rows and record

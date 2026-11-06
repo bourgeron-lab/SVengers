@@ -877,6 +877,7 @@ def _write_all_family_events(
     wave_scores: dict[str, float | None] | None = None,
     wave_by_contig: dict[str, dict] | None = None,
     mosaic_by_sample: dict[str, list[dict]] | None = None,
+    terminal_by_sample: dict[str, list[dict]] | None = None,
     subthreshold: SubCalls | None = None,
     denovo_families: dict[str, int] | None = None,
     low_quality_prefixes: tuple[str, ...] = (),
@@ -1099,6 +1100,7 @@ def _write_all_family_events(
                 if big[m] >= BIG_CNV_WARN:
                     fl.append(f"grands CNV {big[m]}")
                 fl += mosaic_flags((mosaic_by_sample or {}).get(m, []), e)
+                fl += terminal_flags((terminal_by_sample or {}).get(m, []), e)
                 if sub_masked.get(m):
                     fl.append(f"sous le seuil NDD {sub_masked[m]} masqués")
                 if fl:
@@ -2042,6 +2044,15 @@ def _merge_member_rows(rows: list[dict], members: list[str], genes_fn=None, impa
     return out
 
 
+def terminal_flags(losses: list[dict], e: dict) -> list[str]:
+    """The mechanism of the carrier's terminal loss this DEL row belongs to
+    (`vedette bnd`: translocation, inv-dup, healed telomere)."""
+    if e.get("svtype", "DEL") != "DEL":
+        return []
+    return [f"perte terminale : {t['label']}" for t in losses
+            if t["contig"] == e["contig"] and min(t["end"], e["end"]) - max(t["start"], e["pos"] - 1) > 0]
+
+
 def mosaic_flags(segments: list[dict], e: dict) -> list[str]:
     """Alerts of a carrier with mosaic segments (`vedette mosaic`): the row's
     own segment when the row lies in one, else a sample-level warning.
@@ -2504,6 +2515,56 @@ def check_evidence_stores(run_dir: Path, samples: list[str], require: bool = Tru
     return missing
 
 
+def _terminal_losses(run_dir: Path, samples: list[str], pedigree: Pedigree | None,
+                     lengths: dict[str, int]) -> tuple[dict[str, list[dict]], str]:
+    """Per sample, its terminal losses with a one-line mechanism (family-page
+    alerts), and the cohort section. A translocation or inv-dup junction also
+    found in a parent marks that parent a balanced carrier."""
+    from .bnd import junction_carriers, read_terminal, read_tsv, terminal_label
+
+    parents = {i.sample_id: [p for p in (i.father_id, i.mother_id) if p]
+               for i in (pedigree.individuals.values() if pedigree else [])}
+    bnd_cache: dict[str, list[dict]] = {}
+
+    def bnds_of(s):
+        if s not in bnd_cache:
+            p = run_dir / "samples" / s / f"{s}.bnd.tsv"
+            bnd_cache[s] = read_tsv(p) if p.exists() else []
+        return bnd_cache[s]
+
+    by_sample: dict[str, list[dict]] = {}
+    rows, scanned = [], False
+    for s in samples:
+        p = run_dir / "samples" / s / f"{s}.terminal.tsv"
+        if not p.exists():
+            continue
+        scanned = True
+        for t in read_terminal(p):
+            carriers = junction_carriers(t, {q: bnds_of(q) for q in parents.get(s, [])}, lengths)
+            label = terminal_label(t, carriers)
+            by_sample.setdefault(s, []).append({"contig": t["contig"], "start": t["start"],
+                                                "end": t["end"], "label": label})
+            evidence = (f"{t['junction_pe']} paires" if t["junction_pe"] else "")
+            if t["telo_clips"]:
+                evidence += (", " if evidence else "") + f"{t['telo_clips']} clips TTAGGG"
+            rows.append([s, t["contig"], f'{t["start"] / 1e6:.2f}-{min(t["end"], lengths.get(t["contig"], t["end"])) / 1e6:.2f}',
+                         "mosaïque" if t["source"] == "mosaic" else "appel", label, evidence or "—"])
+    if not scanned:
+        return by_sample, "<p>Scan non lancé (<code>vedette bnd --run-dir</code>).</p>"
+    if not rows:
+        return by_sample, "<p>Aucune perte terminale.</p>"
+    rows.sort(key=lambda r: (r[1], r[0]))
+    return by_sample, (
+        "<p>Délétions ≥ 100 kb atteignant l'extrémité d'un chromosome, et leur mécanisme lu "
+        "dans les lectures : jonction avec un autre chromosome (translocation déséquilibrée ; "
+        "le gain de l'extrémité partenaire la confirme, et la même jonction chez un parent "
+        "en fait un porteur équilibré), repli sur le côté conservé (duplication inversée "
+        "adjacente, inv-dup), ou répétitions TTAGGG ajoutées à la cassure (télomère "
+        "néoformé). Jonctions récurrentes dans la cohorte et loci répétés exclus.</p>"
+        + _table(["échantillon", "chr", "Mb", "source", "mécanisme", "preuves"], rows)
+    )
+
+
 def generate_report(
     run_dir: str | Path,
     pedigree: Pedigree | None,
@@ -2837,6 +2898,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
         key=lambda r: (r[0], r[1]),
     )
     n_mosaic_samples = len({r[0] for r in mosaic_rows})
+    # ---- terminal losses and their mechanism (`vedette bnd --run-dir`), when present
+    terminal_by_sample, terminal_section = _terminal_losses(run_dir, samples, pedigree, _clen)
     if mosaic_rows:
         mosaic_section = (
             "<p>Segments ≥ 3 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, "
@@ -2937,7 +3000,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
             segdup_iv=segdup_iv, lcr_iv=lcr_iv, collapse=collapse_family_events,
             min_carrier_gq=min_carrier_gq, sample_qc=sample_qc,
             wave_scores=wave_scores, wave_by_contig=wave_by_contig,
-            mosaic_by_sample=mosaic_by_sample, subthreshold=sub_cands,
+            mosaic_by_sample=mosaic_by_sample, terminal_by_sample=terminal_by_sample,
+            subthreshold=sub_cands,
             denovo_families=dn_families, low_quality_prefixes=tuple(low_quality_prefixes),
             jobs=jobs, gene_lists_fn=_gene_lists, sample_info=sample_info,
             export_meta=export_meta, export_nonpass_max_cf=export_nonpass_max_cf,
@@ -3050,6 +3114,9 @@ impact puis taille.</p>
 
 <h2>Mosaïques chromosomiques</h2>
 {mosaic_section}
+
+<h2>Pertes terminales</h2>
+{terminal_section}
 
 <h2>Échantillons</h2>
 <p>Le score de wave mesure les oscillations mégabase de couverture survivant à la
