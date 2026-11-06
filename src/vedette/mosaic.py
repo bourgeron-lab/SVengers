@@ -17,7 +17,8 @@ This pass works at chromosomal scale, from the evidence store alone:
 5. it is kept only if the B-allele frequency of its heterozygous sites departs
    from 0.5 as that fraction predicts — loss |BAF - 0.5| = 0.5 - (1-f)/(2-f),
    gain (1+f)/(2+f) - 0.5. GC or wave artefacts and pericentromeric repeats
-   shift depth without any allelic imbalance, and fail here.
+   shift depth without any allelic imbalance, and fail here;
+6. an edge inside the contig is refined to the store's bin (`refine_edge`).
 
 The BAF statistic is the median |BAF - 0.5| of a window's heterozygous sites.
 Two things move it besides a clone (`baf_rise`):
@@ -95,7 +96,7 @@ AUTOSOMES = tuple(f"chr{i}" for i in range(1, 23))
 class MosaicCall:
     sample: str
     contig: str
-    start: int            # 0-based, window-aligned
+    start: int            # 0-based; an inner edge is refined to the store bin
     end: int
     svtype: str           # DEL (loss) / DUP (gain)
     cn: float
@@ -138,6 +139,50 @@ def contig_wave(meta: dict, contig: str, min_contigs: int = 10) -> float | None:
     return None if w is None else float(w)
 
 
+def refine_edge(pos: np.ndarray, y: np.ndarray, edge: int, inner: float,
+                bin_size: int, left: bool, min_step: float = 0.0) -> int:
+    """Breakpoint of a segment edge found at window resolution, to the bin.
+
+    The true edge lies within a window of `edge`: the segmenter cut where the
+    window levels change, and the window that straddles the breakpoint goes to
+    either side. Over the bins (`pos`, `y`: valid bins of the contig, depth
+    not normalised) of the two windows around it, the step from the outer
+    level (the median of the next window out) to the segment's own level
+    `inner` is placed where the cumulative evidence for the outer level peaks;
+    each bin counts within ±(step height), so a spike cannot move it. A 15 %
+    clone changes 1 kb depth by ~0.08 against a bin noise of ~0.12: a PMS
+    proband's 22q13 loss, scanned at 42.0 Mb, comes back at 41,993,000, 6 kb
+    from its telomere-healing junction (one split read, 41,999,335).
+
+    `left`: the segment lies right of `edge` (its start). The edge is left as
+    it is when the next window out has no valid bins (a centromere, a gap),
+    when that window is within `min_step` of the segment's level, or when the
+    step lands on a limit of the search: the breakpoint is then out of reach
+    (a PMS 22q13 duplication, 41.5-49.25 Mb, scanned at 44-48 Mb next to two
+    blended segments the homogeneity test dropped)."""
+    w = WINDOW_BP
+    ref = (pos >= edge - 2 * w) & (pos < edge - w) if left else \
+        (pos >= edge + w) & (pos < edge + 2 * w)
+    near = (pos >= edge - w) & (pos < edge + w)
+    if ref.sum() < 0.1 * w / bin_size or not near.any():
+        return edge
+    outer = float(np.median(y[ref]))
+    step = abs(outer - inner)
+    if step == 0 or step < min_step:
+        return edge
+    x, v = pos[near], y[near]
+    # positive where a bin looks like the outer level
+    c = np.clip(np.sign(outer - inner) * (v - (outer + inner) / 2), -step, step)
+    if left:
+        score = np.concatenate([[0.0], np.cumsum(c)])    # outer bins = [0, k)
+    else:
+        score = np.concatenate([np.cumsum(c[::-1])[::-1], [0.0]])  # outer bins = [k, n)
+    k = int(np.argmax(score))
+    if k == 0 or k == len(x):
+        return edge
+    return int(x[k]) if left else int(x[k - 1] + bin_size)
+
+
 def homogeneous(win_cn: np.ndarray, cn: float) -> bool:
     """Whether a segment's windows sit at one level (HOMOG_*), as a clone does."""
     return bool(np.mean(np.abs(np.asarray(win_cn) - cn) <= HOMOG_TOL) >= HOMOG_FRAC)
@@ -172,7 +217,8 @@ def _segments(levels: np.ndarray, sd: float, min_len: int, t_split: float) -> li
 
 def _windows(store, contig: str):
     """(starts, ratio level, BAF dev, length, het BAF - 0.5) per 1 Mb window
-    of one contig, ratio not yet normalised."""
+    of one contig, ratio not yet normalised, and (pos, depth) of its valid
+    bins for `refine_edge`."""
     _, corr, mask = store.depth(contig)
     corr = np.asarray(corr, dtype=np.float64)
     mask = np.asarray(mask, dtype=bool)
@@ -186,6 +232,7 @@ def _windows(store, contig: str):
     bad = mask.reshape(n_win, nb) | ~np.isfinite(blk)
     blk[bad] = np.nan
     valid = (~bad).mean(axis=1) >= MIN_VALID_FRAC
+    bins = (np.nonzero(~bad.ravel())[0] * store.bin_size, blk.ravel()[~bad.ravel()])
     level = np.full(n_win, np.nan)
     if valid.any():
         level[valid] = np.nanmedian(blk[valid], axis=1)
@@ -207,7 +254,7 @@ def _windows(store, contig: str):
     except KeyError:
         pass
     starts = np.arange(n_win) * WINDOW_BP
-    return starts, level, dev, (len(corr) - pad) * store.bin_size, het_dev
+    return starts, level, dev, (len(corr) - pad) * store.bin_size, het_dev, bins
 
 
 def scan_store(store) -> list[MosaicCall]:
@@ -230,7 +277,7 @@ def scan_store(store) -> list[MosaicCall]:
     sd = 1.4826 * np.median(np.abs(diffs - np.median(diffs))) / np.sqrt(2) if len(diffs) else 0.0
     sd = max(sd, 0.01)
     calls: list[MosaicCall] = []
-    for c, (starts, level, dev, _len, _het) in data.items():
+    for c, (starts, level, dev, _len, _het, (bpos, bdep)) in data.items():
         ok = np.isfinite(level)
         if ok.sum() < MIN_WINDOWS:
             continue
@@ -260,10 +307,21 @@ def scan_store(store) -> list[MosaicCall]:
             z = (excess - null) / (baf_sd / np.sqrt(len(wd)))
             if excess < lo or z < BAF_Z or np.mean((wd >= lo) & (wd <= hi)) < BAF_HOMOG_FRAC:
                 continue
+            start = int(starts[wins[0]])
+            end = int(min(starts[wins[-1]] + WINDOW_BP, length[c]))
+            inner = cn / 2.0 * base
+            # the window out must differ from the segment: a duplication that
+            # runs on past the window (two PMS genomes) has no step there.
+            # A quarter of the shift: CN 4 next to CN 3 is half of it.
+            min_step = 0.25 * abs(inner - base)
+            if start > 0:
+                start = refine_edge(bpos, bdep, start, inner, store.bin_size, True, min_step)
+            if end < length[c]:
+                end = min(refine_edge(bpos, bdep, end, inner, store.bin_size, False, min_step),
+                          length[c])
             calls.append(MosaicCall(
                 sample=store.sample, contig=c,
-                start=int(starts[wins[0]]),
-                end=int(min(starts[wins[-1]] + WINDOW_BP, length[c])),
+                start=start, end=end,
                 svtype=svtype, cn=round(cn, 3), fraction=round(f, 3),
                 baf_dev=round(excess, 4), baf_expected=round(exp, 4),
                 n_windows=int(len(wins)),

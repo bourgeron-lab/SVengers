@@ -27,7 +27,7 @@ def _store(tmp_path, events, n_contigs=12, seed=0):
         imb = np.zeros(n_bins)
         evs = events.get(c, [])
         for a, b, ev_cn, shift in ([evs] if isinstance(evs, tuple) else evs):
-            sl = slice(a * 1_000_000 // BIN, b * 1_000_000 // BIN)
+            sl = slice(int(a * 1_000_000) // BIN, int(b * 1_000_000) // BIN)
             cn[sl] = ev_cn
             if shift:
                 f = min(abs(ev_cn - 2), 0.9)
@@ -179,3 +179,30 @@ def test_low_fraction_segment_of_a_wavy_genome_is_not_a_mosaic(tmp_path):
     assert contig_wave({"wave_by_contig": {f"chr{k}": 0.05 for k in range(1, 12)} | {"chr22": 0.6}},
                        "chr22") == pytest.approx(0.05)
     assert contig_wave({"wave_score": 0.2}, "chr1") == 0.2
+
+
+def test_inner_edges_are_refined_to_the_bin(tmp_path):
+    """The scan cuts at 1 Mb windows; a PMS proband's 22q13 loss at ~18 % came
+    out at 42.0 Mb for a telomere-healing junction at 41,999,335. Inner edges
+    are placed on the store bins; the contig end stays the contig end."""
+    st = _store(tmp_path, {"chr8": (31.37, 40, 1.80, True), "chr3": (10.42, 25.66, 2.67, True)})
+    calls = {c.contig: c for c in scan_store(st)}
+    loss, gain = calls["chr8"], calls["chr3"]
+    assert abs(loss.start - 31_370_000) <= 3 * BIN and loss.end == CONTIG_MB * 1_000_000
+    assert abs(gain.start - 10_420_000) <= 3 * BIN and abs(gain.end - 25_660_000) <= 3 * BIN
+
+
+def test_edge_is_kept_when_no_step_is_within_reach():
+    """A duplication running on past the window next to it (PMS, scanned at
+    44-48 Mb for 41.5-49.25 Mb) has no step to place: the edge stays."""
+    from vedette.mosaic import WINDOW_BP, refine_edge
+
+    pos = np.arange(40_000_000, 46_000_000, 1000)
+    rng = np.random.default_rng(0)
+    dup = 45.0 + rng.normal(0, 3, len(pos))         # CN 3 throughout, base 30
+    assert refine_edge(pos, dup, 44_000_000, 45.0, 1000, True, 0.25 * 15) == 44_000_000
+    step = np.where(pos < 43_600_000, 30.0, 45.0) + rng.normal(0, 3, len(pos))
+    assert abs(refine_edge(pos, step, 44_000_000, 45.0, 1000, True, 0.25 * 15) - 43_600_000) <= 3000
+    # no valid bins in the window out (a centromere): untouched
+    keep = pos >= 44_000_000 - WINDOW_BP
+    assert refine_edge(pos[keep], step[keep], 44_000_000, 45.0, 1000, True) == 44_000_000

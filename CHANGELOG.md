@@ -8,6 +8,17 @@
   `weighted_rows` / `total_weight`. A few curated verdicts (129 IGV labels
   on depth-only calls) can then weigh against ~50,000 truth and
   transmission labels.
+- **Mosaic scan: inner edges refined to the store bin (1 kb)** — segments
+  were cut at 1 Mb windows. Each inner edge is now placed where the 1 kb
+  depth steps from the next window out to the segment's level, within a
+  window of the old edge. A PMS proband's 22q13 loss at f = 0.18 moves from
+  42.0 Mb to 41,993,000, 6 kb from its telomere-healing junction (one split
+  read); a 38 % loss seen in IGV at 47,730,170 comes back at 47,741,000.
+  The edge stays where it was when there is no step to place: the next
+  window out is masked (a centromere) or within a quarter of the segment's
+  shift from its level (a gain running on past the window), or the step
+  lands on a limit of the search. On PMS and dataset_paper the same 20 and
+  26 segments, edges moved by a median of 0.28 Mb (at most 0.72 Mb).
 
 ## v1.11.0 — 2026-11-05
 
