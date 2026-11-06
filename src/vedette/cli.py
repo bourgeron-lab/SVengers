@@ -310,8 +310,8 @@ def bnd(
     fasta: Path = typer.Option(..., help="Reference FASTA (.fai: contig order of the stores' mate index)"),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
-    """Inter-chromosomal junctions and the mechanism of terminal losses, from the stores:
-    <S>.bnd.tsv and <S>.terminal.tsv beside each store."""
+    """Translocation and inversion junctions and the mechanism of terminal losses, from
+    the stores: <S>.bnd.tsv, <S>.bnd.vcf.gz and <S>.terminal.tsv beside each store."""
     from collections import Counter
 
     from .bnd import run_bnd
