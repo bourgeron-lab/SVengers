@@ -32,9 +32,12 @@ _SR_TOL = 100  # bp tolerance around site breakpoints for SR support
 
 
 class StoreGenotyper:
-    def __init__(self, store: EvidenceStore, config: Config):
+    def __init__(self, store: EvidenceStore, config: Config,
+                 rewritten_baf: bool | None = None):
         self.store = store
         self.config = config
+        self.original_baf = not (config.genotype.rewritten_baf if rewritten_baf is None
+                                 else rewritten_baf)
         self.genotyper = Genotyper(config.genotype, config.segment.max_cn)
         self.mean_depth = float(store.meta["mean_depth"])
         self.coverage = float(store.meta.get("coverage", self.mean_depth))
@@ -56,7 +59,7 @@ class StoreGenotyper:
                 _raw, corr, mask = self.store.depth(contig)
                 ratio = corr / self.mean_depth
                 length = len(ratio) * self.store.bin_size
-                baf = self.store.baf(contig, 0, length)
+                baf = self.store.baf(contig, 0, length, original=self.original_baf)
                 self._data[contig] = ContigData(
                     ratio=ratio,
                     mask=mask,

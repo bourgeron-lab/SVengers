@@ -223,10 +223,14 @@ class EvidenceStore:
         except KeyError:
             return False
 
-    def baf(self, contig: str, start: int, end: int) -> dict[str, np.ndarray]:
+    def baf(self, contig: str, start: int, end: int,
+            original: bool = False) -> dict[str, np.ndarray]:
+        """BAF sites in [start, end). ``original``: the arrays the store was
+        built with, kept as ``baf_track`` when ``vedette baf`` rewrote them
+        (the same as the default on a store never rewritten)."""
         g = self.root[contig]
         try:
-            baf = g["baf"]
+            baf = g["baf_track"] if original and "baf_track" in g else g["baf"]
         except KeyError:
             return {"pos": np.array([], np.uint32), "vaf": np.array([], np.float32), "dp": np.array([], np.uint16)}
         sl = self._ranged(baf, "pos", start, end)

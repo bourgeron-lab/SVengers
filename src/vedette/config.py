@@ -101,6 +101,14 @@ class GenotypeConfig:
     het_prior: float = 1e-4          # prior P(0/1) at a random locus
     hom_prior: float = 1e-6          # prior P(1/1)
     min_gq_report: int = 0           # report all, filtering happens downstream
+    # genotype on the BAF rewritten by `vedette baf` (no QUAL threshold)
+    # instead of the store's original one (GHFC track, QUAL >= 30). Off: the
+    # likelihood counts every het inside a deletion as a mismap, and in
+    # paralogous loci the rewritten BAF has ~20 per kb, so a common deletion
+    # genotyped 0/1 in 98 % of dataset_paper fell to 0/0 in half of them,
+    # passed the cohort artifact filters, and made de novo calls (chr12:
+    # 3,025 -> 3,653 with the rewritten BAF, 2,840 with the original one).
+    rewritten_baf: bool = False
 
 
 @dataclass(frozen=True)

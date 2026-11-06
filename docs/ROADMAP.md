@@ -145,6 +145,18 @@ Priorités :
    IGV). À part : les génomes IP gardent ~22k sites RefCall non
    génotypés (`./.`) à VAF 0,3-0,7 sur chr20 (~6k sur un génome ordinaire),
    vrais hétérozygotes refusés ou paralogues : non repris.
+   Génotypage de cohorte sur le nouveau BAF : de novo médian par enfant
+   27 -> 42 sur dataset_paper (v5n, run `runs/_v11/dp_v5n_rebaf`). Cause :
+   aux loci paralogues le nouveau BAF a ~20 « het » par kb, chacun une
+   pénalité de mismap sous une délétion ; une délétion commune génotypée
+   0/1 chez 98 % des génomes tombe à 40 %, sort de CohortArtifact /
+   HighCarrierFrac et fait des de novo (16 800 lignes sur 1 503 sites).
+   chr12 : 3 025 de novo (production), 3 653 (nouveau BAF), 2 840 (code
+   actuel, BAF d'origine). Le génotypage lit donc `baf_track` par défaut
+   (`[genotype] rewritten_baf`). Avant de l'activer : vraisemblance BAF
+   robuste aux paralogues (plafonner les het au-delà de la densité
+   attendue, ou les pondérer par la fréquence de « het » à ce site dans la
+   cohorte).
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),
    contrôles de déploiement habituels (PASS par génome vs production,
    récurrence, trios, HG002 hors échantillon).

@@ -158,7 +158,11 @@ vedette baf --manifest stores_vcfs.tsv --jobs 8     # store<TAB>vcf per line
 
 Only the stores change. The BAF features of the per-sample calls (`BAFN`, `BAFDEV`, used by
 the filter model) were computed at calling time and stay as they are; the karyotype, mosaic
-scan, cohort re-genotyping and tensors read the new BAF. `vedette regenotype
+scan and tensors read the new BAF. Cohort genotyping (`vedette genotype`) keeps reading the
+original one (`baf_track`) unless `[genotype] rewritten_baf = true`: its likelihood counts every
+het inside a deletion as a mismap, and in paralogous loci the rewritten BAF has ~20 hets per kb,
+which turned carriers of common deletions into 0/0 and made de novo calls (chr12 of
+dataset_paper: 3,025 de novo with the original BAF in production, 3,653 with the rewritten one). `vedette regenotype
 S1.vedette.vcf.gz --store S1.evidence.zarr --out S1.regeno.vcf.gz` recomputes the store-derived
 fields of the calls (GT, GQ, CN, CNQ, RD, BAFN, BAFDEV; junction support and source kept) for
 the filter to be re-run; on stores whose BAF was not rewritten it reproduces the calling-time

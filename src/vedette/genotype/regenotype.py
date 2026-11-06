@@ -37,7 +37,7 @@ def regenotype_calls(vcf_in: str | Path, store_path: str | Path, vcf_out: str | 
     Returns counts: calls, regenotyped, unchanged (INSERT / no depth data),
     gt_changed."""
     store = EvidenceStore(store_path)
-    sg = StoreGenotyper(store, config or Config())
+    sg = StoreGenotyper(store, config or Config(), rewritten_baf=True)
     counts = {"calls": 0, "regenotyped": 0, "unchanged": 0, "gt_changed": 0}
     with pysam.VariantFile(str(vcf_in)) as vin:
         spec = spec_coords(vin.header)

@@ -9,6 +9,22 @@
   dataset_paper are a mother's and her child's (chr5:0-141 kb, chr11:134.9
   Mb to qter), both PASS sites carried by those two genomes only.
 
+- **Cohort genotyping reads the store's original BAF** — `vedette
+  genotype` reads `<contig>/baf_track` (the GHFC track, QUAL >= 30) when
+  `vedette baf` rewrote the store, unless `[genotype] rewritten_baf =
+  true`; `vedette regenotype` still reads the rewritten BAF. The likelihood
+  counts every het inside a deletion as a mismap (log 0.01 each, up to 50),
+  and in paralogous loci the rewritten BAF has ~20 hets per kb: a common
+  1.2 kb deletion at chr12:31.12 Mb, genotyped 0/1 in 98 % of dataset_paper
+  with identical PE/SR/depth, fell to 40 % carriers, escaped CohortArtifact
+  and HighCarrierFrac and gave de novo calls wherever the parents fell to
+  0/0. Re-genotyped on the rewritten stores with v5n, dataset_paper had a
+  median of 42 PASS de novo (GQ >= 20) per child against 27 in production,
+  16,800 of them at 1,503 sites production flagged as artifacts. On chr12
+  (2,670 genomes): 3,025 de novo in production, 3,653 with the rewritten
+  BAF, 2,840 with the current code on the original BAF (de novo rows at
+  sites recurrent in >= 5 children: 996, 1,669, 870).
+
 - **Report: de novo candidates sorted by the child's genome quality** — a
   "qualité enfant" column names what weakens the child's genome (wavy
   coverage, old genome, excess of carried sites), and each family's table

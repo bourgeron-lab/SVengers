@@ -56,3 +56,40 @@ def test_regenotype_takes_the_rewritten_baf(tmp_path):
     assert s["CN"] == 1 and tuple(s["GT"]) == (0, 1) and s["GQ"] > 7
     assert abs(s["RD"] - 0.5) < 0.01 and s["PE"] == 0
     assert "##vedette_regenotyped=" in str(pysam.VariantFile(str(out)).header)
+
+
+def test_cohort_genotype_reads_the_original_baf(tmp_path):
+    """`vedette baf` keeps the store's original BAF as baf_track. The cohort
+    genotyper reads it unless genotype.rewritten_baf is set (the rewritten
+    BAF has spurious hets in paralogous loci, each one a mismap penalty under
+    a deletion); regenotype reads the rewritten one, its purpose."""
+    import dataclasses
+
+    import zarr
+
+    from vedette.cohort.genotyper import StoreGenotyper
+    from vedette.config import Config
+    from vedette.extract.store import EvidenceStore, write_baf_group
+
+    path = tmp_path / "S1.evidence.zarr"
+    _store(path, lambda pos: np.where((pos >= 500_000) & (pos < 600_000), 1.0, 0.5))
+    (path / "chr1" / "baf").rename(path / "chr1" / "baf_track")
+    pos = np.arange(100_000, 1_000_000, 5_000, dtype=np.uint32)          # hets everywhere
+    write_baf_group(zarr.open_group(str(path), mode="r+")["chr1"], pos,
+                    np.full(len(pos), 0.5, np.float32), np.full(len(pos), 30, np.uint16))
+    store = EvidenceStore(path)
+
+    def baf_n(config, **kw):
+        return StoreGenotyper(store, config, **kw).genotype_site(
+            "s1", "chr1", 500_000, 600_000, "DEL")["baf_n"]
+
+    cfg = Config()
+    assert baf_n(cfg) == 0
+    rewritten = dataclasses.replace(cfg, genotype=dataclasses.replace(cfg.genotype, rewritten_baf=True))
+    assert baf_n(rewritten) == 20
+    assert baf_n(cfg, rewritten_baf=True) == 20
+    # a store never rewritten has no baf_track: the same BAF either way
+    plain = tmp_path / "S2.evidence.zarr"
+    _store(plain, lambda pos: np.full(len(pos), 0.5))
+    assert StoreGenotyper(EvidenceStore(plain), cfg).genotype_site(
+        "s1", "chr1", 500_000, 600_000, "DEL")["baf_n"] == 20
