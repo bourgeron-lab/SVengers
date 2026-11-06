@@ -1,32 +1,6 @@
 # Changelog
 
-## v1.12.0 — 2026-11-06
-
-Large depth segments are no longer cut by one or two outlier bins, `vedette
-train` takes per-row weights, and the mosaic scan places its edges at 1 kb
-and keeps a clone in one row. Same store schema, feature schema and model
-(v5n); the segment bridging takes effect on the next `vedette call`.
-
-- **`vedette call`: a large segment broken by a short interruption is
-  joined back** — the Gaussian depth emission has light tails: one 1 kb bin
-  at ratio ~1.3 inside a het deletion costs ~100 nats under CN1 against 37
-  for two state switches, and the 2 kb CN0 of a common deletion on the
-  remaining allele (chr22:49,319,854-49,321,519, carried by 84 of 319 PMS
-  genomes) does the same. A 6.8 Mb terminal 22q13 loss came out as 8
-  abutting DEL calls (2 of them LowSQ), and 10 PMS genomes had their
-  terminal deletion cut at exactly 49,322,000. Two same-CN segments are now
-  joined when the bins between them number at most
-  `segment.bridge_max_gap_bins` (3) and at most `bridge_max_gap_frac`
-  (0.05) of the shorter side, and their mean ratios agree within
-  `bridge_max_ratio_diff` (0.15); the interrupting segments stay as their
-  own nested calls, and the Viterbi path is unchanged. Replayed on the
-  production VCFs: on PMS 410 joins (869 calls -> 410), 26 of them with a
-  PASS piece, among which the 22q13 deletions of 14 genomes; on
-  dataset_paper 4,868 joins (10,627 -> 4,868), 127 with a PASS piece,
-  mostly aneuploidies (trisomy 12, sex chromosomes) cut in dozens of pieces.
-  Small events are untouched (a 1-bin gap needs 20 bins on each side).
-  Takes effect on the next `vedette call`; store and feature schemas and
-  the model are unchanged.
+## Unreleased
 
 - **Report: de novo candidates sorted by the child's genome quality** — a
   "qualité enfant" column names what weakens the child's genome (wavy
@@ -66,6 +40,34 @@ and keeps a clone in one row. Same store schema, feature schema and model
   adjacent duplication called), 29 healed telomeres, 6 junctions to a
   repeat, 14 unknown (5 of them mosaic).
   The scan takes ~20 s per genome (pileups made once per contig).
+
+## v1.12.0 — 2026-11-06
+
+Large depth segments are no longer cut by one or two outlier bins, `vedette
+train` takes per-row weights, and the mosaic scan places its edges at 1 kb
+and keeps a clone in one row. Same store schema, feature schema and model
+(v5n); the segment bridging takes effect on the next `vedette call`.
+
+- **`vedette call`: a large segment broken by a short interruption is
+  joined back** — the Gaussian depth emission has light tails: one 1 kb bin
+  at ratio ~1.3 inside a het deletion costs ~100 nats under CN1 against 37
+  for two state switches, and the 2 kb CN0 of a common deletion on the
+  remaining allele (chr22:49,319,854-49,321,519, carried by 84 of 319 PMS
+  genomes) does the same. A 6.8 Mb terminal 22q13 loss came out as 8
+  abutting DEL calls (2 of them LowSQ), and 10 PMS genomes had their
+  terminal deletion cut at exactly 49,322,000. Two same-CN segments are now
+  joined when the bins between them number at most
+  `segment.bridge_max_gap_bins` (3) and at most `bridge_max_gap_frac`
+  (0.05) of the shorter side, and their mean ratios agree within
+  `bridge_max_ratio_diff` (0.15); the interrupting segments stay as their
+  own nested calls, and the Viterbi path is unchanged. Replayed on the
+  production VCFs: on PMS 410 joins (869 calls -> 410), 26 of them with a
+  PASS piece, among which the 22q13 deletions of 14 genomes; on
+  dataset_paper 4,868 joins (10,627 -> 4,868), 127 with a PASS piece,
+  mostly aneuploidies (trisomy 12, sex chromosomes) cut in dozens of pieces.
+  Small events are untouched (a 1-bin gap needs 20 bins on each side).
+  Takes effect on the next `vedette call`; store and feature schemas and
+  the model are unchanged.
 
 - **`vedette train`: optional `weight` column in the labeled TSVs** — the
   number of calls a row stands for (default 1), used by the trees and the
