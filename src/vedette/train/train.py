@@ -45,10 +45,15 @@ _HGB_PARAMS = dict(
 
 
 def load_labeled(paths: list[str | Path]) -> dict[str, dict[str, np.ndarray]]:
-    """Load labeled feature TSVs -> per-svtype {X, y, contig}."""
+    """Load labeled feature TSVs -> per-svtype {X, y, contig, w}.
+
+    An optional ``weight`` column (default 1) is the number of calls a row
+    stands for: a handful of curated labels (IGV) can then weigh against tens
+    of thousands of truth or transmission labels."""
     rows: dict[str, list] = {"DEL": [], "DUP": []}
     contigs: dict[str, list] = {"DEL": [], "DUP": []}
     labels: dict[str, list] = {"DEL": [], "DUP": []}
+    weights: dict[str, list] = {"DEL": [], "DUP": []}
     for path in paths:
         with open(path, newline="") as fh:
             reader = csv.DictReader(fh, delimiter="\t")
@@ -66,12 +71,14 @@ def load_labeled(paths: list[str | Path]) -> dict[str, dict[str, np.ndarray]]:
                 )
                 contigs[svtype].append(row["contig"])
                 labels[svtype].append(int(row["label"]))
+                weights[svtype].append(float(row.get("weight") or 1.0))
     out = {}
     for svtype in ("DEL", "DUP"):
         out[svtype] = {
             "X": np.asarray(rows[svtype], dtype=np.float64),
             "y": np.asarray(labels[svtype], dtype=np.int64),
             "contig": np.asarray(contigs[svtype]),
+            "w": np.asarray(weights[svtype], dtype=np.float64),
         }
         logger.info(
             "%s: %d calls (%d TP / %d FP)",
@@ -148,38 +155,43 @@ def chromosome_folds(contigs: np.ndarray, n_folds: int = 5) -> np.ndarray:
     return np.asarray([fold_of[c] for c in contigs])
 
 
-def _fit_base(X: np.ndarray, y: np.ndarray, svtype: str):
+def _fit_base(X: np.ndarray, y: np.ndarray, svtype: str, w: np.ndarray | None = None):
     from sklearn.ensemble import HistGradientBoostingClassifier
 
     cst = [_MONOTONE[svtype].get(name, 0) for name in FEATURES]
     model = HistGradientBoostingClassifier(monotonic_cst=cst, **_HGB_PARAMS)
-    model.fit(X, y)
+    model.fit(X, y, sample_weight=w)
     return model
 
 
 def train_one(
-    X: np.ndarray, y: np.ndarray, contigs: np.ndarray, svtype: str, n_folds: int = 5
+    X: np.ndarray, y: np.ndarray, contigs: np.ndarray, svtype: str, n_folds: int = 5,
+    w: np.ndarray | None = None,
 ) -> tuple[CalibratedModel, dict]:
+    """``w``: per-row weights, used by the trees and the calibration; the
+    reported metrics count rows, unweighted."""
     from sklearn.isotonic import IsotonicRegression
     from sklearn.metrics import average_precision_score, roc_auc_score
 
     if len(np.unique(y)) < 2:
         raise ValueError(f"{svtype}: need both classes to train (got only {set(y)})")
+    if w is not None and np.all(w == 1.0):
+        w = None
     folds = chromosome_folds(contigs, n_folds)
     oof = np.full(len(y), np.nan)
     for f in range(n_folds):
         test = folds == f
         if not test.any() or len(np.unique(y[~test])) < 2:
             continue
-        model = _fit_base(X[~test], y[~test], svtype)
+        model = _fit_base(X[~test], y[~test], svtype, None if w is None else w[~test])
         oof[test] = model.predict_proba(X[test])[:, 1]
     valid = ~np.isnan(oof)
 
     iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-    iso.fit(oof[valid], y[valid])
+    iso.fit(oof[valid], y[valid], sample_weight=None if w is None else w[valid])
     calibrated_oof = iso.predict(oof[valid])
 
-    base = _fit_base(X, y, svtype)
+    base = _fit_base(X, y, svtype, w)
     model = CalibratedModel(base, iso)
 
     # threshold -> achieved FDR / recall table on calibrated OOF probabilities
@@ -204,6 +216,9 @@ def train_one(
         "roc_auc_oof": round(float(roc_auc_score(yv, oof[valid])), 4),
         "threshold_table": table,
     }
+    if w is not None:
+        metrics["weighted_rows"] = int((w != 1.0).sum())
+        metrics["total_weight"] = round(float(w.sum()), 1)
     logger.info("%s: PR-AUC(OOF)=%.4f ROC-AUC=%.4f",
                 svtype, metrics["pr_auc_oof"], metrics["roc_auc_oof"])
     for row in table:
@@ -255,7 +270,7 @@ def train_models(
             manifest.setdefault("constant_features", {})[svtype] = sorted(dead)
     for svtype, fname in (("DEL", "model_del.joblib"), ("DUP", "model_dup.joblib")):
         d = data[svtype]
-        model, metrics = train_one(d["X"], d["y"], d["contig"], svtype)
+        model, metrics = train_one(d["X"], d["y"], d["contig"], svtype, w=d["w"])
         joblib.dump(model, out_dir / fname)
         manifest["metrics"][svtype] = metrics
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))

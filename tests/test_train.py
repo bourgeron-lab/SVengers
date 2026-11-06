@@ -165,3 +165,40 @@ def test_neutral_feature_is_pinned_at_training_and_scoring(tmp_path):
     assert batch[0] == batch[1] == scores[-1.0]
     with pytest.raises(ValueError, match="neutral"):
         train_models([tsv], tmp_path / "bad", neutral_features={"nope": 0.0})
+
+
+def test_weight_column_lets_a_few_curated_labels_count(tmp_path):
+    """A few curated (IGV) labels against thousands of others: the optional
+    ``weight`` column makes them count. Here 30 DEL calls that look like the
+    ~1,800 false ones (flat depth, no junction support) are curated true: at
+    weight 1 they are noise, at weight 100 they outweigh the region."""
+    base = _synthetic_labeled_tsv(tmp_path)
+    lines = base.read_text().splitlines()
+    header = lines[0].split("\t")
+
+    def write(path, weight):
+        rng = np.random.default_rng(1)
+        with open(path, "w") as fh:
+            fh.write("\t".join([*header, "weight"]) + "\n")
+            for line in lines[1:]:
+                fh.write(line + "\t1\n")
+            for i in range(30):
+                feats = {name: float(rng.random()) for name in FEATURES}
+                feats.update(dhffc=rng.normal(0.95, 0.1), sr=float(rng.poisson(0.4)),
+                             pe=float(rng.poisson(0.5)), is_dup=0.0, size_log10=rng.uniform(2, 6))
+                row = [f"igv_{i}", f"chr{1 + i % 22}", str(10**8 + 1000 * i), str(10**8 + 1000 * i + 500),
+                       "DEL", *(f"{feats[name]:.6g}" for name in FEATURES), "1", str(weight)]
+                fh.write("\t".join(row) + "\n")
+        return path
+
+    call = {name: 0.5 for name in FEATURES}
+    call.update(dhffc=0.95, sr=0.0, pe=0.0, size_log10=3.5)
+    scores = {}
+    for weight in (1, 100):
+        out = tmp_path / f"m{weight}"
+        manifest = train_models([write(tmp_path / f"w{weight}.tsv", weight)], out)
+        scores[weight] = FilterModel.load(out).score(call, "DEL")
+        assert manifest["metrics"]["DEL"]["n"] == N_PER_TYPE + 30  # metrics count rows
+    assert "weighted_rows" not in json.loads((tmp_path / "m1" / "manifest.json").read_text())["metrics"]["DEL"]
+    assert manifest["metrics"]["DEL"]["weighted_rows"] == 30
+    assert scores[1] < 1 and scores[100] > scores[1] + 2

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **`vedette train`: optional `weight` column in the labeled TSVs** — the
+  number of calls a row stands for (default 1), used by the trees and the
+  isotonic calibration; the manifest's metrics still count rows and record
+  `weighted_rows` / `total_weight`. A few curated verdicts (129 IGV labels
+  on depth-only calls) can then weigh against ~50,000 truth and
+  transmission labels.
+
 ## v1.11.0 — 2026-11-05
 
 - **Mosaic scan: a wavy genome needs a fraction of at least 0.3** — depth
