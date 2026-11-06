@@ -1339,3 +1339,12 @@ def test_inherit_label_karyotype():
     assert _inherit_fr("denovo") == "de novo"
     assert _inherit_fr("karyotype_XXY") == "caryotype XXY"
     assert "de novo" not in _inherit_fr("karyotype_XXY")   # no de novo alert
+
+
+def test_child_quality_names_what_weakens_a_genome():
+    from vedette.report import WAVE_WARN, child_quality
+
+    waves = {"A": WAVE_WARN + 0.01, "B": 0.001, "IP00X": None}
+    assert child_quality("A", waves) == f"wavy {WAVE_WARN + 0.01:.3f}"
+    assert child_quality("B", waves) == ""
+    assert child_quality("IP00X", waves, ("IP",), {"IP00X": 6.2}) == "génome ancien, charge 6.2×"

@@ -28,6 +28,13 @@ and keeps a clone in one row. Same store schema, feature schema and model
   Takes effect on the next `vedette call`; store and feature schemas and
   the model are unchanged.
 
+- **Report: de novo candidates sorted by the child's genome quality** — a
+  "qualité enfant" column names what weakens the child's genome (wavy
+  coverage, old genome, excess of carried sites), and each family's table
+  lists the de novo of good genomes first, then by impact: on the IGV
+  review of sub-threshold rows (2026-10-13), calls were true 1 time in 10
+  to 13 on old or wavy genomes, 15 in 28 elsewhere.
+
 - **`vedette bnd`: translocations, inversions and the mechanism of terminal
   losses** — a run-level pass on the evidence stores (no CRAM). Inter-
   chromosomal pairs make translocation junctions and same-strand pairs of

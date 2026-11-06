@@ -1583,6 +1583,22 @@ def _gene_points(g, dup: bool, whole: bool, exonic: bool, inside: bool,
     return 0.0, "", ""
 
 
+def child_quality(child: str, wave_scores: dict, low_quality_prefixes=(),
+                  overloaded: dict | None = None) -> str:
+    """What makes a genome's calls less reliable, "" for a good one: a wavy
+    coverage profile, an old genome (barcode prefix), an excess of carried
+    sites."""
+    out = []
+    w = (wave_scores or {}).get(child)
+    if w is not None and w >= WAVE_WARN:
+        out.append(f"wavy {w:.3f}")
+    if low_quality_prefixes and child.startswith(tuple(low_quality_prefixes)):
+        out.append("génome ancien")
+    if child in (overloaded or {}):
+        out.append(f"charge {overloaded[child]:.1f}×")
+    return ", ".join(out)
+
+
 def sample_qc_flags(overloaded: dict, dn_outliers: dict) -> dict[str, list[str]]:
     """Per-sample QC alerts shown next to the carriers of a family row.
 
@@ -2760,6 +2776,25 @@ def generate_report(
         )
 
     # ---- family workspaces
+    # ---- per-sample wave QC (evidence-store meta, absent on old stores)
+    wave_scores: dict[str, float | None] = {}
+    wave_by_contig: dict[str, dict] = {}
+    pons: Counter = Counter()
+    for s in samples:
+        store_path = run_dir / "samples" / s / f"{s}.evidence.zarr"
+        wave_scores[s] = None
+        if store_path.exists():
+            try:
+                from .extract.store import EvidenceStore
+
+                meta = EvidenceStore(store_path).meta
+                if meta.get("pon"):
+                    pons[meta["pon"]] += 1
+                wave_scores[s] = meta.get("wave_score")
+                wave_by_contig[s] = meta.get("wave_by_contig") or {}
+            except Exception:  # report survives a broken/foreign store
+                pass
+    n_wavy = sum(1 for v in wave_scores.values() if v is not None and v >= WAVE_WARN)
     family_sections = []
     if pedigree is not None:
         fam_of = {i.sample_id: i.family_id for i in pedigree.individuals.values()}
@@ -2834,11 +2869,16 @@ def generate_report(
                     f'{ev["contig"]}:{ev["pos"]}-{ev["end"]}', ev["svtype"], size,
                     _genes(ev["contig"], ev["pos"] - 1, ev["end"]),
                     _impact(ev["contig"], ev["pos"] - 1, ev["end"], ev["svtype"])[1],
-                    ev["child"], _num_max(r["child_gq"] for r in ev["sites"]),
+                    ev["child"], child_quality(ev["child"], wave_scores, low_quality_prefixes,
+                                               overloaded) or "—",
+                    _num_max(r["child_gq"] for r in ev["sites"]),
                     _num_max(r["dnq"] for r in ev["sites"]),
                     ", ".join(denovo_alerts(size, max(dn_families.get(i, 0) for i in ids))) or "—",
                 ])
-            dn_rows.sort(key=lambda row: -_impact_points(row[5]))
+            # the child's genome quality first: calls on a wavy or an old genome
+            # are less often real (IGV review of sub-threshold rows, 2026-10-13:
+            # true 1/10 to 1/13 against 15/28 elsewhere), whatever their impact
+            dn_rows.sort(key=lambda row: (row[7] != "—", -_impact_points(row[5])))
             family_sections.append(f"""
 <details><summary>Famille {html.escape(fid)} — {len(members)} membres,
 {len(dn_rows)} de novo (PASS, GQ≥{min_denovo_gq}; {len(denovo)} sites), {n_viol} violations</summary>
@@ -2846,29 +2886,10 @@ def generate_report(
 workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(members)) if family_events else ""}</p>
 {f'<p class=warn>⚠ {", ".join(map(html.escape, fam_outliers))} : plus de {dn_cut:.0f} candidats de novo ({DENOVO_REL:g}× la médiane de la cohorte) — profil technique atypique, candidats exclus du tableau.</p>' if fam_outliers else ""}
 {"".join(f'<p class=warn>⚠ {html.escape(m)} : caryotype {html.escape(karyo_dn[m][0])} — {karyo_dn[m][1]} candidats de novo sur le chromosome surnuméraire ou manquant retirés (voir « Chromosomes sexuels »).</p>' for m in fam_karyo)}
-{_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "GQ", "DNQ", "alerte"], dn_rows, limit=20)
+{_table(["site", "locus", "type", "taille", "gènes", "impact", "enfant", "qualité enfant", "GQ", "DNQ", "alerte"], dn_rows, limit=20)
  if dn_rows else "<p>Aucun candidat de novo au seuil.</p>"}
 </details>""")
 
-    # ---- per-sample wave QC (evidence-store meta, absent on old stores)
-    wave_scores: dict[str, float | None] = {}
-    wave_by_contig: dict[str, dict] = {}
-    pons: Counter = Counter()
-    for s in samples:
-        store_path = run_dir / "samples" / s / f"{s}.evidence.zarr"
-        wave_scores[s] = None
-        if store_path.exists():
-            try:
-                from .extract.store import EvidenceStore
-
-                meta = EvidenceStore(store_path).meta
-                if meta.get("pon"):
-                    pons[meta["pon"]] += 1
-                wave_scores[s] = meta.get("wave_score")
-                wave_by_contig[s] = meta.get("wave_by_contig") or {}
-            except Exception:  # report survives a broken/foreign store
-                pass
-    n_wavy = sum(1 for v in wave_scores.values() if v is not None and v >= WAVE_WARN)
     sample_qc = sample_qc_flags(overloaded, dn_outliers)
     # ---- mosaic segments (`vedette mosaic --run-dir`), when present
     from .mosaic import read_tsv as _read_mosaic
@@ -3086,6 +3107,9 @@ répertoire : <code>{html.escape(str(run_dir))}</code></p>
          for r in summary_rows]) if summary_rows else ""}
 
 <h2>Familles</h2>
+<p>Dans chaque famille, les de novo d'un enfant au génome de bonne qualité viennent en
+tête, puis ceux d'un génome ondulé (wavy), ancien ou surchargé en porteurs (colonne
+« qualité enfant » : moins souvent confirmés à l'IGV) ; à qualité égale, tri par impact.</p>
 {"".join(family_sections) if family_sections else "<p>Pedigree non fourni.</p>"}
 
 <h2>Sites rares (≤ 2 porteurs)</h2>
