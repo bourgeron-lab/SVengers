@@ -40,8 +40,9 @@ Bioconda; install from source (below).
   - [5. Cohort metrics (`vedette cohort-filter`)](#5-cohort-metrics-vedette-cohort-filter)
   - [6. Pedigree annotation (`vedette ped-annotate`)](#6-pedigree-annotation-vedette-ped-annotate)
   - [7. Chromosomal mosaics (`vedette mosaic`)](#7-chromosomal-mosaics-vedette-mosaic)
-  - [8. Sex-chromosome karyotype](#8-sex-chromosome-karyotype)
-  - [9. Report and family pages (`vedette report`)](#9-report-and-family-pages-vedette-report)
+  - [8. Translocations, inversions and terminal losses (`vedette bnd`)](#8-translocations-inversions-and-terminal-losses-vedette-bnd)
+  - [9. Sex-chromosome karyotype](#9-sex-chromosome-karyotype)
+  - [10. Report and family pages (`vedette report`)](#10-report-and-family-pages-vedette-report)
 - [Building your own panel of normals](#building-your-own-panel-of-normals)
 - [Filter models](#filter-models)
 - [Benchmark](#benchmark)
@@ -117,6 +118,11 @@ vedette filter out/S1/S1.vedette.vcf.gz --store out/S1/S1.evidence.zarr \
 # 3. optional: chromosomal-scale mosaic segments, from the store alone
 vedette mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
 ```
+
+On a run (`samples/<S>/` directories), `vedette bnd --run-dir out --fasta ref.fa` adds the
+translocation and inversion junctions and the mechanism of terminal losses
+([section 8](#8-translocations-inversions-and-terminal-losses-vedette-bnd)); it is not yet
+a step of the Nextflow workflow.
 
 - `my_site.toml` holds your reference paths (see [Configuration](#configuration)); the
   default threshold, SQ ≥ 5, is the operating point of the shipped model.
@@ -517,7 +523,47 @@ Segments with f between 0.15 and 0.85 are mosaics; segments at a whole copy numb
 constitutional anomalies (aneuploidies, arm-level or large gains and losses, BAF-confirmed),
 which the report lists separately. `--run-dir` scans every store of a run.
 
-### 8. Sex-chromosome karyotype
+### 8. Translocations, inversions and terminal losses (`vedette bnd`)
+
+A terminal deletion has a single breakpoint, and what lies past it tells how the
+chromosome was rescued: a new telomere added at the break (telomere healing), the end of
+another chromosome (an unbalanced translocation, whose partner end is then gained), or an
+inverted copy of the retained end (inv-dup del). `vedette bnd --run-dir` reads this from
+the evidence stores of a whole run, without the CRAMs:
+
+1. **Junctions.** Inter-chromosomal pairs are clustered per contig pair, and same-strand
+   pairs spanning ≥ 1 kb per contig (inversions); each end is placed on its strongest
+   split-read pileup, which also gives its orientation. Pairs are stored without read
+   strands, so an inversion junction is *reciprocal* when its pairs lie on both sides of
+   the breakpoints and a *fold-back* when on one side only (one junction of an inverted
+   duplication). Junctions need 4 pairs of mean MAPQ ≥ 20.
+2. **Run-level flags.** A 10 kb locus joined to ≥ 10 distinct loci over the run is a
+   repeat (`promiscuous`), and two loci joined in ≥ 5 genomes (or 1 %) an artefact or a
+   common variant (`recurrent`); a translocation is private or shared by a family.
+   Counting genomes per locus instead does not work: a 30× genome has ~13,000 raw
+   junction clusters, nearly all in repeats, and a median locus has some in 7 of 319
+   genomes. Ends within 500 kb of a contig end are `subtelomeric`, ends on unplaced
+   contigs or decoys `unplaced`.
+3. **Terminal losses.** A PASS deletion of ≥ 100 kb (abutting deletion pieces joined) or a
+   mosaic loss reaching a contig end, with ≤ 10 kb of callable sequence past it, gets the
+   mechanism read at its breakpoint, in this order: a junction to another chromosome
+   (`translocation`, with the partner end's gain when the sample has it), a fold-back on
+   the retained side (`inv-dup`, with the adjacent inverted duplication), TTAGGG repeats
+   clipped on the retained side within 30 kb or a subtelomeric junction (`telomere`),
+   a junction to a repeat within 2 kb (`repeat`: rDNA, acrocentric short arms, decoys),
+   or `unknown`.
+
+On the 63 terminal losses of a 319-genome Phelan-McDermid cohort (22q13.3): 9
+translocations (6 with the partner end gained), 5 inv-dup (3 with the inverted
+duplication called), 29 healed telomeres, 6 junctions to a repeat and 14 unknown (5 of
+them mosaic). Standalone junctions are written as VCF breakend pairs; on 100 trios,
+inter-chromosomal junctions found in the child and in neither parent number ~180 per trio
+with 4-7 pairs, 2.9 with 8-11 and 0.13 with ≥ 12 (PASS; ~2.2 per genome). Same-strand
+junctions are not calibrated as standalone calls (~1 child-only per trio even at 12 pairs)
+and are filtered `Inversion`. At a loss's breakpoint any support counts: a chance
+junction within 10 kb is about one in a thousand. The scan takes ~20 s per genome.
+
+### 9. Sex-chromosome karyotype
 
 The caller sets the X/Y baseline from the inferred sex, after which an extra X is an
 ordinary gain and a missing one is invisible. The report therefore reads, per genome:
@@ -542,15 +588,18 @@ flagged genomes; a single trisomic autosome does not move the medians. The
 karyotype needs a panel of normals: it is computed for genomes whose store records the
 path of the PoN they were called with, and the PoN must still exist at that path.
 
-### 9. Report and family pages (`vedette report`)
+### 10. Report and family pages (`vedette report`)
 
 `vedette report <run_dir>` reads a run in the Nextflow layout and writes a self-contained
 `report.html` (figures inlined; labels are in French): run summary, size and frequency
 spectra of PASS sites, the trio sweep and per-trio table, family sections with de novo
 candidates (children above max(`--max-denovo-per-child`, 5× the cohort median; the
 median rule from 20 children on) are flagged as technical outliers and left out of the
-tables), rare sites (≤ 2 carriers) with genes and
-impact, chromosomal mosaics, constitutional chromosome anomalies, sex chromosomes, and a
+tables; the others are listed good genomes first, then wavy, old or overloaded ones, then
+by impact), rare sites (≤ 2 carriers) with genes and
+impact, chromosomal mosaics, terminal losses and their mechanism (when `vedette bnd` has
+run; a parent with the same junction is named as a balanced carrier, and the family rows
+of the loss say it), constitutional chromosome anomalies, sex chromosomes, and a
 per-sample table (carrier load, GQ, wave score). The sex chromosomes, wave scores and
 depth-based bounds come from the evidence stores at `samples/<S>/<S>.evidence.zarr`: the
 report warns about samples without one and stops when none has one
@@ -821,6 +870,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette filter` | hard filters + calibrated `SQ` score → filtered VCF (and feature matrix) |
 | `vedette tensors` | per-call multi-channel tracks from the store (`.npz`), input of the planned CNN second opinion |
 | `vedette mosaic` | chromosomal-scale mosaic and constitutional segments from a store, or a whole run (`--run-dir`) |
+| `vedette bnd` | translocation and inversion junctions of a run, and the mechanism of its terminal losses (`--run-dir`, `--fasta`, `--jobs`) |
 | `vedette wave` | write the wave QC score into stores called before schema 0.4 (`--run-dir`, `--force`, `--jobs`) |
 | `vedette baf` | rewrite the BAF of stores from SNV VCFs, PASS, no QUAL threshold (`STORE --vcf`, `--manifest`, `--min-dp`, `--force`, `--jobs`) |
 | `vedette regenotype` | recompute GT/GQ/CN/CNQ/RD/BAFN/BAFDEV of a sample's calls from its store (after `vedette baf`) |
@@ -851,6 +901,8 @@ samples/<S>/<S>.evidence.zarr        evidence store
 samples/<S>/<S>.filtered.vcf.gz      filtered calls: FILTER, SQ (+ .tbi)
 samples/<S>/<S>.features.tsv         per-call feature matrix
 samples/<S>/<S>.mosaic.tsv           mosaic and constitutional segments
+samples/<S>/<S>.bnd.tsv, .bnd.vcf.gz junctions (`vedette bnd`, run separately)
+samples/<S>/<S>.terminal.tsv         terminal losses and their mechanism (`vedette bnd`)
 genotypes/<S>.gt.tsv                 re-genotyped cohort sites
 cohort/sites.vcf.gz                  cohort sites (sites-only)
 cohort/cohort.vcf.gz                 re-genotyped cohort VCF with metrics
@@ -884,6 +936,21 @@ n_denovo n_violation violation_rate transmission_rate`.
 
 **Mosaic TSV**: `sample contig start end svtype cn fraction baf_dev baf_expected n_windows
 mosaic` (`mosaic` = 1 for a fractional segment, 0 for a whole-copy one).
+
+**Junction TSV** (`<S>.bnd.tsv`, the junctions flagged `""` or `subtelomeric`; the raw scan
+is cached in `<S>.junctions.tsv`): `sample contig_a pos_a side_a contig_b pos_b side_b pe
+sr_a sr_b mapq flag kind`. `pos` is the split-read pileup position (a clip on the right
+starts there, a clip on the left has its first aligned base there); `side` `R` when the
+sequence left of `pos` is joined, `L` when the sequence right of it, `?` without split
+reads; `kind` `TRA`, `INV` or `FOLD`. **Junction VCF** (`<S>.bnd.vcf.gz`): the junctions
+with split reads at both ends as breakend pairs (`SVTYPE=BND`, `MATEID`, `EVENT`, `KIND`;
+`FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (inter-chromosomal, ≥ 12 pairs),
+`LowSupport`, `Inversion`, `Subtelomeric`.
+
+**Terminal-loss TSV** (`<S>.terminal.tsv`): `sample contig start end source mechanism
+partner partner_gain telo_clips junction_pe`; `source` `call` or `mosaic`; `mechanism`
+`translocation`, `inv-dup`, `telomere`, `repeat`, `unknown`; `partner` the junction's other
+end (`chr:pos`), `partner_gain` the sample's gain there (`chr:start-end`).
 
 Coordinates in the TSV outputs are 0-based half-open, except the family export
 (1-based inclusive, see docs/EXPORT.md). VCFs follow the VCF 4.3 rule for symbolic
@@ -955,8 +1022,11 @@ near 48 GB. The SLURM executor submits at most 200 jobs at a time.
 
 ## Known limitations
 
-- **DEL and DUP only.** Inversions, insertions and complex rearrangements are out of scope
-  (reverse-complement clip hits are ignored).
+- **DEL and DUP calls.** Translocations and inversions come as junctions (`vedette bnd`):
+  inter-chromosomal ones are calibrated as standalone calls (≥ 12 pairs), same-strand ones
+  are not, and both are read at terminal losses. Insertions and complex rearrangements
+  beyond inv-dup del are out of scope; balanced events are seen only through their
+  junctions.
 - **GRCh38, `chr`-prefixed contigs.** Pseudo-autosomal coordinates are GRCh38's; defaults
   are tuned for 30-40× PCR-free Illumina WGS.
 - **Weak spots**: deletions of 50-300 bp and events in segmental duplications.

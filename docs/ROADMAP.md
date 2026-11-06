@@ -6,6 +6,34 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
+### Translocations, inversions et pertes terminales (`vedette bnd`, 2026-11-06)
+
+Fait (branche `bnd-terminal`) : jonctions inter-chromosomiques et de même
+brin lues dans les stores (pas de CRAM), drapeaux de cohorte par loci
+partenaires distincts (≥ 10 : répétition) et par paire de loci récurrente
+(≥ 5 génomes ou 1 %), mécanisme de chaque perte terminale (translocation,
+inv-dup, télomère néoformé, jonction vers une répétition, indéterminé),
+section « Pertes terminales » du rapport avec le parent porteur équilibré,
+VCF de breakends (PASS : inter-chromosomique ≥ 12 paires). PMS : 63 pertes
+terminales, 9 translocations (6 avec le gain partenaire), 5 inv-dup,
+29 télomères, 6 répétitions, 14 indéterminées (dont 5 mosaïques). 100 trios
+dataset_paper : jonctions de l'enfant seul 0,13 par trio au seuil PASS.
+
+Reste à faire :
+1. Étape du workflow Nextflow (aujourd'hui lancé à part, ~20 s par génome).
+2. Inversions isolées : ~1 jonction de même brin chez l'enfant seul par trio
+   même à 12 paires ; à calibrer (réciprocité exigée, MAPQ, répétitions
+   inversées, benchmark HG002 / jeux d'inversions) avant tout PASS.
+3. Événements complexes : chaîner les jonctions d'un même génome (inv-dup
+   sans DUP appelée, translocations à trois partenaires, chromothripsis),
+   et relier jonctions et bornes de DEL/DUP intra-chromosomiques.
+4. Les 14 pertes indéterminées de PMS : bornes de profondeur imprécises
+   (~20 kb ; les pileups de clips forts y sont souvent à 10-20 kb), cinq
+   mosaïques à peu de lectures.
+5. Appels fragmentés : une grande délétion sort en morceaux adjacents
+   (dernier morceau à 49,322 Mb chez 10 génomes PMS) ; `bnd` les chaîne,
+   l'étape d'appel est à corriger (enquête en cours).
+
 ### État au 2026-11-05 (v1.7.0) et priorités
 
 En production : v1.7.0, `models/v5n`, SQ >= 5, PoN
@@ -1262,7 +1290,7 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
 
 ### 5. Industrialisation
 - Wrapper Nextflow calqué sur tools/ghfc-ngs (DSL2, profils slurm+apptainer).
-- INV puis BND/translocations (les évidences PE INV/INTER sont déjà stockées).
+- ~~INV puis BND/translocations~~ : `vedette bnd` (2026-11-06, voir plus haut).
 - Packaging : PyPI (`vedette` — réservation à faire, ACCORD D'ALEXANDRE requis
   avant toute publication), bioconda, conteneur, mkdocs, CITATION.cff, Zenodo.
 - Perf : profiler `extract/scan.py` ; si >40 % du runtime, port Rust ciblé
