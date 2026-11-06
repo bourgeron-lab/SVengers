@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v1.12.0 — 2026-11-06
+
+Large depth segments are no longer cut by one or two outlier bins, `vedette
+train` takes per-row weights, and the mosaic scan places its edges at 1 kb
+and keeps a clone in one row. Same store schema, feature schema and model
+(v5n); the segment bridging takes effect on the next `vedette call`.
 
 - **`vedette call`: a large segment broken by a short interruption is
   joined back** — the Gaussian depth emission has light tails: one 1 kb bin
