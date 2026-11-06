@@ -254,6 +254,9 @@ def run_call(
             ratio[name], mask[name], ploidy[name],
             config.segment.max_cn, config.segment.transition,
             baf_emit=baf_emit, baf_weight=config.segment.baf_weight,
+            bridge_max_gap_bins=config.segment.bridge_max_gap_bins,
+            bridge_max_gap_frac=config.segment.bridge_max_gap_frac,
+            bridge_max_ratio_diff=config.segment.bridge_max_ratio_diff,
         )
         junctions = []
         if scan_results is not None and insert.n_pairs:

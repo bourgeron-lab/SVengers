@@ -226,8 +226,16 @@ def segment_contig(
     transition: float,
     baf_emit: np.ndarray | None = None,
     baf_weight: float = 1.0,
+    bridge_max_gap_bins: int = 0,
+    bridge_max_gap_frac: float = 0.05,
+    bridge_max_ratio_diff: float = 0.15,
 ) -> tuple[list[Segment], np.ndarray]:
-    """Run the HMM on one contig; return non-baseline segments and the CN path."""
+    """Run the HMM on one contig; return non-baseline segments and the CN path.
+
+    With ``bridge_max_gap_bins`` > 0, same-CN segments split by a short
+    interruption are joined (see :func:`bridge_segments`); the path is the
+    raw Viterbi path either way.
+    """
     n = len(ratio)
     if n == 0:
         return [], np.array([], dtype=np.int32)
@@ -266,5 +274,93 @@ def segment_contig(
                 masked_frac=float(mask[s:e].mean()),
             )
         )
-    logger.debug("HMM: %d bins, sigma0=%.3f, %d non-baseline segments", n, sigma0, len(segments))
+    n_raw = len(segments)
+    segments = bridge_segments(
+        segments, ratio, mask, gamma,
+        max_gap_bins=bridge_max_gap_bins,
+        max_gap_frac=bridge_max_gap_frac,
+        max_ratio_diff=bridge_max_ratio_diff,
+    )
+    logger.debug(
+        "HMM: %d bins, sigma0=%.3f, %d non-baseline segments (%d after bridging)",
+        n, sigma0, n_raw, len(segments),
+    )
     return segments, path
+
+
+def bridge_segments(
+    segments: list[Segment],
+    ratio: np.ndarray,
+    mask: np.ndarray,
+    gamma: np.ndarray,
+    max_gap_bins: int,
+    max_gap_frac: float,
+    max_ratio_diff: float,
+) -> list[Segment]:
+    """Join same-CN segments separated by a short interruption.
+
+    The Viterbi path leaves a CN1 run for a single outlier bin (ratio ~1.3,
+    cheaper as CN3 than as a 12-sigma CN1 bin) or for the 2 kb CN0 of a
+    common deletion on the remaining allele, so one 6 Mb terminal deletion
+    came out as 8 abutting calls. Segments A and B (same CN, in path order)
+    are joined when the bins between them number at most ``max_gap_bins``
+    and at most ``max_gap_frac`` of the shorter of the two sides, and their
+    mean ratios agree within ``max_ratio_diff``. Joins chain (A+B, then
+    +C). The joined segment spans the interruption; its posterior and mean
+    ratio are taken over the flanking bins only. Segments inside the
+    interruption are returned unchanged, nested in the joined one.
+    """
+    if max_gap_bins <= 0 or len(segments) < 2:
+        return segments
+    out: list[Segment] = []
+    absorbed = [False] * len(segments)
+    for i, seg in enumerate(segments):
+        if absorbed[i]:
+            continue
+        run = [seg]
+        run_bins = seg.n_bins
+        run_ratio = seg.mean_ratio
+        j = i + 1
+        while j < len(segments):
+            nxt = segments[j]
+            gap = nxt.start_bin - run[-1].end_bin
+            if gap > max_gap_bins:
+                break
+            if nxt.cn != seg.cn:
+                j += 1  # a segment inside the interruption (or past it: gap check above)
+                continue
+            ok = (
+                gap > 0
+                and gap <= max_gap_frac * min(run_bins, nxt.n_bins)
+                and np.isfinite(run_ratio)
+                and np.isfinite(nxt.mean_ratio)
+                and abs(run_ratio - nxt.mean_ratio) <= max_ratio_diff
+            )
+            if not ok:
+                break
+            run_ratio = (run_ratio * run_bins + nxt.mean_ratio * nxt.n_bins) / (
+                run_bins + nxt.n_bins
+            )
+            run_bins += nxt.n_bins
+            run.append(nxt)
+            absorbed[j] = True
+            j += 1
+        if len(run) == 1:
+            out.append(seg)
+            continue
+        start, end = run[0].start_bin, run[-1].end_bin
+        flank = np.concatenate([np.arange(s.start_bin, s.end_bin) for s in run])
+        unmasked = flank[~mask[flank]]
+        out.append(
+            Segment(
+                start_bin=start,
+                end_bin=end,
+                cn=seg.cn,
+                posterior=float(gamma[flank, seg.cn].mean()),
+                mean_ratio=float(ratio[unmasked].mean()) if len(unmasked) else float("nan"),
+                n_bins=end - start,
+                masked_frac=float(mask[start:end].mean()),
+            )
+        )
+    out.sort(key=lambda s: (s.start_bin, s.end_bin))
+    return out

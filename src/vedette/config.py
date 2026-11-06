@@ -43,6 +43,17 @@ class SegmentConfig:
     max_masked_frac: float = 0.7     # segments with more masked bins than this are dropped
     dispersion_prior: float = 0.15   # initial NB overdispersion (refit per sample)
     baf_weight: float = 1.0          # weight of the BAF emission channel (0 disables)
+    # bridging of a large segment broken by a short interruption: the Gaussian
+    # depth emission has light tails, so one 1 kb bin at ratio ~1.3 inside a
+    # het deletion (or the 2 kb CN0 of a common deletion on the other allele)
+    # costs more under CN1 than two state switches and splits the event. Two
+    # same-CN segments are joined when the interruption is at most
+    # bridge_max_gap_bins long AND at most bridge_max_gap_frac of the shorter
+    # side, and their mean ratios differ by at most bridge_max_ratio_diff.
+    # The interrupting segments are kept as their own (nested) calls.
+    bridge_max_gap_bins: int = 3     # 0 disables bridging
+    bridge_max_gap_frac: float = 0.05
+    bridge_max_ratio_diff: float = 0.15
 
 
 @dataclass(frozen=True)

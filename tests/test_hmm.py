@@ -93,3 +93,93 @@ def test_fit_sigma0_hemizygous_contig():
     # no CN change on a hemizygous contig of pure noise
     segments, path = hmm.segment_contig(chrx, mask, ploidy=1, max_cn=5, transition=1e-4)
     assert not segments and set(np.unique(path)) == {1}
+
+
+# ------------------------------------------------------------- segment bridging
+
+
+def _broken_het_del(rng, n=3000):
+    """A 1,200-bin het DEL interrupted by one outlier bin and a 2-bin CN0."""
+    ratio = _ratio(n, rng)
+    ratio[1000:2200] = rng.normal(0.5, 0.06, 1200)
+    ratio[1400] = 1.35            # one noisy bin (CN3-like)
+    ratio[1800:1802] = 0.0        # common deletion on the remaining allele
+    return ratio, np.zeros(n, dtype=bool)
+
+
+def test_outlier_bins_split_large_del_without_bridging():
+    rng = np.random.default_rng(21)
+    ratio, mask = _broken_het_del(rng)
+    segments, _ = hmm.segment_contig(ratio, mask, 2, 5, 1e-8)
+    assert len([s for s in segments if s.cn == 1]) == 3
+
+
+def test_bridging_joins_large_del_and_keeps_nested_segments():
+    rng = np.random.default_rng(21)
+    ratio, mask = _broken_het_del(rng)
+    segments, path = hmm.segment_contig(
+        ratio, mask, 2, 5, 1e-8, bridge_max_gap_bins=3
+    )
+    dels = [s for s in segments if s.cn == 1]
+    assert len(dels) == 1
+    d = dels[0]
+    assert abs(d.start_bin - 1000) <= 2 and abs(d.end_bin - 2200) <= 2
+    assert d.n_bins == d.end_bin - d.start_bin
+    assert abs(d.mean_ratio - 0.5) < 0.02     # flanks only: the CN0 bins are left out
+    assert d.posterior > 0.9
+    # the interruptions stay as their own calls, nested in the joined one
+    assert any(s.cn == 0 and s.start_bin == 1800 and s.end_bin == 1802 for s in segments)
+    assert any(s.cn == 3 and s.start_bin == 1400 for s in segments)
+    assert [s.start_bin for s in segments] == sorted(s.start_bin for s in segments)
+    # the Viterbi path itself is untouched
+    assert path[1800] == 0 and path[1400] == 3
+
+
+def _seg(start, end, cn, ratio):
+    return hmm.Segment(start, end, cn, 0.99, ratio, end - start, 0.0)
+
+
+def _bridge(segments, n=10_000, **kw):
+    ratio = np.full(n, 0.5)
+    mask = np.zeros(n, dtype=bool)
+    gamma = np.full((n, 6), 1 / 6)
+    params = {"max_gap_bins": 3, "max_gap_frac": 0.05, "max_ratio_diff": 0.15} | kw
+    return hmm.bridge_segments(segments, ratio, mask, gamma, **params)
+
+
+def test_bridging_leaves_small_events_apart():
+    # 2-bin gap between two 20-bin DELs: 2 > 0.05 * 20
+    segs = [_seg(100, 120, 1, 0.5), _seg(122, 142, 1, 0.5)]
+    assert _bridge(segs) == segs
+
+
+def test_bridging_needs_short_gap_same_cn_and_level():
+    big = 500
+    a = _seg(0, big, 1, 0.5)
+    # gap of 4 bins > max_gap_bins
+    assert len(_bridge([a, _seg(big + 4, 2 * big, 1, 0.5)])) == 2
+    # different CN on the other side
+    assert len(_bridge([a, _seg(big + 1, 2 * big, 0, 0.0)])) == 2
+    # same CN but depth levels disagree
+    assert len(_bridge([a, _seg(big + 1, 2 * big, 1, 0.70)])) == 2
+    # a fully masked side has no level: left apart
+    assert len(_bridge([a, _seg(big + 1, 2 * big, 1, float("nan"))])) == 2
+    # disabled
+    assert len(_bridge([a, _seg(big + 1, 2 * big, 1, 0.5)], max_gap_bins=0)) == 2
+
+
+def test_bridging_chains_across_baseline_and_other_states():
+    segs = [
+        _seg(0, 300, 1, 0.52),
+        _seg(300, 301, 3, 1.4),      # outlier bin
+        _seg(301, 600, 1, 0.53),
+        # 2 baseline bins (no segment) between 600 and 602
+        _seg(602, 900, 1, 0.51),
+        _seg(900, 902, 0, 0.0),      # nested hom del
+        _seg(902, 1200, 1, 0.50),
+        _seg(1210, 1500, 1, 0.50),   # 10-bin gap: a separate call
+    ]
+    out = _bridge(segs)
+    dels = [(s.start_bin, s.end_bin) for s in out if s.cn == 1]
+    assert dels == [(0, 1200), (1210, 1500)]
+    assert [(s.start_bin, s.cn) for s in out if s.cn != 1] == [(300, 3), (900, 0)]
