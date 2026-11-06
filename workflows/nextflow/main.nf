@@ -4,7 +4,7 @@
 ========================================================================================
     Vedette cohort CNV-calling pipeline
 ========================================================================================
-    call -> filter -> merge -> genotype -> cohort -> ped
+    call -> filter -> merge -> genotype -> cohort -> ped -> (mosaic, bnd) -> report
 
     Input: a Vedette manifest TSV (sample_id, cram, batch, sex, depth_bedgraph,
     vaf_bedgraph) built with `vedette manifest discover`, plus optionally a
@@ -20,6 +20,7 @@ include { VEDETTE_GENOTYPE } from './modules/vedette_genotype'
 include { VEDETTE_COHORT_FILTER } from './modules/vedette_cohort_filter'
 include { VEDETTE_PED } from './modules/vedette_ped'
 include { VEDETTE_MOSAIC } from './modules/vedette_mosaic'
+include { VEDETTE_BND } from './modules/vedette_bnd'
 include { VEDETTE_REPORT } from './modules/vedette_report'
 
 def validatedSteps() {
@@ -166,6 +167,19 @@ workflow {
         mosaic_tsvs = VEDETTE_MOSAIC.out.tsv.collect().ifEmpty([])
     }
 
+    // translocation / inversion junctions and the mechanism of terminal losses,
+    // over the whole run (cohort flags); needs the filtered calls of this run
+    def bnd_files = Channel.value([])
+    if ('report' in steps && 'filter' in steps
+            && params.bnd.toString().toLowerCase() in ["true", "1", "yes"]) {
+        VEDETTE_BND(
+            filtered.map { sample, vcf, tbi, store -> [vcf, tbi] }.flatten().collect(),
+            filtered.map { sample, vcf, tbi, store -> store }.collect(),
+            mosaic_tsvs,
+        )
+        bnd_files = VEDETTE_BND.out.files.collect().ifEmpty([])
+    }
+
     if ('report' in steps) {
         VEDETTE_REPORT(
             VEDETTE_COHORT_FILTER.out.cohort_vcf,
@@ -174,6 +188,7 @@ workflow {
             VEDETTE_PED.out.summary,
             VEDETTE_PED.out.sweep,
             mosaic_tsvs,
+            bnd_files,
         )
     }
 }

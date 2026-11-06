@@ -741,6 +741,10 @@ def report(
         None, "--mosaic-dir",
         help="Directory of <S>.mosaic.tsv (vedette mosaic); default samples/<S>/ of the run",
     ),
+    bnd_dir: Optional[Path] = typer.Option(
+        None, "--bnd-dir",
+        help="Directory of <S>.terminal.tsv and <S>.bnd.tsv (vedette bnd); default samples/<S>/ of the run",
+    ),
     no_collapse_events: bool = typer.Option(
         False, "--no-collapse-events",
         help="Keep every cohort site as its own row on the events pages (default: merge overlapping same-type events carried by exactly the same members)",
@@ -789,6 +793,7 @@ def report(
             collapse_family_events=not no_collapse_events,
             min_carrier_gq=min_carrier_gq,
             mosaic_dir=mosaic_dir,
+            bnd_dir=bnd_dir,
             low_quality_prefixes=tuple(low_quality_prefix),
             jobs=resolve_jobs(jobs),
             require_stores=not allow_missing_stores,

@@ -2532,7 +2532,8 @@ def check_evidence_stores(run_dir: Path, samples: list[str], require: bool = Tru
 
 
 def _terminal_losses(run_dir: Path, samples: list[str], pedigree: Pedigree | None,
-                     lengths: dict[str, int]) -> tuple[dict[str, list[dict]], str]:
+                     lengths: dict[str, int], bnd_dir: str | Path | None = None,
+                     ) -> tuple[dict[str, list[dict]], str]:
     """Per sample, its terminal losses with a one-line mechanism (family-page
     alerts), and the cohort section. A translocation or inv-dup junction also
     found in a parent marks that parent a balanced carrier."""
@@ -2542,16 +2543,20 @@ def _terminal_losses(run_dir: Path, samples: list[str], pedigree: Pedigree | Non
                for i in (pedigree.individuals.values() if pedigree else [])}
     bnd_cache: dict[str, list[dict]] = {}
 
+    def path_of(s, suffix):
+        return (Path(bnd_dir) / f"{s}.{suffix}" if bnd_dir
+                else run_dir / "samples" / s / f"{s}.{suffix}")
+
     def bnds_of(s):
         if s not in bnd_cache:
-            p = run_dir / "samples" / s / f"{s}.bnd.tsv"
+            p = path_of(s, "bnd.tsv")
             bnd_cache[s] = read_tsv(p) if p.exists() else []
         return bnd_cache[s]
 
     by_sample: dict[str, list[dict]] = {}
     rows, scanned = [], False
     for s in samples:
-        p = run_dir / "samples" / s / f"{s}.terminal.tsv"
+        p = path_of(s, "terminal.tsv")
         if not p.exists():
             continue
         scanned = True
@@ -2601,6 +2606,7 @@ def generate_report(
     collapse_family_events: bool = True,
     min_carrier_gq: int = 20,
     mosaic_dir: str | Path | None = None,
+    bnd_dir: str | Path | None = None,
     subthreshold: bool = True,
     low_quality_prefixes: tuple[str, ...] = (),
     jobs: int = 1,
@@ -2920,7 +2926,8 @@ workspace : <code>families/{html.escape(fid)}/</code>{_events_link(fid, len(memb
     )
     n_mosaic_samples = len({r[0] for r in mosaic_rows})
     # ---- terminal losses and their mechanism (`vedette bnd --run-dir`), when present
-    terminal_by_sample, terminal_section = _terminal_losses(run_dir, samples, pedigree, _clen)
+    terminal_by_sample, terminal_section = _terminal_losses(run_dir, samples, pedigree, _clen,
+                                                            bnd_dir)
     if mosaic_rows:
         mosaic_section = (
             "<p>Segments ≥ 3 Mb dont le nombre de copies est fractionnaire (perte CN = 2 − f, "

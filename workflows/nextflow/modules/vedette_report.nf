@@ -9,6 +9,7 @@ process VEDETTE_REPORT {
     path mendel_summary
     path trio_sweep
     path mosaic_tsvs, stageAs: 'mosaic/*'
+    path bnd_files, stageAs: 'bnd/*'
 
     output:
     path "report.html", emit: report
@@ -32,6 +33,7 @@ process VEDETTE_REPORT {
         ? "--events-pass-only" : ""
     def mosaic_arg = params.mosaic.toString().toLowerCase() in ["true", "1", "yes"] \
         ? "--mosaic-dir mosaic" : ""
+    def bnd_arg = bnd_files ? "--bnd-dir bnd" : ""
     def lq_list = params.low_quality_prefixes instanceof List
         ? params.low_quality_prefixes
         : params.low_quality_prefixes.toString().tokenize(',')
@@ -48,7 +50,7 @@ process VEDETTE_REPORT {
     ln -s \$(readlink -f ${mendel_report}) rundir/cohort/mendel_report.tsv
     ln -s \$(readlink -f ${mendel_summary}) rundir/cohort/mendel_summary.tsv
     ln -s \$(readlink -f ${trio_sweep}) rundir/cohort/trio_sweep.tsv
-    ${params.vedette_bin} report rundir --jobs ${task.cpus} ${ped_arg} ${genes_arg} ${ndd_arg} ${clingen_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} ${mosaic_arg} ${lq_arg} \\
+    ${params.vedette_bin} report rundir --jobs ${task.cpus} ${ped_arg} ${genes_arg} ${ndd_arg} ${clingen_arg} ${fam_arg} ${events_arg} ${events_pass_arg} ${segdup_arg} ${lcr_arg} ${mosaic_arg} ${bnd_arg} ${lq_arg} \\
         --cohort-name "${params.cohort_name ?: 'cohorte'}" \\
         --out report.html
     if [ -d rundir/families ]; then mv rundir/families families; fi
