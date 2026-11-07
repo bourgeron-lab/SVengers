@@ -115,6 +115,21 @@ def test_paralog_dense_hets_do_not_refute_a_deletion():
     assert sparse.gt == (0, 0)
 
 
+def test_integer_cn_of_a_small_event_reads_edge_bins_with_their_flanks():
+    """A 1.7 kb event over three 1 kb bins (14 %, 100 %, 52 % covered): CN0
+    inside a het deletion (flanks at 0.5) and a het deletion (flanks at 1.0)
+    were read CN1 and CN2 on whole bins."""
+    start, end = 49_853, 51_519
+    cover = np.array([0.147, 1.0, 0.519])
+    gtr = Genotyper(GenotypeConfig())
+    for flank, cn in ((0.5, 0), (1.0, 1)):
+        ratio = np.full(100, flank)
+        ratio[49:52] = flank * (1 - cover) + cn / 2 * cover
+        call = _call(start, end, "DEL", pe=10, sr=8)
+        gtr.genotype(call, _data(ratio))
+        assert call.cn == cn
+
+
 def test_small_dup_below_bin_size_genotyped_from_junction():
     """A 100 bp DUP in 1 kb bins barely moves the depth; SR evidence must win."""
     rng = np.random.default_rng(6)
