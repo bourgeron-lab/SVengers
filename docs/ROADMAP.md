@@ -176,7 +176,11 @@ Priorités :
    à la mosaïque, au caryotype et aux variables du modèle.
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),
    contrôles de déploiement habituels (PASS par génome vs production,
-   récurrence, trios, HG002 hors échantillon).
+   récurrence, trios, HG002 hors échantillon). Y entraîner le CN entier lu
+   avec les flancs sur les bins de bord (branche locale `cn-partial`, events
+   ≥ 1 kb) : juste sur chr22:49,32 Mb (0/1 -> CN1, imbriqué -> CN0), mais
+   avec v5n il fait perdre 165 DEL PASS 1-5 kb transmises sur 20 trios pour
+   86 gagnées (PASS par génome -0,1 %).
 5. **Export GHFC par le pipeline** : le wrapper Nextflow publie directement
    dans `samples|families|cohorts/…/svs/vedette/`, plus de copie manuelle.
 6. **Génomes très bruités à l'appel** (budget des hidden splits, détection
