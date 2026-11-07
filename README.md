@@ -957,7 +957,8 @@ reads; `kind` `TRA`, `INV` or `FOLD`. **Junction VCF** (`<S>.bnd.vcf.gz`): the j
 with split reads at both ends as breakend pairs (`SVTYPE=BND`, `MATEID`, `EVENT`, `KIND`;
 `FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (≥ 12 pairs), `LowSupport`,
 `NoisyGenome` (same-strand junctions of a genome with more than 500), `Common` (common
-inversions, ~110 per genome), `Subtelomeric`.
+inversions, ~60-70 per genome; ~110-140 in the TSV, ends without split reads included),
+`Subtelomeric`.
 
 **Terminal-loss TSV** (`<S>.terminal.tsv`): `sample contig start end source mechanism
 partner partner_gain telo_clips junction_pe`; `source` `call` or `mosaic`; `mechanism`
