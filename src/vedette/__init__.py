@@ -1,3 +1,3 @@
 """Vedette: multi-evidence germline CNV caller for short-read WGS."""
 
-__version__ = "1.13.0"
+__version__ = "1.14.0"

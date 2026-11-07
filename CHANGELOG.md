@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v1.14.0 — 2026-11-07
+
+`vedette bnd` calibrates standalone inversions on trios: same-strand
+junctions pass at 12 pairs except in genomes with chimeric-library noise, and
+common inversions are kept with FILTER `Common`. Store schema, feature schema
+and model (v5n) unchanged; calling and genotyping unchanged.
 
 - **`vedette bnd`: same-strand junctions pass at 12 pairs** — standalone
   inversion and fold-back junctions with split reads at both ends are PASS
@@ -19,7 +24,8 @@
   a carrier parent carries the junction at most a quarter as often as the
   run (17q21.31 H2: 42 % of genomes, 30 pairs), at 942 as often as anyone
   (artefacts, a median of 4 pairs). Of the junctions with 12 pairs or more,
-  74 % are at the first, 4 % at the second. ~110 per genome (PMS ~140).
+  74 % are at the first, 4 % at the second. ~110 per genome in the TSV
+  (PMS ~140), ~60-70 in the VCF.
 
 ## v1.13.0 — 2026-11-07
 
