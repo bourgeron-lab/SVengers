@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v1.13.0 — 2026-11-07
+
+`vedette bnd` reads translocations, inversions and the mechanism of terminal
+losses from the evidence stores, and the report shows them. Cohort genotyping
+reads the store's original BAF and ignores the hets of paralog-dense events.
+De novo candidates are sorted by the child's genome quality. Same store
+schema, feature schema and model (v5n).
 
 - **Genotype likelihood: hets of paralog-dense events are ignored** — when
   an event holds more hets than a diploid stretch of its length yields
