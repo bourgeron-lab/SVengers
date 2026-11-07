@@ -98,6 +98,24 @@ def test_flags_promiscuous_recurrent_subtelomeric_unplaced():
     assert by["T_parent"][0].flag == ""
 
 
+def test_recurrent_same_strand_junction_with_support_is_a_common_inversion():
+    """In many genomes, a same-strand junction with 12 pairs or more is a
+    common inversion (17q21.31 H2); weaker ones and inter-chromosomal ones
+    stay recurrent (artefacts)."""
+    from vedette.vcfout import bnd_filter
+
+    by = {}
+    for i in range(BND_RECURRENT_MIN):
+        inv = Bnd(f"S{i}", "chr17", 45_585_000, "R", "chr17", 46_265_000, "R", 30 if i else 5, 4, 4,
+                  60.0, kind="INV")
+        tra = Bnd(f"S{i}", "chr8", 4_795_714, "R", "chr22", 48_985_660, "L", 20, 4, 4, 60.0)
+        by[f"S{i}"] = [inv, tra]
+    flag_junctions(by, LENGTHS)
+    assert [by[f"S{i}"][0].flag for i in range(2)] == ["recurrent", "common"]
+    assert {by[s][1].flag for s in by} == {"recurrent"}
+    assert bnd_filter(by["S1"][0]) == "Common"
+
+
 def test_terminal_losses_reach_the_end_and_are_long():
     calls = [("chr22", 47_821_250, 50_818_000), ("chr22", 50_600_000, 50_602_000),
              ("chr22", 30_000_000, 31_000_000)]

@@ -544,7 +544,11 @@ the evidence stores of a whole run, without the CRAMs:
    duplication). Junctions need 4 pairs of mean MAPQ ≥ 20.
 2. **Run-level flags.** A 10 kb locus joined to ≥ 10 distinct loci over the run is a
    repeat (`promiscuous`), and two loci joined in ≥ 5 genomes (or 1 %) an artefact or a
-   common variant (`recurrent`); a translocation is private or shared by a family.
+   common variant (`recurrent`); a translocation is private or shared by a family. A
+   recurrent same-strand junction with ≥ 12 pairs is a common inversion (`common`, kept):
+   on 633 trios, 74 % of them sit at loci a child without a carrier parent carries at
+   most a quarter as often as the run (17q21.31 H2 among them), 4 % at loci it carries as
+   often as anyone.
    Counting genomes per locus instead does not work: a 30× genome has ~13,000 raw
    junction clusters, nearly all in repeats, and a median locus has some in 7 of 319
    genomes. Ends within 500 kb of a contig end are `subtelomeric`, ends on unplaced
@@ -952,7 +956,8 @@ sequence left of `pos` is joined, `L` when the sequence right of it, `?` without
 reads; `kind` `TRA`, `INV` or `FOLD`. **Junction VCF** (`<S>.bnd.vcf.gz`): the junctions
 with split reads at both ends as breakend pairs (`SVTYPE=BND`, `MATEID`, `EVENT`, `KIND`;
 `FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (≥ 12 pairs), `LowSupport`,
-`NoisyGenome` (same-strand junctions of a genome with more than 500), `Subtelomeric`.
+`NoisyGenome` (same-strand junctions of a genome with more than 500), `Common` (common
+inversions, ~110 per genome), `Subtelomeric`.
 
 **Terminal-loss TSV** (`<S>.terminal.tsv`): `sample contig start end source mechanism
 partner partner_gain telo_clips junction_pe`; `source` `call` or `mosaic`; `mechanism`

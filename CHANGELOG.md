@@ -12,6 +12,15 @@
   7 kept same-strand junctions (PMS 11), 67 of 2,670 have more than 500, and
   their same-strand junctions are now filtered `NoisyGenome`.
 
+- **`vedette bnd`: common inversions are kept** — a same-strand junction in
+  1 % of the run or more was dropped as recurrent; with 12 pairs or more it
+  is now kept (flag `common`, FILTER `Common`). On 633 dataset_paper trios,
+  recurrent same-strand loci split by transmission: at 605, a child without
+  a carrier parent carries the junction at most a quarter as often as the
+  run (17q21.31 H2: 42 % of genomes, 30 pairs), at 942 as often as anyone
+  (artefacts, a median of 4 pairs). Of the junctions with 12 pairs or more,
+  74 % are at the first, 4 % at the second. ~110 per genome (PMS ~140).
+
 ## v1.13.0 — 2026-11-07
 
 `vedette bnd` reads translocations, inversions and the mechanism of terminal

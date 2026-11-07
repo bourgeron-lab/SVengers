@@ -204,6 +204,8 @@ BND_FILTERS = [
     ("LowSupport", "Fewer than BND_PASS_PE discordant pairs"),
     ("NoisyGenome", "Same-strand junction of a genome with more than "
                     "BND_NOISY_SAME_STRAND kept same-strand junctions"),
+    ("Common", "Same-strand junction in 1 % of the run or more, with 12 pairs or "
+               "more: a common inversion"),
 ]
 # On 100 dataset_paper trios, kept junctions found in the child and in neither
 # parent (de novo ones being very rare: noise) per trio: inter-chromosomal
@@ -230,6 +232,8 @@ def bnd_filter(b, noisy: bool = False) -> str:
     chance junction within 10 kb is ~1 in 1,000."""
     if b.flag == "subtelomeric":
         return "Subtelomeric"
+    if b.flag == "common":
+        return "Common"
     if b.kind != "TRA" and noisy:
         return "NoisyGenome"
     return "PASS" if b.pe >= BND_PASS_PE else "LowSupport"

@@ -28,8 +28,13 @@ Reste à faire :
    parent, 0,031 / 0,074 chez l'enfant seul (parents d'une autre famille :
    36 %, inversions de population). PASS au même seuil que les
    translocations, sauf génome à > 500 jonctions de même brin
-   (`NoisyGenome`, 67 / 2 670). Inversions communes (≥ 1 % du run) toujours
-   écartées comme récurrentes ; benchmark HG002 à faire (vérité inversions).
+   (`NoisyGenome`, 67 / 2 670). Inversions communes (≥ 1 % du run) : une
+   jonction récurrente de même brin à ≥ 12 paires est gardée (`common`,
+   FILTER `Common`) ; sur 633 trios, 74 % de ces jonctions sont à des loci
+   qu'un enfant sans parent porteur porte au plus 4 fois moins que le run
+   (17q21.31 H2 : 42 % des génomes, 30 paires), 4 % à des loci portés au
+   hasard (artefacts, ~4 paires). ~110 par génome (PMS ~140). Benchmark HG002 à faire (vérité
+   inversions).
 3. Événements complexes : chaîner les jonctions d'un même génome (inv-dup
    sans DUP appelée, translocations à trois partenaires, chromothripsis),
    et relier jonctions et bornes de DEL/DUP intra-chromosomiques.

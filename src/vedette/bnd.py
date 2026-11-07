@@ -14,7 +14,7 @@ segment is then gained). This pass reads both from the evidence store alone:
 2. over the genomes of a run, a 10 kb locus joined to many distinct loci
    (BND_PROMISCUOUS_PARTNERS) is a repeat, and two loci joined in many
    genomes (BND_RECURRENT_*) an artefact or a common variant, not a
-   breakpoint; a junction whose end is within SUBTEL_BP of a contig end lands
+   breakpoint (a common inversion when same-strand with BND_COMMON_PE pairs); a junction whose end is within SUBTEL_BP of a contig end lands
    in subtelomeric repeats, which is what a healed telomere's reads also hit;
 3. each loss reaching a contig end (a PASS deletion or a mosaic segment)
    takes its mechanism from its breakpoint: a junction to another contig
@@ -64,6 +64,12 @@ BND_PROMISCUOUS_PARTNERS = 10
 # shared by a family (a balanced carrier and the unbalanced child)
 BND_RECURRENT_MIN = 5
 BND_RECURRENT_FRAC = 0.01
+# a recurrent same-strand junction with this many pairs is a common inversion:
+# on 633 dataset_paper trios, 74 % of such junctions sit at loci a child
+# without a carrier parent carries at most a quarter as often as the run
+# (17q21.31 H2 among them), 4 % at loci it carries as often as anyone
+# (artefacts; their junctions have ~4 pairs)
+BND_COMMON_PE = 12
 SUBTEL_BP = 500_000        # a junction end this close to a contig end is subtelomeric
 TERMINAL_BP = 300_000      # a loss reaching this close to a contig end is terminal
 TERMINAL_TAIL_BP = 10_000  # ... with at most this much callable sequence past it
@@ -94,7 +100,7 @@ class Bnd:
     sr_a: int
     sr_b: int
     mapq: float
-    flag: str = ""        # "", "unplaced", "subtelomeric", "promiscuous", "recurrent"
+    flag: str = ""        # "", "unplaced", "subtelomeric", "promiscuous", "recurrent", "common"
     kind: str = "TRA"     # "TRA" between contigs; same-strand pairs within one:
                           # "INV" (pairs on both sides of the breakpoints), "FOLD" (one side)
 
@@ -256,7 +262,7 @@ def flag_junctions(by_sample: dict[str, list[Bnd]], lengths: dict[str, int]) -> 
             elif max(len(partners[a]), len(partners[z])) >= BND_PROMISCUOUS_PARTNERS:
                 b.flag = "promiscuous"
             elif len(pairs[(a, z)]) >= limit:
-                b.flag = "recurrent"
+                b.flag = "common" if b.kind != "TRA" and b.pe >= BND_COMMON_PE else "recurrent"
             else:
                 b.flag = ""
 
@@ -525,7 +531,7 @@ def _annotate_one(args):
             for loss in terminal_losses(losses, mosaic, lengths, partial(callable_bins, store),
                                              store.bin_size, pieces)]
     # ~13,000 clusters per genome, nearly all in repeats: the files keep the rest
-    bnds = [b for b in bnds if b.flag in ("", "subtelomeric")]
+    bnds = [b for b in bnds if b.flag in ("", "subtelomeric", "common")]
     write_tsv(bnds, BND_FIELDS, d / f"{s}.bnd.tsv")
     write_bnd_vcf(bnds, contigs, s, d / f"{s}.bnd.vcf.gz", fasta)
     write_tsv(rows, TERMINAL_FIELDS, d / f"{s}.terminal.tsv")
