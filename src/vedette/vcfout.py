@@ -202,23 +202,36 @@ def write_vcf(
 BND_FILTERS = [
     ("Subtelomeric", "A junction end within 500 kb of a contig end"),
     ("LowSupport", "Fewer than BND_PASS_PE discordant pairs"),
-    ("Inversion", "Same-strand junction: not calibrated as a standalone call"),
+    ("NoisyGenome", "Same-strand junction of a genome with more than "
+                    "BND_NOISY_SAME_STRAND kept same-strand junctions"),
 ]
 # On 100 dataset_paper trios, kept junctions found in the child and in neither
 # parent (de novo ones being very rare: noise) per trio: inter-chromosomal
-# ~180 with 4-7 pairs, 2.9 with 8-11, 0.2 with 12 or more (inherited: 2.4);
-# same-strand ones ~1 even with 12 pairs and 5 split reads at each end.
+# ~180 with 4-7 pairs, 2.9 with 8-11, 0.2 with 12 or more (inherited: 2.4).
+# Same-strand junctions with split reads at both ends and 12 pairs or more,
+# on 637 dataset_paper and 94 PMS trios: 1.32 and 1.35 per child are in a
+# parent, 0.031 and 0.074 in the child alone (unrelated parents match 36 %
+# of them: population inversions, not chance). Their noise is in a few
+# genomes: a median genome has 7 kept same-strand junctions (PMS 11), 67 of
+# 2,670 have more than 500, and children above it 46 child-only ones each.
 BND_PASS_PE = 12
+BND_NOISY_SAME_STRAND = 500
 
 
-def bnd_filter(b) -> str:
-    """FILTER of a junction written as a standalone call. A junction at a
+def noisy_genome(bnds: list) -> bool:
+    """Too many same-strand junctions to trust one (chimeric library)."""
+    return sum(1 for b in bnds if b.kind != "TRA" and b.flag == "") > BND_NOISY_SAME_STRAND
+
+
+def bnd_filter(b, noisy: bool = False) -> str:
+    """FILTER of a junction written as a standalone call; `noisy`: the
+    genome's same-strand junctions are noise (`noisy_genome`). A junction at a
     loss's breakpoint is read with any support by `vedette bnd`: there, a
     chance junction within 10 kb is ~1 in 1,000."""
     if b.flag == "subtelomeric":
         return "Subtelomeric"
-    if b.kind != "TRA":
-        return "Inversion"
+    if b.kind != "TRA" and noisy:
+        return "NoisyGenome"
     return "PASS" if b.pe >= BND_PASS_PE else "LowSupport"
 
 
@@ -252,6 +265,7 @@ def write_bnd_vcf(bnds: list, contigs: list[Contig], sample: str, path: str | Pa
     header.info.add("KIND", "1", "String",
                     "TRA: between contigs; INV: same-strand pairs on both sides; FOLD: on one side")
     order = {c.name: i for i, c in enumerate(contigs)}
+    noisy = noisy_genome(bnds)
     ref = pysam.FastaFile(str(fasta))
     recs = []
     placed = [b for b in bnds if {b.side_a, b.side_b} <= {"L", "R"}]
@@ -274,7 +288,7 @@ def write_bnd_vcf(bnds: list, contigs: list[Contig], sample: str, path: str | Pa
             rec.info["MATEID"] = mate
             rec.info["EVENT"] = event
             rec.info["KIND"] = b.kind
-            rec.filter.add(bnd_filter(b))
+            rec.filter.add(bnd_filter(b, noisy))
             fmt = rec.samples[sample]
             fmt["GT"] = (None, None)
             fmt["PE"] = b.pe

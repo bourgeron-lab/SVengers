@@ -564,8 +564,10 @@ duplication called), 29 healed telomeres, 6 junctions to a repeat and 14 unknown
 them mosaic). Standalone junctions are written as VCF breakend pairs; on 100 trios,
 inter-chromosomal junctions found in the child and in neither parent number ~180 per trio
 with 4-7 pairs, 2.9 with 8-11 and 0.13 with ≥ 12 (PASS; ~2.2 per genome). Same-strand
-junctions are not calibrated as standalone calls (~1 child-only per trio even at 12 pairs)
-and are filtered `Inversion`. At a loss's breakpoint any support counts: a chance
+junctions pass at ≥ 12 pairs too: on 637 + 94 trios, 1.3 per child are in a parent and
+0.03-0.07 in the child alone. Their noise sits in a few genomes (chimeric libraries): a
+median genome has 7-11 kept same-strand junctions, and a genome with more than 500 has its
+same-strand junctions filtered `NoisyGenome` (67 of 2,670). At a loss's breakpoint any support counts: a chance
 junction within 10 kb is about one in a thousand. The scan takes ~20 s per genome.
 
 ### 9. Sex-chromosome karyotype
@@ -949,8 +951,8 @@ starts there, a clip on the left has its first aligned base there); `side` `R` w
 sequence left of `pos` is joined, `L` when the sequence right of it, `?` without split
 reads; `kind` `TRA`, `INV` or `FOLD`. **Junction VCF** (`<S>.bnd.vcf.gz`): the junctions
 with split reads at both ends as breakend pairs (`SVTYPE=BND`, `MATEID`, `EVENT`, `KIND`;
-`FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (inter-chromosomal, ≥ 12 pairs),
-`LowSupport`, `Inversion`, `Subtelomeric`.
+`FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (≥ 12 pairs), `LowSupport`,
+`NoisyGenome` (same-strand junctions of a genome with more than 500), `Subtelomeric`.
 
 **Terminal-loss TSV** (`<S>.terminal.tsv`): `sample contig start end source mechanism
 partner partner_gain telo_clips junction_pe`; `source` `call` or `mosaic`; `mechanism`

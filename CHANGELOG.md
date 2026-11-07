@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **`vedette bnd`: same-strand junctions pass at 12 pairs** — standalone
+  inversion and fold-back junctions with split reads at both ends are PASS
+  at the translocations' threshold (12 discordant pairs) instead of all
+  filtered `Inversion`. On 637 dataset_paper and 94 PMS trios, 1.32 and 1.35
+  per child are in a parent and 0.031 and 0.074 in the child alone; with an
+  unrelated family's parents, 36 % match (population inversions). The ~1
+  child-only junction per trio came from a few genomes: a median genome has
+  7 kept same-strand junctions (PMS 11), 67 of 2,670 have more than 500, and
+  their same-strand junctions are now filtered `NoisyGenome`.
+
 ## v1.13.0 — 2026-11-07
 
 `vedette bnd` reads translocations, inversions and the mechanism of terminal

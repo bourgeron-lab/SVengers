@@ -22,9 +22,14 @@ dataset_paper : jonctions de l'enfant seul 0,13 par trio au seuil PASS.
 Reste à faire :
 1. ~~Étape du workflow Nextflow~~ : `VEDETTE_BND` avant le rapport (testé
    sur le trio public, 2026-11-06).
-2. Inversions isolées : ~1 jonction de même brin chez l'enfant seul par trio
-   même à 12 paires ; à calibrer (réciprocité exigée, MAPQ, répétitions
-   inversées, benchmark HG002 / jeux d'inversions) avant tout PASS.
+2. ~~Inversions isolées~~ (FAIT) : le ~1 par trio venait de quelques
+   génomes à banque chimérique. Jonctions de même brin placées à ≥ 12
+   paires, 637 trios dataset_paper / 94 PMS : 1,32 / 1,35 par enfant chez un
+   parent, 0,031 / 0,074 chez l'enfant seul (parents d'une autre famille :
+   36 %, inversions de population). PASS au même seuil que les
+   translocations, sauf génome à > 500 jonctions de même brin
+   (`NoisyGenome`, 67 / 2 670). Inversions communes (≥ 1 % du run) toujours
+   écartées comme récurrentes ; benchmark HG002 à faire (vérité inversions).
 3. Événements complexes : chaîner les jonctions d'un même génome (inv-dup
    sans DUP appelée, translocations à trois partenaires, chromothripsis),
    et relier jonctions et bornes de DEL/DUP intra-chromosomiques.

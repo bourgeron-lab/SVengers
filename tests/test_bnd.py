@@ -295,3 +295,18 @@ def test_breakend_vcf(tmp_path):
     fold = recs["vedette_BND_2_1"]
     assert fold.alts == (f"{fold.ref}]chr22:1000]",) and fold.info["KIND"] == "FOLD"
     assert list(fold.filter) == ["Subtelomeric"]
+
+
+def test_same_strand_junction_pass_unless_the_genome_is_noisy():
+    from vedette.vcfout import BND_NOISY_SAME_STRAND, bnd_filter, noisy_genome
+
+    inv = Bnd("S", "chr5", 1_000_000, "R", "chr5", 1_200_000, "R", 14, 4, 3, 60.0, kind="INV")
+    weak = Bnd("S", "chr5", 3_000_000, "L", "chr5", 3_010_000, "L", 6, 2, 2, 60.0, kind="FOLD")
+    assert not noisy_genome([inv, weak])
+    assert bnd_filter(inv) == "PASS" and bnd_filter(weak) == "LowSupport"
+    chimeric = [Bnd("S", "chr1", i * 10_000, "R", "chr1", i * 10_000 + 5_000, "R", 4, 1, 1, 60.0,
+                    kind="FOLD") for i in range(BND_NOISY_SAME_STRAND + 1)]
+    assert noisy_genome(chimeric + [inv])
+    assert bnd_filter(inv, noisy=True) == "NoisyGenome"
+    tra = Bnd("S", "chr5", 1_000_000, "R", "chr9", 1_200_000, "L", 14, 4, 3, 60.0)
+    assert bnd_filter(tra, noisy=True) == "PASS"
