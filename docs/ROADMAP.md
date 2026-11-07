@@ -153,10 +153,17 @@ Priorités :
    HighCarrierFrac et fait des de novo (16 800 lignes sur 1 503 sites).
    chr12 : 3 025 de novo (production), 3 653 (nouveau BAF), 2 840 (code
    actuel, BAF d'origine). Le génotypage lit donc `baf_track` par défaut
-   (`[genotype] rewritten_baf`). Avant de l'activer : vraisemblance BAF
-   robuste aux paralogues (plafonner les het au-delà de la densité
-   attendue, ou les pondérer par la fréquence de « het » à ce site dans la
-   cohorte).
+   (`[genotype] rewritten_baf`). Vraisemblance BAF robuste aux paralogues
+   (FAIT, `[genotype] baf_paralog_p`) : les het d'un événement sont ignorés
+   quand un tronçon diploïde de cette longueur en donnerait autant avec une
+   probabilité < 0,05 (Poisson au double du taux het du contig). chr12,
+   nouveau BAF : 3 653 -> 2 921 de novo (BAF d'origine 2 840), violations
+   280 264 -> 271 195 (268 078) ; sans effet sur le BAF d'origine (2 862,
+   267 883). Compter aussi 1 kb de flancs n'apporte rien (3 067 à 1e-2).
+   Le nouveau BAF reste un peu moins bon que l'ancien pour le génotypage
+   (het de faible QUAL diffus, ~0,8 % des positions sur chrX masculin contre
+   0,07 %) : rester sur `baf_track` pour génotyper, le nouveau BAF servant
+   à la mosaïque, au caryotype et aux variables du modèle.
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),
    contrôles de déploiement habituels (PASS par génome vs production,
    récurrence, trios, HG002 hors échantillon).

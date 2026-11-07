@@ -6,7 +6,7 @@ from vedette.genotype.likelihood import ContigData, Genotyper, expected_ratio
 from vedette.variants import CNVCall
 
 
-def _data(ratio, ploidy=2, baf_pos=None, baf_vaf=None, bin_size=1000):
+def _data(ratio, ploidy=2, baf_pos=None, baf_vaf=None, bin_size=1000, het_rate=None):
     n = len(ratio)
     return ContigData(
         ratio=np.asarray(ratio, dtype=np.float64),
@@ -17,6 +17,7 @@ def _data(ratio, ploidy=2, baf_pos=None, baf_vaf=None, bin_size=1000):
         ploidy=ploidy,
         mean_depth=35.0,
         sigma0=0.1,
+        het_rate=het_rate,
     )
 
 
@@ -84,6 +85,34 @@ def test_baf_contradiction_lowers_het_del():
     assert call_baf.gt == (0, 0) or (
         call_no_baf.gt == (0, 1) and call_baf.gq < call_no_baf.gq
     )
+
+
+def test_paralog_dense_hets_do_not_refute_a_deletion():
+    """24 hets in a 1.2 kb DEL (20 per kb, against 0.8 per kb on the contig)
+    come from a paralog's reads: they must not veto a junction-supported DEL,
+    while hets at the contig's own density still do."""
+    rng = np.random.default_rng(5)
+    ratio = rng.normal(1.0, 0.05, 100)
+    ratio[50] = 0.7
+    pos = np.arange(50_000, 51_200, 50)
+    vaf = np.full(len(pos), 0.5, dtype=np.float32)
+    gtr = Genotyper(GenotypeConfig())
+    plain = _call(50_000, 51_200, "DEL", pe=8, sr=6)
+    gtr.genotype(plain, _data(ratio, baf_pos=pos, baf_vaf=vaf))
+    paralog = _call(50_000, 51_200, "DEL", pe=8, sr=6)
+    gtr.genotype(paralog, _data(ratio, baf_pos=pos, baf_vaf=vaf, het_rate=8e-4))
+    assert plain.gt == (0, 0)
+    assert paralog.gt == (0, 1) and paralog.baf_n == 24
+    off = Genotyper(GenotypeConfig(baf_paralog_p=0.0))
+    call = _call(50_000, 51_200, "DEL", pe=8, sr=6)
+    off.genotype(call, _data(ratio, baf_pos=pos, baf_vaf=vaf, het_rate=8e-4))
+    assert call.gt == (0, 0)
+    # 40 hets over 100 kb: the contig's density, still evidence against a DEL
+    sparse = _call(0, 100_000, "DEL", pe=1, sr=0)
+    wide = np.arange(10_000, 90_000, 2_000)
+    gtr.genotype(sparse, _data(np.full(100, 0.7), baf_pos=wide,
+                               baf_vaf=np.full(len(wide), 0.5, np.float32), het_rate=8e-4))
+    assert sparse.gt == (0, 0)
 
 
 def test_small_dup_below_bin_size_genotyped_from_junction():

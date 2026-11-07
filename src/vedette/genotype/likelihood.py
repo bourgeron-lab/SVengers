@@ -23,6 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.special import gammaln
 from scipy.stats import beta as beta_dist
+from scipy.stats import poisson
 
 from ..config import GenotypeConfig
 from ..variants import CNVCall
@@ -33,6 +34,7 @@ _MIN_RATIO_VAR = 0.05
 _MAX_DEPTH_BINS = 200      # cap on effective depth-informative bins
 _MAX_BAF_SITES = 50        # cap on effective BAF sites
 _JUNCTION_EFFICIENCY = 0.12  # detectable junction reads per unit of haploid coverage
+_HET_OVERDISPERSION = 2.0   # local het density varies ~2x around the contig rate
 
 
 def expected_ratio(alt_dosage: int, svtype: str, ploidy: int) -> float:
@@ -104,6 +106,7 @@ class ContigData:
     ploidy: int
     mean_depth: float        # diploid-normalized units of the ratio denominator
     sigma0: float
+    het_rate: float | None = None  # clear hets per bp on the contig; None: no paralog check
 
 
 class Genotyper:
@@ -138,6 +141,8 @@ class Genotyper:
         call.baf_n = int(len(hets))
         if len(hets):
             call.baf_dev = float(np.mean(np.abs(hets - 0.5)))
+        if self._paralog_dense(len(hets), call.end - call.start, data.het_rate):
+            hets = hets[:0]
 
         support = call.pe_support + call.sr_support + call.cig_support
         haploid_cov = data.mean_depth / 2.0
@@ -193,6 +198,17 @@ class Genotyper:
             call.mean_ratio = float(ratio.mean())
             call.n_bins = int(b1 - b0)
             call.masked_frac = float(sel_mask.mean())
+
+    def _paralog_dense(self, n_het: int, length: int, het_rate: float | None) -> bool:
+        """More hets than a diploid stretch of this length yields: they come
+        from reads of a paralog mapped here, present whatever the copy number,
+        so they say nothing about the genotype (a common deletion's carriers
+        would otherwise each pay log(mismap) per het and fall to 0/0)."""
+        p = self.config.baf_paralog_p
+        if not het_rate or p <= 0 or n_het == 0:
+            return False
+        expected = _HET_OVERDISPERSION * het_rate * max(length, 1)
+        return float(poisson.sf(n_het - 1, expected)) < p
 
     def _baf_loglik_safe(
         self, hets: np.ndarray, dosage: int, svtype: str, ploidy: int

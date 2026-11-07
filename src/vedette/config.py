@@ -109,6 +109,14 @@ class GenotypeConfig:
     # passed the cohort artifact filters, and made de novo calls (chr12:
     # 3,025 -> 3,653 with the rewritten BAF, 2,840 with the original one).
     rewritten_baf: bool = False
+    # an event's hets are ignored when a diploid stretch of its length would
+    # yield that many with probability below this (Poisson at twice the
+    # sample's contig het rate): paralogous loci, where the rewritten BAF
+    # has a median 10 hets per kb at the genotypes it flipped to 0/0. On
+    # dataset_paper chr12 with the rewritten BAF: 3,653 de novo without the
+    # check, 3,201 at 1e-3, 3,053 at 1e-2, 2,921 at 0.05 (original BAF:
+    # 2,840, 2,862 with the check at 0.05). 0 turns the check off.
+    baf_paralog_p: float = 0.05
 
 
 @dataclass(frozen=True)

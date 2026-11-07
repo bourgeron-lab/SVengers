@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Genotype likelihood: hets of paralog-dense events are ignored** — when
+  an event holds more hets than a diploid stretch of its length yields
+  (Poisson at twice the sample's contig het rate, tail probability
+  below `[genotype] baf_paralog_p` = 0.05), its BAF term is dropped: those
+  hets come from a paralog's reads whatever the copy number. Cohort
+  genotyping of dataset_paper chr12 on the rewritten BAF: 3,653 de novo
+  without the check, 2,921 with it (2,840 on the original BAF), Mendelian
+  violations 280,264 -> 271,195 (268,078); on the original BAF the check
+  is neutral (2,862 de novo, 267,883 violations). `vedette call` does not
+  set the contig het rate, so calling-stage genotypes are unchanged;
+  `vedette regenotype`, which reads the rewritten BAF, applies the check.
+
 - **Report: a terminal loss a parent also carries is marked inherited** —
   "héritée de <parent>" when a parent has the same terminal loss (same
   contig, reciprocal overlap >= 0.5). With the callable-tail criterion, the

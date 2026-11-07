@@ -60,6 +60,8 @@ class StoreGenotyper:
                 ratio = corr / self.mean_depth
                 length = len(ratio) * self.store.bin_size
                 baf = self.store.baf(contig, 0, length, original=self.original_baf)
+                n_het = int(((baf["vaf"] > 0.15) & (baf["vaf"] < 0.85)).sum())
+                callable_bp = int((~mask).sum()) * self.store.bin_size
                 self._data[contig] = ContigData(
                     ratio=ratio,
                     mask=mask,
@@ -69,6 +71,7 @@ class StoreGenotyper:
                     ploidy=self.ploidy.get(contig, 2),
                     mean_depth=self.coverage,
                     sigma0=fit_sigma0(ratio, mask, self.ploidy.get(contig, 2)),
+                    het_rate=n_het / callable_bp if callable_bp else None,
                 )
                 self._has_junctions[contig] = self.store.has_junction_evidence(contig)
         return self._data[contig]
