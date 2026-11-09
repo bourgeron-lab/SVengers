@@ -870,8 +870,24 @@ violations), which the report shows for every family.
 The harness: `vedette bench truth` (stratified Truvari evaluation by size, segdup / LCR /
 tandem-repeat context), `bench compare` (several callers, VCF or WisecondorX entries),
 `bench dup-truth` (tandem-duplication subset of an insertion-represented truth, a fair
-denominator for DUP recall), `bench trios` (violation / transmission sweep). A one-page
+denominator for DUP recall), `bench trios` (violation / transmission sweep), `bench cohort`
+(the gate before deploying a model, below). A one-page
 illustrated overview is in `docs/vedette_overview.html`.
+
+**Deploying a new filter model.** A truth-set holdout, the per-genome PASS median of a
+panel and trio checks at the call level ("does the child's call overlap a parent's
+call?") can all look fine while a model passes a family-shared artifact class (GC waves,
+segdup depth shifts): such calls overlap a parent's call in every family. Re-run the
+whole cohort (filter, merge, genotype, cohort-filter, ped) with the candidate model, then
+
+```bash
+vedette bench cohort prod=runs/COHORT new=runs/COHORT_candidate --out gate.tsv
+```
+
+compares, per child, the de novo calls at PASS sites with GQ >= 20 in the child and both
+parents, by type and size, and the recurrent de novo sites (de novo in >= 5 children). A
+median rise of 25 % and at least 2 calls per child in any class, or of 25 % and 20 sites
+in recurrence, raises an alarm (exit code 1).
 
 ## Commands
 
@@ -897,7 +913,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
 | `vedette site-map` | correspondence of cohort sites between two runs (same, moved, split, merged, lost, new) |
 | `vedette train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
-| `vedette bench truth` / `compare` / `dup-truth` / `trios` | benchmark harness |
+| `vedette bench truth` / `compare` / `dup-truth` / `trios` / `cohort` | benchmark harness; `cohort` = de novo gate before a model change |
 
 Every command has `--help`. Lists of files can be passed as `@filelist` (one path per
 line) to `merge`, `cohort-filter --genotypes` and `pon build`.

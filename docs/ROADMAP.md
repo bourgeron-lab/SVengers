@@ -1302,6 +1302,14 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
   ClinSV existants, même protocole ; Vedette avant/après filtre.
 - `bench trios` : MVR et transmission en fonction du seuil SQ sur les cohortes
   GHFC (figure de spécificité indépendante de GIAB).
+- `bench cohort` (2026-11-09) : porte de déploiement d'un modèle. Cohorte
+  complète refiltrée et regénotypée avec le candidat, puis de novo PASS
+  GQ >= 20 par enfant (type × taille) et sites de novo récurrents contre la
+  production ; alarme si la médiane monte de 25 % et 2 appels/enfant.
+  Motif : v12a (v5r2 + 129 verdicts IGV ×20) avait un panel par génome à
+  DUP -9,7 % et des trios « appel parental » propres, mais en cohorte DUP
+  ≥ 1 kb de novo par enfant médiane 1 → 12 (vagues GC partagées par la
+  famille). Critère obligatoire avant tout changement de modèle.
 
 ### 3. Hidden split reads — FAIT (2026-09-08)
 - `breakpoints/resolve.py` : réalignement fit (numba, sans dépendance) des clips

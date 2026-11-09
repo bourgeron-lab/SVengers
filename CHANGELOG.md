@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **`vedette bench cohort`: the de novo gate before a model change** — compares
+  cohort runs (the first is the baseline) on de novo calls per child at PASS
+  sites with GQ >= 20 in the child and both parents, by type and size, and on
+  recurrent de novo sites (de novo in >= 5 children). A median rise of 25 %
+  and 2 calls per child in any class, or of 25 % and 20 recurrent sites,
+  raises an alarm (exit code 1). On dataset_paper (665 children), the current
+  code with model v5n is OK against production (median 27 -> 26), and a
+  candidate model trained with IGV verdicts at weight 20 raises the alarm (DUP
+  1-10 kb median 1 -> 9, DUP >= 10 kb 0 -> 3, recurrent sites 2,480 -> 3,994)
+  although its per-genome PASS median on a 186-genome panel fell (DUP -9.7 %)
+  and its extra child calls mostly overlapped a parent's call.
+
 ## v1.14.0 — 2026-11-07
 
 `vedette bnd` calibrates standalone inversions on trios: same-strand
