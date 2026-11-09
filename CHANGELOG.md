@@ -13,6 +13,11 @@
   1-10 kb median 1 -> 9, DUP >= 10 kb 0 -> 3, recurrent sites 2,480 -> 3,994)
   although its per-genome PASS median on a 186-genome panel fell (DUP -9.7 %)
   and its extra child calls mostly overlapped a parent's call.
+  The gate also runs within the children's wave strata (< 0.128, 0.128-0.20,
+  >= 0.20, from the stores; >= 10 children): in the 27 children at wave >=
+  0.20 that candidate went from 18 to 259 de novo DUPs each, and a second
+  candidate (IGV deletion verdicts only), flat on every cohort median, from
+  18 to 34 de novo DEL >= 10 kb.
 
 ## v1.14.0 — 2026-11-07
 

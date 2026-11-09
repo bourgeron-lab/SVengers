@@ -19,6 +19,13 @@ mendel_summary.tsv}``) on that burden:
 type x size class) or recurrent-site count rises by more than ``max_increase``
 over the baseline AND by at least ``min_abs`` calls per child (sites for the
 recurrence), so that a median moving 0 -> 1 is not an alarm.
+
+The same rule is applied within strata of the children's wave score (read
+from ``<run>/samples/<child>/<child>.evidence.zarr``): a model that stops
+using the wave score can stay quiet on the cohort median while flooding the
+few wavy children (a candidate took 27 children at wave >= 0.20 from 18 to
+460 de novo DUPs >= 1 kb each), and the strata also show whether a rise is
+confined to them. A stratum needs ``MIN_STRATUM`` children to be gated.
 """
 
 from __future__ import annotations
@@ -38,8 +45,12 @@ SIZE_CLASSES = ("<1kb", "1-10kb", ">=10kb")
 SVTYPES = ("DEL", "DUP")
 BINS = [("all", "all")] + [(t, s) for t in SVTYPES for s in ("all", *SIZE_CLASSES)]
 
+# wave QC strata: below the calibrated warning threshold, wavy, strongly wavy
+WAVE_STRATA = (("<0.128", 0.0, 0.128), ("0.128-0.20", 0.128, 0.20), (">=0.20", 0.20, float("inf")))
+MIN_STRATUM = 10
+
 COLUMNS = [
-    "run", "svtype", "size", "median_per_child", "p90_per_child", "total",
+    "run", "wave", "n_children", "svtype", "size", "median_per_child", "p90_per_child", "total",
     "baseline_median", "change", "flag",
 ]
 
@@ -64,13 +75,43 @@ class RunStats:
     pass_sites: Counter = field(default_factory=Counter)
     mvr: float = float("nan")
     transmission: float = float("nan")
+    children: list[str] = field(default_factory=list)
+    wave: dict[str, float] = field(default_factory=dict)
 
-    def median(self, key: tuple[str, str]) -> float:
-        return statistics.median(self.per_child[key]) if self.per_child[key] else 0.0
+    def values(self, key: tuple[str, str], only: set[str] | None = None) -> list[int]:
+        if only is None:
+            return self.per_child[key]
+        return [v for c, v in zip(self.children, self.per_child[key], strict=True) if c in only]
 
-    def quantile(self, key: tuple[str, str], q: float) -> int:
-        v = sorted(self.per_child[key])
+    def median(self, key: tuple[str, str], only: set[str] | None = None) -> float:
+        v = self.values(key, only)
+        return statistics.median(v) if v else 0.0
+
+    def quantile(self, key: tuple[str, str], q: float, only: set[str] | None = None) -> int:
+        v = sorted(self.values(key, only))
         return v[int(q * (len(v) - 1))] if v else 0
+
+
+def read_waves(run_dir: str | Path, samples: list[str]) -> dict[str, float]:
+    """{sample: wave_score} from the run's per-sample evidence stores (absent ones skipped)."""
+    import zarr
+
+    out = {}
+    for s in samples:
+        p = Path(run_dir) / "samples" / s / f"{s}.evidence.zarr"
+        if not p.exists():
+            continue
+        try:
+            w = zarr.open_group(str(p), mode="r").attrs.get("wave_score")
+        except Exception:  # noqa: BLE001 - a broken store only loses its stratum
+            continue
+        if w is not None:
+            out[s] = float(w)
+    return out
+
+
+def wave_strata(waves: dict[str, float]) -> list[tuple[str, set[str]]]:
+    return [(name, {c for c, w in waves.items() if lo <= w < hi}) for name, lo, hi in WAVE_STRATA]
 
 
 def pass_sites(cohort_vcf: str | Path) -> tuple[set[str], Counter]:
@@ -127,6 +168,8 @@ def load_run(
         pass_sites=n_pass,
         mvr=statistics.median(mvr) if mvr else float("nan"),
         transmission=statistics.median(tr) if tr else float("nan"),
+        children=children,
+        wave=read_waves(d.parent, children),
     )
 
 
@@ -140,25 +183,37 @@ def gate(
     max_increase: float = 0.25,
     min_abs: float = 2.0,
 ) -> tuple[list[dict], list[str]]:
-    """Table rows for ``candidate`` against ``baseline`` and the alarms raised."""
+    """Table rows for ``candidate`` against ``baseline`` and the alarms raised:
+    over every child, then within each wave stratum of >= MIN_STRATUM children
+    present in both runs (the wave is a property of the genome: the
+    baseline's stores fill in for a candidate without them)."""
     rows, alarms = [], []
-    for key in BINS:
-        b, c = baseline.median(key), candidate.median(key)
-        flag = _rise(b, c, max_increase, min_abs)
-        if flag:
-            alarms.append(f"de novo {key[0]} {key[1]}: median per child {b:g} -> {c:g}")
-        rows.append({
-            "run": candidate.name, "svtype": key[0], "size": key[1],
-            "median_per_child": c, "p90_per_child": candidate.quantile(key, 0.9),
-            "total": sum(candidate.per_child[key]), "baseline_median": b,
-            "change": f"{c - b:+g}", "flag": "ALARM" if flag else "",
-        })
+    waves = {**baseline.wave, **candidate.wave}
+    common = set(baseline.children) & set(candidate.children)
+    groups: list[tuple[str, set[str] | None]] = [("all", None)]
+    groups += [(n, m & common) for n, m in wave_strata(waves) if len(m & common) >= MIN_STRATUM]
+    for wname, only in groups:
+        n = len(common) if only is None else len(only)
+        for key in BINS:
+            b, c = baseline.median(key, only), candidate.median(key, only)
+            flag = _rise(b, c, max_increase, min_abs)
+            if flag:
+                where = "" if only is None else f" [wave {wname}, {n} children]"
+                alarms.append(f"de novo {key[0]} {key[1]}{where}: median per child {b:g} -> {c:g}")
+            rows.append({
+                "run": candidate.name, "wave": wname, "n_children": n,
+                "svtype": key[0], "size": key[1],
+                "median_per_child": c, "p90_per_child": candidate.quantile(key, 0.9, only),
+                "total": sum(candidate.values(key, only)), "baseline_median": b,
+                "change": f"{c - b:+g}", "flag": "ALARM" if flag else "",
+            })
     b, c = baseline.recurrent_sites, candidate.recurrent_sites
     flag = _rise(b, c, max_increase, 10 * min_abs)
     if flag:
         alarms.append(f"recurrent de novo sites {b} -> {c}")
     rows.append({
-        "run": candidate.name, "svtype": "recurrent_sites", "size": "all",
+        "run": candidate.name, "wave": "all", "n_children": len(common),
+        "svtype": "recurrent_sites", "size": "all",
         "median_per_child": "", "p90_per_child": "", "total": c,
         "baseline_median": b, "change": f"{c - b:+d}", "flag": "ALARM" if flag else "",
     })
@@ -177,6 +232,17 @@ def summary_lines(s: RunStats) -> list[str]:
             f"   de novo {key[0]:>3} {key[1]:>6}: median {s.median(key):g}, "
             f"p90 {s.quantile(key, 0.9)}, total {sum(s.per_child[key])}"
         )
+    for name, only in wave_strata(s.wave):
+        if not only:
+            continue
+        out.append(
+            f"   wave {name:>10} ({len(only)} children): de novo median all "
+            f"{s.median(('all', 'all'), only):g}, DEL {s.median(('DEL', 'all'), only):g}, "
+            f"DUP {s.median(('DUP', 'all'), only):g} (1-10kb {s.median(('DUP', '1-10kb'), only):g}, "
+            f">=10kb {s.median(('DUP', '>=10kb'), only):g})"
+        )
+    if len(s.wave) < s.n_children:
+        out.append(f"   wave score missing for {s.n_children - len(s.wave)} children (no store)")
     return out
 
 

@@ -887,7 +887,12 @@ vedette bench cohort prod=runs/COHORT new=runs/COHORT_candidate --out gate.tsv
 compares, per child, the de novo calls at PASS sites with GQ >= 20 in the child and both
 parents, by type and size, and the recurrent de novo sites (de novo in >= 5 children). A
 median rise of 25 % and at least 2 calls per child in any class, or of 25 % and 20 sites
-in recurrence, raises an alarm (exit code 1).
+in recurrence, raises an alarm (exit code 1). The same rule runs within the children's
+wave strata (< 0.128, 0.128-0.20, >= 0.20; read from `<run>/samples/<S>/<S>.evidence.zarr`,
+strata of >= 10 children): the few strongly wavy children can take most of a model's
+extra calls while the cohort median stays flat. On dataset_paper, a candidate that kept
+the cohort medians took the 27 children at wave >= 0.20 from 18 to 34 de novo DEL
+>= 10 kb each.
 
 ## Commands
 

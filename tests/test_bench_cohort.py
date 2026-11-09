@@ -16,7 +16,7 @@ REPORT = [
 CHILDREN = [f"K{i}" for i in range(6)]
 
 
-def _run(tmp_path, name, sites, denovo):
+def _run(tmp_path, name, sites, denovo, children=CHILDREN):
     """sites: [(id, svtype, start, end, filter)]; denovo: [(site_id, child, gqs)]."""
     d = tmp_path / name / "cohort"
     d.mkdir(parents=True)
@@ -48,7 +48,7 @@ def _run(tmp_path, name, sites, denovo):
     with open(d / "mendel_summary.tsv", "w") as fh:
         fh.write("family_id\tchild\tn_genotyped\tn_child_carrier\tn_denovo\t"
                  "n_violation\tviolation_rate\ttransmission_rate\n")
-        for c in CHILDREN:
+        for c in children:
             fh.write(f"F\t{c}\t10\t5\t1\t1\t0.02\t0.89\n")
     return tmp_path / name
 
@@ -104,6 +104,38 @@ def test_gate_ignores_small_absolute_rises(tmp_path):
     dn = [("d_small", c, (30, 30, 30)) for c in CHILDREN]  # median 1 -> 1, 0/1 in DEL <1kb
     cand = load_run(_run(tmp_path, "cand", SITES, dn))
     assert gate(base, cand)[1] == []
+
+
+def test_wave_strata_catch_a_burst_in_the_wavy_children(tmp_path):
+    """A burst confined to a minority of wavy children leaves the cohort
+    median flat; the wave stratum raises the alarm."""
+    import zarr
+
+    from vedette.bench import cohort as bc
+
+    kids = [f"K{i}" for i in range(30)]
+    wavy = kids[:8]
+    base = _run(tmp_path, "base", SITES, [("d_small", c, (30, 30, 30)) for c in kids[:4]], kids)
+    dups = [(f"u{i}", "DUP", 100_000 + i * 20_000, 103_000 + i * 20_000, "PASS") for i in range(6)]
+    dn = [(u[0], c, (40, 40, 40)) for u in dups for c in wavy]
+    cand = _run(tmp_path, "cand", SITES + dups, dn, kids)
+    for c in kids:  # only the baseline's stores carry the wave scores
+        g = zarr.open_group(str(base / "samples" / c / f"{c}.evidence.zarr"), mode="w")
+        g.attrs["wave_score"] = 0.25 if c in wavy else 0.09
+    old = bc.MIN_STRATUM
+    bc.MIN_STRATUM = 5
+    try:
+        b, k = load_run(base), load_run(cand)
+        assert b.wave["K0"] == 0.25 and k.wave == {}
+        assert k.median(("DUP", "1-10kb")) == 0          # 8 of 30 children
+        rows, alarms = gate(b, k)
+        dup = [a for a in alarms if "DUP" in a]
+        assert dup and all("[wave >=0.20, 8 children]" in a for a in dup)
+        assert not any(r["flag"] for r in rows
+                       if r["wave"] in ("all", "<0.128") and r["svtype"] != "recurrent_sites")
+        assert any(">=0.20 (8 children)" in line for line in bc.summary_lines(b))
+    finally:
+        bc.MIN_STRATUM = old
 
 
 def test_cli_exit_code(tmp_path):
