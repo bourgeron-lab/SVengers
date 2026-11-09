@@ -234,7 +234,8 @@ class ArraySource:
 ANEU_WINDOW_BP = 1_000_000
 ANEU_MIN_WINDOWS = 20
 ANEU_WINDOW_TOL = 0.3        # a window "at" k copies: |2 x median ratio - k| <= this
-ANEU_MIN_FRAC = 0.9          # of the informative windows, at the same level
+ANEU_MIN_FRAC = 0.85         # of the informative windows, at the same level
+ANEU_GAP_CN = 0.25           # a window below this is an uncovered gap, not a copy number
 ANEU_BAF_THREE = 0.12        # median |BAF - 0.5| above this: VAF 1/3, 2/3 (diploid ~0.06)
 ANEU_HET_ONE = 0.15          # het rate / genome rate below this: a single copy
 
@@ -264,7 +265,13 @@ def autosomal_aneuploidies(
         for i in range(0, len(r) - w + 1, w):
             v = r[i:i + w][~m[i:i + w]]
             if len(v) >= w // 2:
-                cns.append(2.0 * float(np.median(v)))
+                cn = 2.0 * float(np.median(v))
+                # the reference mask leaves some pericentromeric / acrocentric
+                # gaps unmasked (no reads at all): no copy-number information.
+                # On chr21 (~37 windows) four such windows flanking the
+                # centromere put a trisomy just below the agreement threshold
+                if cn >= ANEU_GAP_CN:
+                    cns.append(cn)
         if len(cns) < ANEU_MIN_WINDOWS:
             continue
         cns = np.array(cns)

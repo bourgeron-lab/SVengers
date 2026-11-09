@@ -218,6 +218,19 @@ def test_whole_chromosome_trisomy_and_monosomy():
     assert autosomal_aneuploidies(r, m, b, 1000, list(lv)) == {"chr12": 3, "chr21": 3, "chr22": 1}
 
 
+def test_trisomy_of_a_small_acrocentric_with_unmasked_gaps():
+    """chr21 as the call sees it before the PoN: ~37 informative windows, the
+    p-arm flank unmasked but uncovered (CN 0) or erratic (0.6, 4.9)."""
+    from vedette.karyotype import autosomal_aneuploidies
+
+    lv = {"chr1": 2, "chr2": 2, "chr21": 3}
+    r, m, b = _autosomes(lv, baf_dev={"chr21": 1 / 6}, n_bins=37_000)
+    r["chr21"][:2_000] = 0.0                       # two uncovered windows
+    r["chr21"][2_000:3_000] = 0.31                 # erratic flank
+    r["chr21"][3_000:4_000] = 2.43
+    assert autosomal_aneuploidies(r, m, b, 1000, list(lv)) == {"chr21": 3}
+
+
 def test_depth_alone_is_not_an_aneuploidy():
     """A chromosome read at 3 copies without the BAF of three (a wave, a GC
     bias) or a gain over part of a chromosome keeps the diploid baseline."""
