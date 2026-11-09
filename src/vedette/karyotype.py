@@ -190,3 +190,34 @@ def aneuploid_sex_chromosomes(karyotype: str) -> set[str]:
     if ny > 1:
         out.add("Y")
     return out
+
+
+def sex_ploidy(karyotype: str) -> dict[str, int] | None:
+    """Baseline copy number of chrX / chrY for a karyotype read by ``classify``
+    (XXY -> X 2, Y 1); None when the reading is not an integer karyotype
+    ("?", "intermédiaire"): the caller then keeps its own sex inference."""
+    if not karyotype or set(karyotype) - {"X", "Y", "0"} or "X" not in karyotype:
+        return None
+    return {"chrX": karyotype.count("X"), "chrY": karyotype.count("Y")}
+
+
+class ArraySource:
+    """The store interface ``sex_chromosome_stats`` reads (``sample``,
+    ``bin_size``, ``has_contig``, ``depth``, ``baf``), over the in-memory
+    arrays of ``vedette call`` — the karyotype then sets the X/Y baseline
+    before segmentation instead of being read from the finished store."""
+
+    def __init__(self, sample: str, bin_size: int, raw: dict, mask: dict, baf: dict):
+        self.sample, self.bin_size = sample, bin_size
+        self._raw, self._mask, self._baf = raw, mask, baf
+
+    def has_contig(self, contig: str) -> bool:
+        return contig in self._raw
+
+    def depth(self, contig: str):
+        return self._raw[contig], self._raw[contig], self._mask[contig]
+
+    def baf(self, contig: str, start: int, end: int) -> dict:
+        pos, vaf = (self._baf.get(contig) or (np.array([], np.uint32), np.array([], np.float32)))[:2]
+        keep = (pos >= start) & (pos < end)
+        return {"pos": pos[keep], "vaf": vaf[keep]}

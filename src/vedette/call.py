@@ -23,6 +23,7 @@ from .extract import baf as baf_mod
 from .extract import depth as depth_mod
 from .extract.store import EvidenceStoreWriter, InsertModel
 from .genotype.likelihood import ContigData, Genotyper
+from .karyotype import sex_ploidy
 from .merge_candidates import reconcile
 from .reference import (
     Contig,
@@ -75,6 +76,31 @@ def estimate_sex_ploidy(
         "male" if is_male else "female",
     )
     return ploidy
+
+
+def pon_profile(kind: str, ploidy: int) -> tuple[str, float]:
+    """(panel profile, level) for one contig. The level is the copy number
+    of the PROFILE / 2, not the sample's: ``normalize`` returns the ratio in
+    diploid units (ratio / panel median x level), which the HMM compares to
+    the contig's own ploidy — an XXX chrX on the female profile reads 1.5
+    against ploidy 3, an XYY chrY on the male profile 1.0 against ploidy 2."""
+    if kind == "X":
+        return ("male", 0.5) if ploidy == 1 else ("female", 1.0)
+    if kind == "Y":
+        return ("male", 0.5) if ploidy > 0 else ("female", 0.0)
+    return "all", 1.0
+
+
+def sex_karyotype(sample, bin_size, raw, mask, baf, pon_path) -> dict:
+    """``classify`` on the in-memory depth/BAF of a call (karyotype.py)."""
+    import zarr
+
+    from .karyotype import ArraySource, classify, sex_chromosome_stats
+
+    st = sex_chromosome_stats(
+        ArraySource(sample, bin_size, raw, mask, baf), zarr.open(str(pon_path), mode="r")
+    )
+    return classify(st) if st else {"karyotype": "?", "note": "chrX non lisible"}
 
 
 def run_call(
@@ -149,7 +175,34 @@ def run_call(
     if mean_depth <= 0:
         raise ValueError(f"{sample}: zero usable depth")
     ratio = {n: corr[n] / mean_depth for n in call_names}
+    # ---- BAF
+    baf: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    for name in call_names:
+        if vaf_bedgraph:
+            baf[name] = baf_mod.read_vaf_bedgraph(vaf_bedgraph, name)
+        elif snv_vcf:
+            baf[name] = baf_mod.read_vaf_vcf(snv_vcf, name, config.extract.baf_min_dp)
+        else:
+            baf[name] = (
+                np.array([], np.uint32), np.array([], np.float32), np.array([], np.uint16)
+            )
+
     ploidy = estimate_sex_ploidy(ratio, mask, by_name)
+    karyo = None
+    if pon_path and "chrX" in ratio:
+        # the X/Y baseline from the measured karyotype (copy number on the
+        # panel's sex-informative bins, X heterozygosity, BAF): the threshold
+        # inference above reads an XXY as a man (chrX then called as 172
+        # fragmented DUPs, a DEL of one X invisible), an XXX as a woman (242)
+        karyo = sex_karyotype(sample, bin_size, raw, mask, baf, pon_path)
+        sp = sex_ploidy(karyo["karyotype"])
+        if sp is not None:
+            for name in ratio:
+                if by_name[name].kind in ("X", "Y"):
+                    ploidy[name] = sp["chrX" if by_name[name].kind == "X" else "chrY"]
+        logger.info("%s: karyotype %s%s -> chrX %s, chrY %s", sample, karyo["karyotype"],
+                    f' ({karyo["note"]})' if karyo["note"] else "",
+                    ploidy.get("chrX"), ploidy.get("chrY"))
 
     # ---- wave QC (megabase-scale coverage oscillations surviving GC
     #      correction), on the depth as sequenced: every threshold built on
@@ -173,31 +226,20 @@ def run_call(
             raise ValueError(
                 f"PoN bin size {pon.bin_size} != run bin size {bin_size}"
             )
-        sex = "male" if ploidy.get("chrX", 2) == 1 else "female"
         n_new_masked = 0
         for name in call_names:
             before = int(mask[name].sum())
+            sex, level = pon_profile(by_name[name].kind, ploidy.get(name, 2))
             ratio[name], mask[name] = pon.normalize(
-                name, ratio[name], mask[name], sex=sex, level=ploidy.get(name, 2) / 2.0
+                name, ratio[name], mask[name], sex=sex, level=level
             )
             corr[name] = (ratio[name] * mean_depth).astype(np.float32)
             n_new_masked += int(mask[name].sum()) - before
-        logger.info("PoN: applied (%s), %d additional bins masked", sex, n_new_masked)
+        logger.info("PoN: applied (chrX %s), %d additional bins masked",
+                    pon_profile("X", ploidy.get("chrX", 2))[0], n_new_masked)
         wave_score_pon, _ = sample_wave_score(ratio, mask, bin_size)
         if wave_score_pon is not None:
             logger.info("%s: wave score after PoN %.3f", sample, wave_score_pon)
-
-    # ---- BAF
-    baf: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
-    for name in call_names:
-        if vaf_bedgraph:
-            baf[name] = baf_mod.read_vaf_bedgraph(vaf_bedgraph, name)
-        elif snv_vcf:
-            baf[name] = baf_mod.read_vaf_vcf(snv_vcf, name, config.extract.baf_min_dp)
-        else:
-            baf[name] = (
-                np.array([], np.uint32), np.array([], np.float32), np.array([], np.uint16)
-            )
 
     # ---- evidence store
     store_path = out_dir / f"{sample}.evidence.zarr"
@@ -206,6 +248,8 @@ def run_call(
         mean_depth=mean_depth,
         depth_mad=stats["depth_mad"],
         ploidy={k: int(v) for k, v in ploidy.items()},
+        karyotype=karyo["karyotype"] if karyo else None,
+        karyotype_note=karyo["note"] if karyo else None,
         depth_source="bedgraph" if depth_bedgraph else "cram",
         insert_mu=insert.mu,
         insert_sigma=insert.sigma,
@@ -324,6 +368,7 @@ def run_call(
         )
 
     vcf_path = out_dir / f"{sample}.vedette.vcf.gz"
-    write_vcf(calls, [by_name[n] for n in call_names], sample, vcf_path, command)
+    write_vcf(calls, [by_name[n] for n in call_names], sample, vcf_path, command,
+              karyotype=karyo["karyotype"] if karyo else None)
     logger.info("%s: %d calls -> %s", sample, len(calls), vcf_path)
     return vcf_path, store_path

@@ -56,9 +56,13 @@ def _ratio_block(store: EvidenceStore, contig: str, b0: int, b1: int) -> np.ndar
     return corr / float(store.meta["mean_depth"])
 
 
-def _sex_of_store(store: EvidenceStore) -> str:
+def _sex_of_store(store: EvidenceStore) -> str | None:
+    """male (X 1, Y 1) / female (X 2, Y 0); None for a sex-chromosome
+    aneuploidy (XXY, XXX, XYY, X0 stores carry their karyotype's ploidy),
+    kept out of the sex-stratified chrX/chrY profiles."""
     ploidy = dict(store.meta.get("ploidy", {}))
-    return "male" if int(ploidy.get("chrX", 2)) == 1 else "female"
+    x, y = int(ploidy.get("chrX", 2)), int(ploidy.get("chrY", 0 if int(ploidy.get("chrX", 2)) == 2 else 1))
+    return {(1, 1): "male", (2, 0): "female"}.get((x, y))
 
 
 def build_pon(
@@ -96,7 +100,7 @@ def build_pon(
 
     contigs = sorted(set.intersection(*(set(s.contigs) for s in stores)))
     by_sex = {"male": [s for s in stores if _sex_of_store(s) == "male"]}
-    by_sex["female"] = [s for s in stores if s not in by_sex["male"]]
+    by_sex["female"] = [s for s in stores if _sex_of_store(s) == "female"]
     logger.info(
         "PoN: %d samples (%d male / %d female), %d contigs, bin %d bp",
         len(stores), len(by_sex["male"]), len(by_sex["female"]), len(contigs), bin_size,
