@@ -15,8 +15,10 @@
   or 3 copies over >= 85 % of its 1 Mb windows and confirmed by the BAF is
   called against that copy number. A trisomy 12 went from 128 to 13 PASS DUP
   on chr12 (the fragments of the trisomy) and 93 to 118 PASS DEL (deletions
-  masked by the diploid baseline). Checked at calling time on 87 genomes: the
-  known trisomies 12 and 21 only.
+  masked by the diploid baseline); a trisomy 21 lost its 15 DUP fragments of
+  0.3 to 11 Mb (none left above 10 kb) and went from 107 to 130 PASS DEL
+  on chr21. Checked at calling time on 87 genomes: the known trisomies 12
+  and 21 only.
 - Store attributes `karyotype`, `karyotype_note`, `aneuploidies`; sample VCF
   headers `##vedette_karyotype` and `##vedette_aneuploidy`. Re-call genomes
   with a sex-chromosome or autosomal aneuploidy to benefit; euploid genomes

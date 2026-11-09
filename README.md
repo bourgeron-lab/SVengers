@@ -289,7 +289,7 @@ chromosome's 1 Mb windows (≥ 20 informative, uncovered gaps skipped) at the sa
 copy number, confirmed by the BAF (median |BAF − 0.5| > 0.12 over ≥ 200 heterozygous sites
 for three copies; a heterozygous-site rate < 0.15 × the genome's for one). A trisomy 12
 went from 128 fragment DUPs to 13 PASS DUPs on chr12, and its deletions came back (93 ->
-118 PASS DEL); on 87 genomes the check found the two known trisomies (12 and 21) and
+118 PASS DEL), a trisomy 21 lost its 15 fragments of 0.3 to 11 Mb; on 87 genomes the check found the two known trisomies (12 and 21) and
 nothing else. A depth gain without the BAF of three copies (a wave, a GC bias) or over
 part of a chromosome keeps the diploid baseline; the trisomy itself is reported by the
 mosaic scan (constitutional anomalies). The ploidy map, `karyotype` and `aneuploidies`
