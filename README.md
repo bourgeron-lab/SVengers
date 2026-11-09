@@ -276,10 +276,25 @@ the exclusion BED, are masked. Depth is GC-corrected with a multiplicative facto
 autosomal bins), then divided by the median corrected autosomal depth: the **copy ratio**,
 1.0 for two copies.
 
-**Sex inference.** The median ratio of chrX and chrY sets the baseline ploidy: a sample is
-male if chrX < 0.75 or chrY > 0.25. Men get ploidy 1 on chrX and chrY, women 2 on chrX
-and 0 on chrY (not called). The ploidy map is written to the store, where re-genotyping,
-the panel of normals and the cohort stages find it.
+**Sex inference and karyotype.** Without a panel of normals, the median ratio of chrX and
+chrY sets the baseline ploidy: a sample is male if chrX < 0.75 or chrY > 0.25. Men get
+ploidy 1 on chrX and chrY, women 2 on chrX and 0 on chrY (not called). With `--pon`, the
+baseline comes from the measured sex-chromosome karyotype instead (section 9: copy number
+on the panel's sex-informative bins, X heterozygosity, BAF): XXY gets chrX 2 / chrY 1, XXX
+chrX 3, XYY chrY 2, X0 chrX 1 / chrY 0; an intermediate or unreadable karyotype keeps the
+threshold rule. The threshold rule read an XXY as a man and an XXX as a woman, and their
+extra X came out as ~170-240 fragmented chrX calls while a deletion of one X was missed.
+**Whole autosomes** at 1 or 3 copies get their own baseline too: ≥ 85 % of the
+chromosome's 1 Mb windows (≥ 20 informative, uncovered gaps skipped) at the same integer
+copy number, confirmed by the BAF (median |BAF − 0.5| > 0.12 over ≥ 200 heterozygous sites
+for three copies; a heterozygous-site rate < 0.15 × the genome's for one). A trisomy 12
+went from 128 fragment DUPs to 13 PASS DUPs on chr12, and its deletions came back (93 ->
+118 PASS DEL); on 87 genomes the check found the two known trisomies (12 and 21) and
+nothing else. A depth gain without the BAF of three copies (a wave, a GC bias) or over
+part of a chromosome keeps the diploid baseline; the trisomy itself is reported by the
+mosaic scan (constitutional anomalies). The ploidy map, `karyotype` and `aneuploidies`
+are written to the store, where re-genotyping, the panel of normals and the cohort stages
+find them.
 
 **Wave QC.** Some libraries carry megabase-scale coverage oscillations that survive GC
 correction. Vedette measures them per genome: the copy ratio is cut into 10 Mb windows
@@ -293,8 +308,10 @@ before any panel of normals (every threshold is calibrated on it); with a panel,
 corrected depth is scored too (`wave_score_pon`).
 
 **Panel-of-normals normalization (`--pon`).** Each bin's ratio is divided by the panel's
-per-bin median (sex-stratified profile on chrX/chrY) and brought back to the sample's
-baseline (ploidy / 2, so a male chrX stays at 0.5). Bins where the panel is too variable
+per-bin median (sex-stratified profile on chrX/chrY: the male profile for one X, the
+female one for two or more) and brought back to that profile's level (0.5 on the male
+chrX/chrY, 1.0 on the female chrX and the autosomes); the HMM then reads the result
+against the contig's own ploidy, so an XXX chrX at 1.5 is three copies, not a gain. Bins where the panel is too variable
 (MAD > 0.30 × median) or systematically low (median < 0.25 × baseline) are masked. If the
 panel carries SVD components, the sample's projection onto them is removed as well. This
 divides out residual systematic bias the GC model cannot see (mappability, reference
@@ -354,6 +371,7 @@ or 1 copy of the variant allele.
 ```
 /                          attrs: schema_version, sample, reference_id, bin_size,
                                   mean_depth, depth_mad, coverage, ploidy{contig},
+                                  karyotype, karyotype_note, aneuploidies{contig},
                                   insert_mu, insert_sigma, insert_n_pairs, depth_source,
                                   wave_score, wave_by_contig, wave_score_pon, pon, ...
 <contig>/depth_raw         float32[n_bins]   raw binned depth
@@ -576,8 +594,8 @@ junction within 10 kb is about one in a thousand. The scan takes ~20 s per genom
 
 ### 9. Sex-chromosome karyotype
 
-The caller sets the X/Y baseline from the inferred sex, after which an extra X is an
-ordinary gain and a missing one is invisible. The report therefore reads, per genome:
+With a panel of normals, the caller sets the X/Y baseline from this karyotype (see "Sex
+inference and karyotype" above); the report shows it, read from the store, per genome:
 
 - `x_cn`, `y_cn`: twice the median **raw** depth of chrX / chrY over the bins where the
   panel of normals tells the sexes apart (X bins at ~1.0 in women and ~0.5 in men, Y bins
@@ -985,7 +1003,9 @@ Coordinates in the TSV outputs are 0-based half-open, except the family export
 (1-based inclusive, see docs/EXPORT.md). VCFs follow the VCF 4.3 rule for symbolic
 alleles: `POS` is the base before the event, `END` its last base (header line
 `##vedette_coords=padded`; VCFs written before v1.4.0 had both one base to the right, and
-are still read correctly).
+are still read correctly). A sample VCF called with a panel records the karyotype that set
+its chrX/chrY baseline (`##vedette_karyotype=XXY`) and any whole-autosome baseline
+(`##vedette_aneuploidy=chr21:3`).
 
 ## Configuration
 
@@ -1068,7 +1088,9 @@ near 48 GB. The SLURM executor submits at most 200 jobs at a time.
 - **Mosaics**: autosomes only, segments ≥ 3 Mb; complete losses cannot be confirmed by
   BAF (no heterozygous sites left).
 - **Karyotype**: only for genomes called with a panel of normals that is still at its
-  recorded path.
+  recorded path; without one the chrX/chrY baseline comes from the threshold rule, and an
+  XXY or XXX is called against XY or XX. Mosaic aneuploidies (45,X/46,XX, a mosaic
+  trisomy) keep the euploid baseline: they are reported, not used as a baseline.
 - **Impact score**: no triplosensitivity (gains of dosage-sensitive genes are
   under-scored), no 5'/3' distinction for partial deletions; inheritance and phenotype are
   not counted.

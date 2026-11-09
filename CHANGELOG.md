@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Sex-chromosome baseline from the measured karyotype** — with `--pon`,
+  `vedette call` sets the chrX/chrY ploidy from the karyotype (copy number on
+  the panel's sex-informative bins, X heterozygosity, BAF) instead of the
+  chrX < 0.75 / chrY > 0.25 threshold, which read an XXY as a man and an XXX
+  as a woman. On dataset_paper, an XXY went from 168 PASS DEL / 4 DUP on chrX
+  to 143 / 45 and an XXX from 109 / 133 to 129 / 45, both now like an XX
+  woman (173 / 42); an XYY gets chrY 2. The PoN level is that of the profile
+  used (0.5 male chrX/chrY, 1.0 female chrX and autosomes), and genomes with
+  a sex-chromosome aneuploidy no longer enter the panel's sex profiles.
+- **Whole-autosome aneuploidies get their own baseline** — a chromosome at 1
+  or 3 copies over >= 85 % of its 1 Mb windows and confirmed by the BAF is
+  called against that copy number. A trisomy 12 went from 128 to 13 PASS DUP
+  on chr12 (the fragments of the trisomy) and 93 to 118 PASS DEL (deletions
+  masked by the diploid baseline). Checked at calling time on 87 genomes: the
+  known trisomies 12 and 21 only.
+- Store attributes `karyotype`, `karyotype_note`, `aneuploidies`; sample VCF
+  headers `##vedette_karyotype` and `##vedette_aneuploidy`. Re-call genomes
+  with a sex-chromosome or autosomal aneuploidy to benefit; euploid genomes
+  are unchanged (autosome calls identical, FILTER as before).
+
 - **`vedette bench cohort`: the de novo gate before a model change** — compares
   cohort runs (the first is the baseline) on de novo calls per child at PASS
   sites with GQ >= 20 in the child and both parents, by type and size, and on
