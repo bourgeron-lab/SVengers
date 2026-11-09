@@ -191,3 +191,53 @@ def test_vcf_header_carries_the_karyotype(tmp_path):
     out = tmp_path / "s.vcf.gz"
     write_vcf([], [Contig("chrX", 1_000_000, "X")], "S", out, karyotype="XXY")
     assert "##vedette_karyotype=XXY" in str(pysam.VariantFile(str(out)).header)
+
+
+def _autosomes(levels, baf_dev=None, het=None, n_bins=40_000, seed=0):
+    """ratio/mask/baf dicts at 1 kb bins; levels: {contig: copies}."""
+    rng = np.random.default_rng(seed)
+    ratio, mask, baf = {}, {}, {}
+    for c, k in levels.items():
+        ratio[c] = (k / 2 + rng.normal(0, 0.08, n_bins)).astype(np.float32)
+        mask[c] = np.zeros(n_bins, bool)
+        n = 30_000
+        pos = np.sort(rng.integers(0, n_bins * 1000, n)).astype(np.uint32)
+        rate = (het or {}).get(c, 0.6)
+        is_het = rng.random(n) < rate
+        dev = (baf_dev or {}).get(c, 0.0)
+        vaf = np.where(is_het, 0.5 + rng.choice([-1, 1], n) * dev + rng.normal(0, 0.06, n), 1.0)
+        baf[c] = (pos, np.clip(vaf, 0, 1).astype(np.float32), np.zeros(n, np.uint16))
+    return ratio, mask, baf
+
+
+def test_whole_chromosome_trisomy_and_monosomy():
+    from vedette.karyotype import autosomal_aneuploidies
+
+    lv = {"chr1": 2, "chr2": 2, "chr12": 3, "chr21": 3, "chr22": 1, "chr7": 2}
+    r, m, b = _autosomes(lv, baf_dev={"chr12": 1 / 6, "chr21": 1 / 6}, het={"chr22": 0.003})
+    assert autosomal_aneuploidies(r, m, b, 1000, list(lv)) == {"chr12": 3, "chr21": 3, "chr22": 1}
+
+
+def test_depth_alone_is_not_an_aneuploidy():
+    """A chromosome read at 3 copies without the BAF of three (a wave, a GC
+    bias) or a gain over part of a chromosome keeps the diploid baseline."""
+    from vedette.karyotype import autosomal_aneuploidies
+
+    lv = {"chr1": 2, "chr19": 3, "chr18": 2}
+    r, m, b = _autosomes(lv)                       # chr19 BAF stays at 0.5
+    r["chr18"][: 15_000] = 1.5                     # 15 of 40 Mb gained
+    assert autosomal_aneuploidies(r, m, b, 1000, list(lv)) == {}
+    # a mosaic level (2.5 copies) is not an integer baseline either
+    r, m, b = _autosomes({"chr1": 2, "chr12": 2.5}, baf_dev={"chr12": 0.08})
+    assert autosomal_aneuploidies(r, m, b, 1000, ["chr1", "chr12"]) == {}
+
+
+def test_vcf_header_carries_the_aneuploidies(tmp_path):
+    import pysam
+
+    from vedette.reference import Contig
+    from vedette.vcfout import write_vcf
+
+    out = tmp_path / "s.vcf.gz"
+    write_vcf([], [Contig("chr21", 1_000_000, "autosome")], "S", out, aneuploidies={"chr21": 3})
+    assert "##vedette_aneuploidy=chr21:3" in str(pysam.VariantFile(str(out)).header)

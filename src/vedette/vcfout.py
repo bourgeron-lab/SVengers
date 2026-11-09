@@ -151,12 +151,16 @@ def write_vcf(
     path: str | Path,
     command: str = "",
     karyotype: str | None = None,
+    aneuploidies: dict[str, int] | None = None,
 ) -> None:
     header = make_header(contigs, sample, command)
     if karyotype:
         # the sex-chromosome karyotype that set the chrX/chrY baseline: an
         # extra or missing X/Y is not called as fragments against XX/XY
         header.add_line(f"##vedette_karyotype={karyotype}")
+    if aneuploidies:
+        # whole autosomes called against their own copy number (trisomy: 3)
+        header.add_line("##vedette_aneuploidy=" + ",".join(f"{c}:{k}" for c, k in aneuploidies.items()))
     order = {c.name: i for i, c in enumerate(contigs)}
     lengths = {c.name: c.length for c in contigs}
     calls = sorted(calls, key=lambda c: (order.get(c.contig, 1_000_000), c.start))

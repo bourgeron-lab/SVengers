@@ -23,7 +23,7 @@ from .extract import baf as baf_mod
 from .extract import depth as depth_mod
 from .extract.store import EvidenceStoreWriter, InsertModel
 from .genotype.likelihood import ContigData, Genotyper
-from .karyotype import sex_ploidy
+from .karyotype import autosomal_aneuploidies, sex_ploidy
 from .merge_candidates import reconcile
 from .reference import (
     Contig,
@@ -203,6 +203,13 @@ def run_call(
         logger.info("%s: karyotype %s%s -> chrX %s, chrY %s", sample, karyo["karyotype"],
                     f' ({karyo["note"]})' if karyo["note"] else "",
                     ploidy.get("chrX"), ploidy.get("chrY"))
+    # whole autosomes at 1 or 3 copies (BAF-confirmed): their own baseline
+    aneu = autosomal_aneuploidies(
+        ratio, mask, baf, bin_size, [n for n in autosomes if by_name[n].kind == "autosome"]
+    )
+    for name, k in aneu.items():
+        ploidy[name] = k
+        logger.info("%s: %s at %d copies (whole chromosome) -> baseline %d", sample, name, k, k)
 
     # ---- wave QC (megabase-scale coverage oscillations surviving GC
     #      correction), on the depth as sequenced: every threshold built on
@@ -250,6 +257,7 @@ def run_call(
         ploidy={k: int(v) for k, v in ploidy.items()},
         karyotype=karyo["karyotype"] if karyo else None,
         karyotype_note=karyo["note"] if karyo else None,
+        aneuploidies={k: int(v) for k, v in aneu.items()} or None,
         depth_source="bedgraph" if depth_bedgraph else "cram",
         insert_mu=insert.mu,
         insert_sigma=insert.sigma,
@@ -369,6 +377,6 @@ def run_call(
 
     vcf_path = out_dir / f"{sample}.vedette.vcf.gz"
     write_vcf(calls, [by_name[n] for n in call_names], sample, vcf_path, command,
-              karyotype=karyo["karyotype"] if karyo else None)
+              karyotype=karyo["karyotype"] if karyo else None, aneuploidies=aneu)
     logger.info("%s: %d calls -> %s", sample, len(calls), vcf_path)
     return vcf_path, store_path
