@@ -744,6 +744,48 @@ def bench_cohort(
         raise typer.Exit(1)
 
 
+@bench_app.command("pregate")
+def bench_pregate(
+    runs: list[str] = typer.Argument(
+        ..., help="Filter-only runs [name=]RUN_DIR (samples/<S>/<S>.filtered.vcf.gz); the FIRST is the baseline"
+    ),
+    out: Optional[Path] = typer.Option(None, help="Comparison table (TSV)"),
+    rescue_min_sq: float = typer.Option(1.0, help="SQ from which a LowSQ call is rescuable (the merge's --rescue-min-sq)"),
+    max_increase: float = typer.Option(0.25, help="Relative rise of PASS calls per genome that raises an alarm"),
+    max_increase_rescuable: float = typer.Option(0.5, help="...of rescuable LowSQ calls per genome"),
+    min_abs: float = typer.Option(0.5, help="...and absolute rise (calls per genome)"),
+    jobs: int = typer.Option(0, help="Samples read in parallel (0 = every allowed CPU)"),
+) -> None:
+    """Pre-gate before the cohort run: PASS and rescuable calls per genome vs a baseline.
+
+    Minutes on a filter-only run instead of the cohort gate's merge + genotype +
+    PED. Exit code 1 when a candidate raises an alarm; an OK still needs `bench cohort`."""
+    from .bench.pregate import load_filtered, pregate, summary_lines, write_table
+    from .parallel import resolve_jobs
+
+    if len(runs) < 2:
+        raise typer.BadParameter("give a baseline and at least one candidate run")
+    specs = [tuple(r.split("=", 1)) if "=" in r else (None, r) for r in runs]
+    stats = [load_filtered(p, name=n, rescue_min_sq=rescue_min_sq, jobs=resolve_jobs(jobs)) for n, p in specs]
+    for s in stats:
+        typer.echo("\n".join(summary_lines(s)))
+    rows, failed = [], []
+    for cand in stats[1:]:
+        r, alarms = pregate(stats[0], cand, max_increase=max_increase,
+                            max_increase_rescuable=max_increase_rescuable, min_abs=min_abs)
+        rows += r
+        typer.echo(f"-- {cand.name} vs {stats[0].name}: {'ALARM' if alarms else 'OK'}")
+        for a in alarms:
+            typer.echo(f"   {a}")
+        if alarms:
+            failed.append(cand.name)
+    if out:
+        write_table(rows, out)
+        typer.echo(f"table -> {out}")
+    if failed:
+        raise typer.Exit(1)
+
+
 def _load_cohort_run(task):
     from .bench.cohort import load_run
 

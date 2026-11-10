@@ -871,7 +871,7 @@ The harness: `vedette bench truth` (stratified Truvari evaluation by size, segdu
 tandem-repeat context), `bench compare` (several callers, VCF or WisecondorX entries),
 `bench dup-truth` (tandem-duplication subset of an insertion-represented truth, a fair
 denominator for DUP recall), `bench trios` (violation / transmission sweep), `bench cohort`
-(the gate before deploying a model, below). A one-page
+(the gate before deploying a model, below) and `bench pregate` (its quick first step). A one-page
 illustrated overview is in `docs/vedette_overview.html`.
 
 **Deploying a new filter model.** A truth-set holdout, the per-genome PASS median of a
@@ -893,6 +893,24 @@ strata of >= 10 children): the few strongly wavy children can take most of a mod
 extra calls while the cohort median stays flat. On dataset_paper, a candidate that kept
 the cohort medians took the 27 children at wave >= 0.20 from 18 to 34 de novo DEL
 >= 10 kb each.
+
+The cohort run takes hours; its first step, the per-sample filter, takes minutes and is
+where these floods start. Run it alone (`--steps filter`), then
+
+```bash
+vedette bench pregate prod=runs/COHORT new=runs/COHORT_candidate --out pregate.tsv
+```
+
+compares, per genome, the carrier calls the candidate PASSes and the LowSQ-only calls at
+SQ >= 1 that the merge loads as sub-threshold members (enough of them rescue a site with
+no PASS member, so a model that only lifts the SQ of the calls it rejects still floods
+the cohort). A rise of the mean per genome of 25 % for PASS calls, 50 % for rescuable
+ones, and at least 0.5 call per genome, in any type and size class, over all genomes or
+within a wave stratum, raises an alarm. On dataset_paper (2,670 genomes) it gives the
+cohort gate's verdict for all seven candidates the gate had judged, among them one that
+took the DUP 1-10 kb PASS calls from 812 to 5,482 (de novo median per child 1 -> 7)
+while the panel showed its DUPs falling by 11 % per genome. An OK at the pre-gate still
+needs `bench cohort`.
 
 ## Commands
 
@@ -918,7 +936,7 @@ the cohort medians took the 27 children at wave >= 0.20 from 18 to 34 de novo DE
 | `vedette labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
 | `vedette site-map` | correspondence of cohort sites between two runs (same, moved, split, merged, lost, new) |
 | `vedette train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
-| `vedette bench truth` / `compare` / `dup-truth` / `trios` / `cohort` | benchmark harness; `cohort` = de novo gate before a model change |
+| `vedette bench truth` / `compare` / `dup-truth` / `trios` / `cohort` / `pregate` | benchmark harness; `cohort` = de novo gate before a model change, `pregate` = its quick first step on filter-only runs |
 
 Every command has `--help`. Lists of files can be passed as `@filelist` (one path per
 line) to `merge`, `cohort-filter --genotypes` and `pon build`.

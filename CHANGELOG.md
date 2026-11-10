@@ -19,6 +19,19 @@
   candidate (IGV deletion verdicts only), flat on every cohort median, from
   18 to 34 de novo DEL >= 10 kb.
 
+- **`vedette bench pregate`: the cohort gate's quick first step** — on
+  filter-only runs (`samples/<S>/<S>.filtered.vcf.gz`), compares per genome
+  the carrier calls a candidate PASSes and its rescuable LowSQ calls (SQ >=
+  the merge's `--rescue-min-sq`, which can rescue a site with no PASS
+  member), by type and size, over all genomes and within the wave strata. A
+  rise of the mean per genome of 25 % (PASS) or 50 % (rescuable) and 0.5
+  call raises an alarm (exit code 1). On dataset_paper (2,670 genomes,
+  minutes instead of ~2.5 h) it gives the cohort gate's verdict for the
+  seven candidates the gate had judged, among them one that took the DUP
+  1-10 kb PASS calls from 812 to 5,482 and the rescuable ones from 45k to
+  136k (children's de novo DUP 1-10 kb median 1 -> 7) while the panel showed
+  its DUPs falling by 11 %.
+
 ## v1.14.0 — 2026-11-07
 
 `vedette bnd` calibrates standalone inversions on trios: same-strand
