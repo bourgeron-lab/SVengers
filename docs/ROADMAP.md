@@ -76,8 +76,13 @@ sur les 7 candidats jugés) ; seulement ensuite le run complet et
 **4. Plan de publication : état** (plan détaillé plus bas, 2026-10-14).
 1. Évaluation hors échantillon : en partie (chiffres v12b sans HG002) ;
    manque une vérité indépendante de GIAB (Platinum Pedigree, HGSVC).
-2. Comparaisons à d'autres outils (CNVnator, GATK-gCNV, Canvas, Manta,
-   DELLY, dysgu) : pas faites, principal verrou ; `bench compare` est prêt.
+2. Comparaisons à d'autres outils : en partie. HG002 GIAB v5.0q avec
+   Manta, DELLY, dysgu (2026-09-09, `resources/giab/comparison_final`,
+   à re-noter contre v12b) ; ClinSV (lumpy + CNVnator) et WisecondorX
+   existent pour ~4 000 génomes GHFC dont dataset_paper (comparaison de
+   trios possible sans rien relancer). Manquent : callers de profondeur
+   sur HG002 (CNVnator, ClinSV ; GATK-gCNV, Canvas non installés),
+   métriques de trio comparées entre outils, Platinum Pedigree.
 3. Validation orthogonale (puce, MLPA, délétions SHANK3 de PMS) : pas
    faite, seulement des relectures IGV.
 4. Vagues : PoN médiane en production, SVD écartée, `wave_score` toujours
