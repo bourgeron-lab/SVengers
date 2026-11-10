@@ -514,6 +514,24 @@ GQ ≥ 30 and both parents GQ ≥ 20; its `DNQ` is the lowest of the three GQs; 
 candidates, the **Mendelian-violation rate** and the **transmission rate** (expected ~50 %
 from a heterozygous parent). Both are specificity metrics that need no truth set.
 
+**De novo and the child's own call** (`--calls-dir DIR`, the per-sample
+`DIR/<S>/<S>.filtered.vcf.gz`; the Nextflow pipeline passes its `samples/`). The cohort
+genotyper re-genotypes every site in every sample, so a child can come out a carrier at a
+site other samples nominated while the caller found nothing in that child. A true de novo
+is private to the child, which should hold a call there. A de novo whose child has no call
+of the same type at the site (reciprocal overlap ≥ 50 %, any FILTER, carrier genotype) is
+labelled `denovo_genotype_only` and leaves the `n_denovo` count (summary column
+`n_denovo_genotype_only`); the report's `child_call` column gives the FILTER of the
+child's call (`none` without one). Low-GQ de novo keep `denovo_lowconf`, so `denovo` +
+`denovo_genotype_only` is the former de novo count. On dataset_paper (665 trios), 57,705
+of the 63,934 de novo at PASS sites with GQ ≥ 20 in the trio had no call of the child,
+leaving a median of 7 per child (DEL 6, DUP 1) instead of 27. In a blind image review of
+40 of them, none of the 26 without a call was a de novo at the site (3 were fragments of a
+larger event the child's own call covers), and 10 of 14 were with a PASS call of the
+child, no parental call and a site private to the child; a call of the child is necessary,
+not sufficient (the 7 per child still hold inherited variants mis-genotyped in a parent
+and recurrent sites).
+
 **X- and Y-linked inheritance.** The child's sex is the ploidy its own genotypes show on
 chrX outside the pseudo-autosomal regions (pedigree sex as fallback):
 
@@ -925,6 +943,9 @@ strata of >= 10 children): the few strongly wavy children can take most of a mod
 extra calls while the cohort median stays flat. On dataset_paper, a candidate that kept
 the cohort medians took the 27 children at wave >= 0.20 from 18 to 34 de novo DEL
 >= 10 kb each.
+The gate counts `denovo` and `denovo_genotype_only` alike, so runs annotated with and
+without the child's own calls compare: it measures a burden that is mostly genotyping
+artifact, and prints the de novo confirmed by a call of the child beside it.
 
 The cohort run takes hours; its first step, the per-sample filter, takes minutes and is
 where these floods start. Run it alone (`--steps filter`), then
@@ -1012,9 +1033,11 @@ sr cig baf_n baf_dev`.
 from `merge` (`NSAMPLES`, `SQMAX`, `RESCUE`, …) is carried over.
 
 **Mendelian report**: `site_id contig start end svtype family_id child child_gt child_gq
-father_gt father_gq mother_gt mother_gq inheritance violation dnq`; only informative rows
-(child carrier or violation). **Summary**: `family_id child n_genotyped n_child_carrier
-n_denovo n_violation violation_rate transmission_rate`.
+father_gt father_gq mother_gt mother_gq inheritance violation dnq child_call`; only
+informative rows (child carrier or violation); `child_call` is filled for de novo rows
+with `--calls-dir`. **Summary**: `family_id child n_genotyped n_child_carrier n_denovo
+n_violation violation_rate transmission_rate n_denovo_genotype_only` (`NA` without
+`--calls-dir`).
 
 **Mosaic TSV**: `sample contig start end svtype cn fraction baf_dev baf_expected n_windows
 mosaic` (`mosaic` = 1 for a fractional segment, 0 for a whole-copy one).

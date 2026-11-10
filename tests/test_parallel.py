@@ -152,6 +152,15 @@ def test_cohort_stages_parallel_equal_serial(cohort):
     assert _text(tmp / "m1.tsv") == _text(tmp / "m3.tsv")
     assert _text(tmp / "s1.tsv") == _text(tmp / "s3.tsv")
     assert len(_text(tmp / "m1.tsv").splitlines()) > 50
+    # the child's own calls: same rows serial and parallel, and some de novo of each kind
+    own = tmp / "run" / "samples"
+    o1 = run_ped_annotate(cohort_vcf, ped, tmp / "o1.tsv", tmp / "os1.tsv", jobs=1, calls_dir=own)
+    o3 = run_ped_annotate(cohort_vcf, ped, tmp / "o3.tsv", tmp / "os3.tsv", jobs=3, calls_dir=own)
+    assert [vars(x) for x in o1] == [vars(x) for x in o3]
+    assert _text(tmp / "o1.tsv") == _text(tmp / "o3.tsv")
+    inh = [ln.split("\t")[13] for ln in _text(tmp / "o1.tsv").splitlines()[1:]]
+    assert "denovo_genotype_only" in inh
+    assert sum(x.n_denovo + x.n_denovo_genotype_only for x in o1) == sum(x.n_denovo for x in s1)
 
     assert sweep(cohort_vcf, ped, jobs=1) == sweep(cohort_vcf, ped, jobs=3)
 

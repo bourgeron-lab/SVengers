@@ -73,6 +73,20 @@
   dataset_paper quiet in every wave stratum: de novo median per child 27 as
   in production, recurrent de novo sites 2,483 vs 2,480, PASS sites DEL
   59,727 vs 59,598 and DUP 14,083 vs 14,825; the pre-gate is quiet too.
+- **`vedette ped-annotate --calls-dir`: a de novo needs a call of the child**
+  — the cohort genotyper re-genotypes every site in every sample, so a child
+  can be a carrier at a site other samples nominated while the caller found
+  nothing in that child. With the per-sample filtered VCFs, a de novo whose
+  child holds no call of the same type at the site (reciprocal overlap >= 50
+  %, any FILTER) becomes `denovo_genotype_only`, outside `n_denovo`; the
+  report gains `child_call`, the summary `n_denovo_genotype_only`. On
+  dataset_paper, 57,705 of the 63,934 de novo at PASS sites (GQ >= 20) had
+  no call of the child: median 7 per child instead of 27. A blind image
+  review of 40 found no de novo among the 26 without a call and 10 among 14
+  with a private PASS call and no parental call. The Nextflow pipeline passes
+  its `samples/`; `bench cohort` gates on both labels (comparable with older
+  runs) and prints the confirmed ones; the HTML report's de novo tables keep
+  `denovo` only.
 
 ## v1.14.0 — 2026-11-07
 

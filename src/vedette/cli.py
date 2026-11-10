@@ -499,6 +499,10 @@ def ped_annotate(
     pedigree: Path = typer.Option(..., help="Pedigree TSV"),
     out_report: Path = typer.Option(..., help="Per-trio-site report TSV"),
     out_summary: Optional[Path] = typer.Option(None, help="Per-trio summary TSV"),
+    calls_dir: Optional[Path] = typer.Option(
+        None, help="Per-sample calls <DIR>/<S>/<S>.filtered.vcf.gz: a de novo without a call of the "
+        "child at the site becomes denovo_genotype_only"
+    ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Mendelian consistency, inheritance and de novo annotation on a cohort VCF."""
@@ -508,13 +512,14 @@ def ped_annotate(
 
     stats = run_ped_annotate(
         cohort_vcf, parse_ped(pedigree), out_report, out_summary,
-        jobs=resolve_jobs(jobs),
+        jobs=resolve_jobs(jobs), calls_dir=calls_dir,
     )
     for st in stats:
         tr = f"{st.transmission_rate:.3f}" if st.n_transmit_opportunity else "NA"
         typer.echo(
             f"{st.family_id}/{st.child}: {st.n_genotyped} genotyped, "
-            f"{st.n_child_carrier} carrier, {st.n_denovo} de novo, "
+            f"{st.n_child_carrier} carrier, {st.n_denovo} de novo"
+            + (f" (+{st.n_denovo_genotype_only} genotype-only)" if calls_dir else "") + ", "
             f"MVR {st.violation_rate:.3f}, transmission {tr}"
         )
 
