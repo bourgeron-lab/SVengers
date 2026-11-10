@@ -12,6 +12,20 @@ regions only "carrier child, both parents 0/0" counts. The child's sex is
 the ploidy its own genotypes show on chrX (reference CN 1 or 2), the
 pedigree sex as a fallback. Read as autosomes, every son 1/1 on chrX with a
 0/1 mother and a 0/0 father was a violation.
+
+De novo and the child's own call. The cohort genotyper force-genotypes every
+site in every sample, so a child can come out a carrier at a site other
+samples nominated while the caller found nothing in that child. A true de
+novo is private to the child: the child should hold a call there. Given the
+per-sample filtered VCFs (``calls_dir``), a de novo whose child has no call of
+the same type at the site (reciprocal overlap >= ``own_overlap``, any FILTER)
+is labelled ``denovo_genotype_only`` and does not count in ``n_denovo``; the
+report's ``child_call`` column gives the FILTER of the child's call (``none``
+when absent). On dataset_paper (665 trios), 90 % of the PASS GQ >= 20 de novo
+had no call of the child; in a blind image review of 40 of them, none of the
+26 without a call was a de novo at the site (3 were fragments of a larger
+event the child's own call covers), while 10 of 14 with a PASS call of the
+child, no parental call and a private site were.
 """
 
 from __future__ import annotations
@@ -31,7 +45,7 @@ logger = logging.getLogger(__name__)
 REPORT_COLUMNS = [
     "site_id", "contig", "start", "end", "svtype", "family_id", "child",
     "child_gt", "child_gq", "father_gt", "father_gq", "mother_gt", "mother_gq",
-    "inheritance", "violation", "dnq",
+    "inheritance", "violation", "dnq", "child_call",
 ]
 
 
@@ -43,6 +57,7 @@ class TrioStats:
     n_child_carrier: int = 0
     n_denovo: int = 0
     n_violation: int = 0
+    n_denovo_genotype_only: int = 0   # high-confidence de novo without a call of the child
     n_transmit_opportunity: int = 0   # parent het-carrier, child genotyped
     n_transmitted: int = 0
 
@@ -174,15 +189,90 @@ def hemizygous_children(
     return male
 
 
+class OwnCalls:
+    """The child's own calls at a site, from its filtered single-sample VCF.
+
+    A region worker walks the sites in order and checks every child at each,
+    so a child's carrier calls are loaded once per contig (one tabix fetch)
+    and the cache is dropped when the contig changes."""
+
+    def __init__(self, paths: dict[str, str], min_overlap: float = 0.5):
+        self.paths = paths
+        self.min_overlap = min_overlap
+        self._contig: str | None = None
+        self._cache: dict[str, dict] = {}
+
+    def _load(self, sample: str, contig: str) -> dict:
+        import numpy as np
+
+        if contig != self._contig:
+            self._contig, self._cache = contig, {}
+        got = self._cache.get(sample)
+        if got is not None:
+            return got
+        by: dict[str, list] = {}
+        with pysam.VariantFile(self.paths[sample]) as vf:
+            spec, name = spec_coords(vf.header), list(vf.header.samples)[0]
+            try:
+                recs = vf.fetch(contig)
+            except ValueError:
+                recs = []
+            for rec in recs:
+                t = rec.info.get("SVTYPE")
+                gt = rec.samples[name].get("GT")
+                if t is None or gt is None or not any(a == 1 for a in gt if a is not None):
+                    continue
+                s, e = span(rec, spec)
+                flt = ";".join(rec.filter.keys()) or "PASS"
+                by.setdefault(t, []).append((s, e, flt, float(rec.samples[name].get("SQ") or 0.0)))
+        got = {t: (np.array([x[0] for x in v]), np.array([x[1] for x in v]),
+                   [x[2] for x in v], np.array([x[3] for x in v])) for t, v in by.items()}
+        self._cache[sample] = got
+        return got
+
+    def status(self, sample: str, contig: str, start: int, end: int, svtype: str) -> str | None:
+        """FILTER of the child's best matching carrier call ('PASS' first, then
+        the highest SQ), 'none' without one, None when the sample has no VCF."""
+        import numpy as np
+
+        if sample not in self.paths:
+            return None
+        x = self._load(sample, contig).get(svtype)
+        if x is None:
+            return "none"
+        s, e, flt, sq = x
+        ov = np.minimum(e, end) - np.maximum(s, start)
+        m = (ov > 0) & (ov >= self.min_overlap * (end - start)) & (ov >= self.min_overlap * (e - s))
+        idx = np.flatnonzero(m)
+        if not len(idx):
+            return "none"
+        return flt[min(idx, key=lambda i: (flt[i] != "PASS", -sq[i]))]
+
+    def close(self) -> None:
+        self._contig, self._cache = None, {}
+
+
+def own_call_paths(calls_dir: str | Path, samples) -> dict[str, str]:
+    """{sample: <calls_dir>/<S>/<S>.filtered.vcf.gz} for those present (Nextflow layout)."""
+    out = {}
+    for s in samples:
+        p = Path(calls_dir) / s / f"{s}.filtered.vcf.gz"
+        if p.exists():
+            out[s] = str(p)
+    return out
+
+
 def _ped_region(task) -> tuple[dict[str, list[int]], str]:
     """One region of the cohort VCF: per-child counters (n_genotyped,
     n_child_carrier, n_denovo, n_violation, n_transmit_opportunity,
-    n_transmitted) and the report rows written to ``part`` (no header)."""
+    n_transmitted, n_denovo_genotype_only) and the report rows written to
+    ``part`` (no header)."""
     from ..parallel import fetch_region
 
     (cohort_vcf, region, usable, part,
-     min_denovo_child_gq, min_denovo_parent_gq, male) = task
-    counters = {child.sample_id: [0, 0, 0, 0, 0, 0] for child, _f, _m in usable}
+     min_denovo_child_gq, min_denovo_parent_gq, male, own_paths, own_overlap) = task
+    own = OwnCalls(own_paths, own_overlap) if own_paths else None
+    counters = {child.sample_id: [0, 0, 0, 0, 0, 0, 0] for child, _f, _m in usable}
     with pysam.VariantFile(str(cohort_vcf)) as vcf, open(part, "w", newline="") as fh:
         # decode only the trio members' genotypes
         vcf.subset_samples(sorted({ind.sample_id for t in usable for ind in t}))
@@ -213,13 +303,21 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                         st[4] += 1
                         if sum(cgt) > 0:
                             st[5] += 1
-                dnq = ""
+                dnq = child_call = ""
                 if inheritance == "denovo":
-                    if cgq >= min_denovo_child_gq and min(fgq, mgq) >= min_denovo_parent_gq:
+                    confident = cgq >= min_denovo_child_gq and min(fgq, mgq) >= min_denovo_parent_gq
+                    if own is not None:
+                        child_call = own.status(
+                            child.sample_id, rec.contig, start, end, rec.info.get("SVTYPE", "")
+                        ) or ""
+                    if not confident:
+                        inheritance = "denovo_lowconf"
+                    elif child_call == "none":
+                        inheritance = "denovo_genotype_only"
+                        st[6] += 1
+                    else:
                         st[2] += 1
                         dnq = str(min(cgq, fgq, mgq))
-                    else:
-                        inheritance = "denovo_lowconf"
                 if sum(cgt) == 0 and not violation:
                     continue  # only report informative rows
                 writer.writerow({
@@ -232,8 +330,10 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                     "father_gt": "/".join(map(str, fgt)), "father_gq": fgq,
                     "mother_gt": "/".join(map(str, mgt)), "mother_gq": mgq,
                     "inheritance": inheritance,
-                    "violation": int(violation), "dnq": dnq,
+                    "violation": int(violation), "dnq": dnq, "child_call": child_call,
                 })
+    if own is not None:
+        own.close()
     return counters, part
 
 
@@ -245,9 +345,13 @@ def run_ped_annotate(
     min_denovo_child_gq: int = 30,
     min_denovo_parent_gq: int = 20,
     jobs: int = 1,
+    calls_dir: str | Path | None = None,
+    own_overlap: float = 0.5,
 ) -> list[TrioStats]:
     """``jobs`` > 1 (indexed VCF) annotates position-ordered regions in
-    parallel and joins their rows in file order: same report as serial."""
+    parallel and joins their rows in file order: same report as serial.
+    ``calls_dir`` (``<dir>/<S>/<S>.filtered.vcf.gz``) checks each de novo
+    against the child's own calls (module docstring)."""
     import shutil
     import tempfile
 
@@ -266,12 +370,16 @@ def run_ped_annotate(
     logger.info("ped: %d/%d trios present in the VCF", len(usable), len(trios))
     male = hemizygous_children(cohort_vcf, usable, pedigree)
     logger.info("ped: %d children with one chrX", len(male))
+    own_paths: dict[str, str] = {}
+    if calls_dir is not None:
+        own_paths = own_call_paths(calls_dir, sorted({t[0].sample_id for t in usable}))
+        logger.info("ped: own calls of %d/%d children under %s", len(own_paths), len(usable), calls_dir)
     regions = split_regions(cohort_vcf, jobs)
     tmp = tempfile.mkdtemp(prefix=".ped_parts_", dir=Path(out_report).parent)
     try:
         tasks = [
             (str(cohort_vcf), region, usable, f"{tmp}/part{k:05d}.tsv",
-             min_denovo_child_gq, min_denovo_parent_gq, male)
+             min_denovo_child_gq, min_denovo_parent_gq, male, own_paths, own_overlap)
             for k, region in enumerate(regions)
         ]
         parts = [f"{tmp}/header.tsv"]
@@ -287,6 +395,7 @@ def run_ped_annotate(
                 st.n_violation += c[3]
                 st.n_transmit_opportunity += c[4]
                 st.n_transmitted += c[5]
+                st.n_denovo_genotype_only += c[6]
         concat_text(parts, out_report)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -298,7 +407,7 @@ def run_ped_annotate(
             writer.writerow([
                 "family_id", "child", "n_genotyped", "n_child_carrier",
                 "n_denovo", "n_violation", "violation_rate",
-                "transmission_rate",
+                "transmission_rate", "n_denovo_genotype_only",
             ])
             for st in result:
                 writer.writerow([
@@ -306,6 +415,7 @@ def run_ped_annotate(
                     st.n_denovo, st.n_violation,
                     f"{st.violation_rate:.4f}",
                     f"{st.transmission_rate:.4f}" if st.n_transmit_opportunity else "NA",
+                    st.n_denovo_genotype_only if own_paths else "NA",
                 ])
     for st in result:
         logger.info(

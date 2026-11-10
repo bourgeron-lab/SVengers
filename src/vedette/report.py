@@ -234,6 +234,7 @@ document.querySelectorAll("th").forEach((th, i) => {
 _INHERIT_FR = {
     "denovo": "de novo",
     "denovo_lowconf": "de novo (GQ faible)",
+    "denovo_genotype_only": "de novo (génotypage seul, sans appel de l'enfant)",
     "maternal": "maternel",
     "paternal": "paternel",
     "biparental": "biparental",

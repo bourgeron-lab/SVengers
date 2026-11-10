@@ -20,7 +20,8 @@ process VEDETTE_PED {
         --jobs ${task.cpus} \\
         --pedigree '${params.pedigree}' \\
         --out-report mendel_report.tsv \\
-        --out-summary mendel_summary.tsv
+        --out-summary mendel_summary.tsv \\
+        --calls-dir '${params.outdir}/samples'
     ${params.vedette_bin} bench trios ${cohort_vcf} \\
         --jobs ${task.cpus} \\
         --pedigree '${params.pedigree}' \\

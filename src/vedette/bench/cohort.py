@@ -26,6 +26,12 @@ using the wave score can stay quiet on the cohort median while flooding the
 few wavy children (a candidate took 27 children at wave >= 0.20 from 18 to
 460 de novo DUPs >= 1 kb each), and the strata also show whether a rise is
 confined to them. A stratum needs ``MIN_STRATUM`` children to be gated.
+
+The gate counts every de novo, with or without a call of the child at the
+site (``denovo`` and ``denovo_genotype_only`` from ``ped-annotate
+--calls-dir``), so that runs annotated with and without the child's own calls
+stay comparable: it measures a burden that is mostly genotyping artifact. The
+de novo confirmed by the child's own call are reported beside it.
 """
 
 from __future__ import annotations
@@ -43,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 SIZE_CLASSES = ("<1kb", "1-10kb", ">=10kb")
 SVTYPES = ("DEL", "DUP")
+DENOVO = ("denovo", "denovo_genotype_only")
 BINS = [("all", "all")] + [(t, s) for t in SVTYPES for s in ("all", *SIZE_CLASSES)]
 
 # wave QC strata: below the calibrated warning threshold, wavy, strongly wavy
@@ -77,6 +84,7 @@ class RunStats:
     transmission: float = float("nan")
     children: list[str] = field(default_factory=list)
     wave: dict[str, float] = field(default_factory=dict)
+    confirmed: dict[tuple[str, str], list[int]] | None = None  # de novo with the child's own call
 
     def values(self, key: tuple[str, str], only: set[str] | None = None) -> list[int]:
         if only is None:
@@ -141,18 +149,24 @@ def load_run(
         i_id, i_inh, i_child = col["site_id"], col["inheritance"], col["child"]
         i_s, i_e, i_t = col["start"], col["end"], col["svtype"]
         i_gq = [col["child_gq"], col["father_gq"], col["mother_gq"]]
+        own = "child_call" in col
+        conf: dict[str, Counter] = defaultdict(Counter)
         for line in fh:
-            if "\tdenovo\t" not in line:  # fast path: the report is ~10 GB
+            if "\tdenovo" not in line:  # fast path: the report is ~10 GB
                 continue
             f = line.rstrip("\n").split("\t")
-            if f[i_inh] != "denovo" or f[i_id] not in ids:
+            if f[i_inh] not in DENOVO or f[i_id] not in ids:
                 continue
             if min(int(f[i] or 0) for i in i_gq) < min_gq:
                 continue
             sc, t = size_class(int(f[i_e]) - int(f[i_s])), f[i_t]
+            keys = (("all", "all"), (t, "all"), (t, sc))
             c = counts[f[i_child]]
-            for key in (("all", "all"), (t, "all"), (t, sc)):
+            for key in keys:
                 c[key] += 1
+            if f[i_inh] == "denovo":
+                for key in keys:
+                    conf[f[i_child]][key] += 1
             per_site[f[i_id]] += 1
 
     rec = [k for k in per_site.values() if k >= recurrent]
@@ -170,6 +184,7 @@ def load_run(
         transmission=statistics.median(tr) if tr else float("nan"),
         children=children,
         wave=read_waves(d.parent, children),
+        confirmed={k: [conf[c][k] for c in children] for k in BINS} if own else None,
     )
 
 
@@ -240,6 +255,14 @@ def summary_lines(s: RunStats) -> list[str]:
             f"{s.median(('all', 'all'), only):g}, DEL {s.median(('DEL', 'all'), only):g}, "
             f"DUP {s.median(('DUP', 'all'), only):g} (1-10kb {s.median(('DUP', '1-10kb'), only):g}, "
             f">=10kb {s.median(('DUP', '>=10kb'), only):g})"
+        )
+    if s.confirmed is not None:
+        c = s.confirmed
+        med = lambda k: statistics.median(c[k]) if c[k] else 0  # noqa: E731
+        out.append(
+            f"   confirmed by the child's own call: median {med(('all', 'all')):g} per child "
+            f"(DEL {med(('DEL', 'all')):g}, DUP {med(('DUP', 'all')):g}), total "
+            f"{sum(c[('all', 'all')])} = DEL {sum(c[('DEL', 'all')])}, DUP {sum(c[('DUP', 'all')])}"
         )
     if len(s.wave) < s.n_children:
         out.append(f"   wave score missing for {s.n_children - len(s.wave)} children (no store)")
