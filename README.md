@@ -113,7 +113,7 @@ vedette call --sample S1 --cram S1.cram --snv-vcf S1.snv.vcf.gz \
 
 # 2. filter: hard filters + calibrated SQ score
 vedette filter out/S1/S1.vedette.vcf.gz --store out/S1/S1.evidence.zarr \
-    --model-dir models/v5n --config my_site.toml --out out/S1/S1.filtered.vcf.gz
+    --model-dir models/v12b --config my_site.toml --out out/S1/S1.filtered.vcf.gz
 
 # 3. optional: chromosomal-scale mosaic segments, from the store alone
 vedette mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
@@ -363,7 +363,11 @@ reported size is 50 bp.
 (negative binomial, overdispersion 0.75) and BAF (beta mixture over the expected allelic
 ratios). It returns GT, GQ, the
 most likely integer CN and its posterior (CNQ). On a haploid contig the genotypes are 0
-or 1 copy of the variant allele.
+or 1 copy of the variant allele. For events of at least one bin, the integer CN reads each
+edge bin as a mix of the event and the flanks' copy number (median of 5 unmasked bins on
+each side) in proportion to the part of the bin the event covers: read on whole bins, a
+1.7 kb homozygous deletion inside a heterozygous one came out CN 1, and a heterozygous
+deletion that size CN 2.
 
 **Evidence store.** Everything later stages need is written to `<S>.evidence.zarr`
 (schema 0.5; 0.1-0.4 are still read):
@@ -749,17 +753,27 @@ it.
 
 ## Filter models
 
-The production model is **`models/v5n`**: two gradient-boosting classifiers (DEL, DUP)
+The production model is **`models/v12b`**: two gradient-boosting classifiers (DEL, DUP)
 with isotonic calibration, trained on GIAB HG002/HG003/HG004 (labels from the GIAB v5.0q
 truth with Truvari, and by transmission for the parents) and on 16 children with wavy
-coverage (transmission labels from clean parents). **Operating point: SQ ≥ 5**, the
-built-in default (`[filter] low_sq_threshold` to change it, e.g. for a model of your own).
+coverage (transmission labels from clean parents), with the per-genome `wave_score`
+feature pinned to −1 at scoring (`neutral_features` in its manifest). **Operating point:
+SQ ≥ 5**, the built-in default (`[filter] low_sq_threshold` to change it, e.g. for a model
+of your own).
 
-`v5n` is v5 with the per-genome `wave_score` feature pinned to −1 (`neutral_features` in
-its manifest): v5 had learned a step on it and passed 10 to 18 thousand calls on genomes
-with strong coverage waves instead of about 5 thousand. On every other genome, the two are
-identical. `models/v1` to `v6` are kept for history; `docs/ROADMAP.md` (in French) records
-why later models were not retained.
+`v12b` has the labels and recipe of `v5n`, trained on the copy number the genotyper now
+gives (edge bins read with their flanks, see [Calling](#1-calling-vedette-call)). It needs calls
+genotyped by this version: re-run `call`, or `vedette regenotype` the existing calls,
+before filtering with it. Against `v5n`'s estimators retrained without HG002, on HG002
+out of sample: DEL F1 0.514 vs 0.511 (GIAB v5.0q), 0.582 vs 0.563 (CMRG, recall 0.446
+vs 0.413). On the 665 trios of dataset_paper the cohort gate is quiet in every wave
+stratum (de novo per child: median 27 as in production; recurrent de novo sites 2,483 vs
+2,480).
+
+`v5n` (production 2026-10-08 to v1.15) is v5 with `wave_score` pinned: v5 had learned a step
+on it and passed 10 to 18 thousand calls on genomes with strong coverage waves instead of
+about 5 thousand. `models/v1` to `v6` and `v5n` are kept for history; `docs/ROADMAP.md`
+(in French) records why later models were not retained.
 
 A model directory holds `model_del.joblib`, `model_dup.joblib` and `manifest.json`
 (version, feature list and schema hash, neutral features, training provenance, out-of-fold
@@ -1045,7 +1059,7 @@ lcr_bed = "/path/to/selfchain_lcr.bed"
 pop_cov_stdev_bw = "/path/to/popCovStdev.bw"     # optional
 
 [filter]
-low_sq_threshold = 5.0                           # operating point of models/v5n
+low_sq_threshold = 5.0                           # operating point of models/v12b
 ```
 
 Main keys (defaults):

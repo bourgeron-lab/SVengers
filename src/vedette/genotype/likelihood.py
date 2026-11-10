@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _MIN_RATIO_VAR = 0.05
 _MAX_DEPTH_BINS = 200      # cap on effective depth-informative bins
 _MAX_BAF_SITES = 50        # cap on effective BAF sites
+_FLANK_BINS = 5            # bins each side giving an edge bin's copy ratio outside the event
 _JUNCTION_EFFICIENCY = 0.12  # detectable junction reads per unit of haploid coverage
 _HET_OVERDISPERSION = 2.0   # local het density varies ~2x around the contig rate
 
@@ -92,6 +93,15 @@ def _baf_loglik(
     m = parts.max(axis=0)
     site_ll = m + np.log(np.exp(parts - m).mean(axis=0))
     return float(site_ll.sum() * weight)
+
+
+def _flank_ratio(data: "ContigData", b0: int, b1: int) -> float:
+    """Median copy ratio of the unmasked bins beside [b0, b1) (the contig's
+    baseline when none)."""
+    lo, hi = max(b0 - _FLANK_BINS, 0), min(b1 + _FLANK_BINS, len(data.ratio))
+    side = np.r_[lo:b0, b1:hi]
+    side = side[~data.mask[side]]
+    return float(np.median(data.ratio[side])) if len(side) else data.ploidy / 2.0
 
 
 @dataclass
@@ -179,14 +189,24 @@ class Genotyper:
         call.gt = genotypes[best][0]
         call.gq = int(min(99, -10 * np.log10(max(1 - post[best], 1e-10))))
 
-        # integer CN from depth alone on the final coordinates
+        # integer CN from depth alone on the final coordinates. An edge bin
+        # holds the flanks' copy number outside the event: a 1.7 kb CN0 inside
+        # a het deletion, read on whole bins, came out CN1 (and a het
+        # deletion that size CN2). Below a bin the depth cannot tell the
+        # states apart, and such events keep whole-bin reading
         if len(ratio):
             states = np.arange(self.max_cn + 1)
-            var = data.sigma0**2 * np.maximum(states / 2.0, _MIN_RATIO_VAR)
-            ll = (
-                -0.5 * np.log(2 * np.pi * var)[None, :]
-                - 0.5 * (ratio[:, None] - (states / 2.0)[None, :]) ** 2 / var[None, :]
-            )
+            if call.size >= data.bin_size:
+                idx = np.arange(b0, b1)[~sel_mask]
+                cover = (np.minimum((idx + 1) * data.bin_size, call.end)
+                         - np.maximum(idx * data.bin_size, call.start))
+                frac = np.clip(cover / data.bin_size, 0.0, 1.0)[:, None]
+                base = _flank_ratio(data, b0, b1)
+            else:
+                frac, base = np.ones((len(ratio), 1)), 0.0
+            expected = base * (1 - frac) + (states / 2.0)[None, :] * frac
+            var = data.sigma0**2 * np.maximum(expected, _MIN_RATIO_VAR)
+            ll = -0.5 * np.log(2 * np.pi * var) - 0.5 * (ratio[:, None] - expected) ** 2 / var
             if len(ratio) > _MAX_DEPTH_BINS:
                 ll = ll * (_MAX_DEPTH_BINS / len(ratio))
             tot = ll.sum(axis=0)

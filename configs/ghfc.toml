@@ -9,8 +9,9 @@ lcr_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/selfchain-LCR.hg38
 pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/popCovStdev.bw"
 
 [filter]
-# models/v5n in production (2026-10-08): the v5 estimators (30 features,
-# GIAB + 16 GHFC wavy trios, transmission labels) with wave_score pinned to -1;
+# models/v12b in production (v1.15): v5n's labels and recipe (30 features,
+# GIAB + 16 GHFC wavy trios, transmission labels, wave_score pinned to -1;
 # v5 learned a step on it and passed 10-18k calls on genomes with wave >=
-# ~0.12 (docs/ROADMAP.md 1septdecies). Operating point SQ>=5.
+# ~0.12, docs/ROADMAP.md 1septdecies) trained on the copy number of the
+# v1.15 genotyper (edge bins with their flanks). Operating point SQ>=5.
 low_sq_threshold = 5.0
