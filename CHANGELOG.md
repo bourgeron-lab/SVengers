@@ -54,6 +54,26 @@
   136k (children's de novo DUP 1-10 kb median 1 -> 7) while the panel showed
   its DUPs falling by 11 %.
 
+- **Genotyping: the integer CN reads edge bins with their flanks** — for
+  events of at least one bin, each edge bin is a mix of the event and the
+  flanks' copy number in proportion to the part of the bin it covers; read
+  on whole bins, a 1.7 kb homozygous deletion inside a heterozygous one came
+  out CN 1, and a heterozygous deletion that size CN 2. GT and GQ unchanged.
+  The filter model learns on CN: calls genotyped before this version keep
+  the old CN (re-run `call` or `vedette regenotype` them before filtering
+  with v12b).
+- **Model v12b replaces v5n** — v5n's labels and recipe (wave_score pinned
+  at scoring) trained on that CN. On HG002 out of sample, DEL F1 0.514 vs
+  0.511 (GIAB v5.0q) and 0.582 vs 0.563 (CMRG). On 20 dataset_paper trios
+  the CN alone, under v5n, dropped 165 PASS 1-5 kb deletions a parent also
+  carries; retrained, on the 186-genome panel (PASS per genome DEL +7.3 %,
+  DUP -17.1 %) the children gain 737 DEL 1-10 kb, 97.7 % with a parent call
+  (158 lost, 99.4 %), and 5,004 DEL < 1 kb at 60.9 % (859 lost, 78.7 %): the
+  small deletions are its weak side. Cohort gate on the 665 trios of
+  dataset_paper quiet in every wave stratum: de novo median per child 27 as
+  in production, recurrent de novo sites 2,483 vs 2,480, PASS sites DEL
+  59,727 vs 59,598 and DUP 14,083 vs 14,825; the pre-gate is quiet too.
+
 ## v1.14.0 — 2026-11-07
 
 `vedette bnd` calibrates standalone inversions on trios: same-strand
