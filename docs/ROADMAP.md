@@ -28,8 +28,13 @@ Reste à faire :
    parent, 0,031 / 0,074 chez l'enfant seul (parents d'une autre famille :
    36 %, inversions de population). PASS au même seuil que les
    translocations, sauf génome à > 500 jonctions de même brin
-   (`NoisyGenome`, 67 / 2 670). Inversions communes (≥ 1 % du run) toujours
-   écartées comme récurrentes ; benchmark HG002 à faire (vérité inversions).
+   (`NoisyGenome`, 67 / 2 670). Inversions communes (≥ 1 % du run) : une
+   jonction récurrente de même brin à ≥ 12 paires est gardée (`common`,
+   FILTER `Common`) ; sur 633 trios, 74 % de ces jonctions sont à des loci
+   qu'un enfant sans parent porteur porte au plus 4 fois moins que le run
+   (17q21.31 H2 : 42 % des génomes, 30 paires), 4 % à des loci portés au
+   hasard (artefacts, ~4 paires). ~110 par génome (PMS ~140). Benchmark HG002 à faire (vérité
+   inversions).
 3. Événements complexes : chaîner les jonctions d'un même génome (inv-dup
    sans DUP appelée, translocations à trois partenaires, chromothripsis),
    et relier jonctions et bornes de DEL/DUP intra-chromosomiques.
@@ -171,7 +176,11 @@ Priorités :
    à la mosaïque, au caryotype et aux variables du modèle.
 4. **v11** : labels IGV + transmission + GIAB, sur le nouveau BAF (point 3),
    contrôles de déploiement habituels (PASS par génome vs production,
-   récurrence, trios, HG002 hors échantillon).
+   récurrence, trios, HG002 hors échantillon). Y entraîner le CN entier lu
+   avec les flancs sur les bins de bord (branche locale `cn-partial`, events
+   ≥ 1 kb) : juste sur chr22:49,32 Mb (0/1 -> CN1, imbriqué -> CN0), mais
+   avec v5n il fait perdre 165 DEL PASS 1-5 kb transmises sur 20 trios pour
+   86 gagnées (PASS par génome -0,1 %).
 5. **Export GHFC par le pipeline** : le wrapper Nextflow publie directement
    dans `samples|families|cohorts/…/svs/vedette/`, plus de copie manuelle.
 6. **Génomes très bruités à l'appel** (budget des hidden splits, détection
@@ -1293,6 +1302,36 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
   ClinSV existants, même protocole ; Vedette avant/après filtre.
 - `bench trios` : MVR et transmission en fonction du seuil SQ sur les cohortes
   GHFC (figure de spécificité indépendante de GIAB).
+- `bench cohort` (2026-11-09) : porte de déploiement d'un modèle. Cohorte
+  complète refiltrée et regénotypée avec le candidat, puis de novo PASS
+  GQ >= 20 par enfant (type × taille) et sites de novo récurrents contre la
+  production ; alarme si la médiane monte de 25 % et 2 appels/enfant.
+  Motif : v12a (v5r2 + 129 verdicts IGV ×20) avait un panel par génome à
+  DUP -9,7 % et des trios « appel parental » propres, mais en cohorte DUP
+  ≥ 1 kb de novo par enfant médiane 1 → 12 (vagues GC partagées par la
+  famille). Critère obligatoire avant tout changement de modèle.
+- **Platinum Pedigree (CEPH-1463), à faire** : vérité indépendante de GIAB
+  pour le papier. Référence : Genome Biology 2026,
+  doi:10.1186/s13059-026-04219-3 (14 callers short-read sur NA12878 et trois
+  de ses enfants ; DRAGEN F1 0,51, Manta 0,41, Dysgu 0,37 ; Truvari 4.2.2
+  `--typeignore --passonly --pctseq 0`). Vérité HiFi + ONT de la famille
+  (`merged_hg38.svs.sort.oa.vcf.gz`, dépôt Platinum-Pedigree-Datasets) :
+  13 460 DEL, 22 146 INS, 56 INV ≥ 50 pb, BED haute confiance pour NA12878
+  seulement. Intérêt : nos modèles sont entraînés sur HG002/3/4, un F1 hors
+  GIAB est plus défendable ; pedigree avec vérité long-reads pour calibrer
+  transmission et de novo. Plan :
+  1. télécharger les BAM Illumina et la vérité (accord d'Alexandre requis,
+     tailles annoncées avant) ;
+  2. produire les pistes au format GHFC (mosdepth 1 kb, VAF DeepVariant,
+     cf. recette des pistes) puis `vedette call` sans PoN, et avec un PoN
+     construit sur les membres de la famille (le PoN GHFC ne vaut pas pour
+     un autre centre) ;
+  3. comparer DEL seules par taille + DUP en tandem extraites des INS
+     (`bench dup-truth`), pas les F1 tous types (62 % d'INS, que Vedette
+     n'appelle pas) ; Manta et Dysgu relancés à l'identique (tools/) ;
+  4. transmission parent → enfant des appels Vedette contre la vérité ;
+  5. limite à écrire : vérité riche en 100-500 pb, pauvre en > 10 kb, segdups
+     et multi-alléliques — complète HG002, ne le remplace pas.
 
 ### 3. Hidden split reads — FAIT (2026-09-08)
 - `breakpoints/resolve.py` : réalignement fit (numba, sans dépendance) des clips

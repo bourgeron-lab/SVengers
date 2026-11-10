@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.13.0**, in production
+Status: **v1.14.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -276,10 +276,25 @@ the exclusion BED, are masked. Depth is GC-corrected with a multiplicative facto
 autosomal bins), then divided by the median corrected autosomal depth: the **copy ratio**,
 1.0 for two copies.
 
-**Sex inference.** The median ratio of chrX and chrY sets the baseline ploidy: a sample is
-male if chrX < 0.75 or chrY > 0.25. Men get ploidy 1 on chrX and chrY, women 2 on chrX
-and 0 on chrY (not called). The ploidy map is written to the store, where re-genotyping,
-the panel of normals and the cohort stages find it.
+**Sex inference and karyotype.** Without a panel of normals, the median ratio of chrX and
+chrY sets the baseline ploidy: a sample is male if chrX < 0.75 or chrY > 0.25. Men get
+ploidy 1 on chrX and chrY, women 2 on chrX and 0 on chrY (not called). With `--pon`, the
+baseline comes from the measured sex-chromosome karyotype instead (section 9: copy number
+on the panel's sex-informative bins, X heterozygosity, BAF): XXY gets chrX 2 / chrY 1, XXX
+chrX 3, XYY chrY 2, X0 chrX 1 / chrY 0; an intermediate or unreadable karyotype keeps the
+threshold rule. The threshold rule read an XXY as a man and an XXX as a woman, and their
+extra X came out as ~170-240 fragmented chrX calls while a deletion of one X was missed.
+**Whole autosomes** at 1 or 3 copies get their own baseline too: ≥ 85 % of the
+chromosome's 1 Mb windows (≥ 20 informative, uncovered gaps skipped) at the same integer
+copy number, confirmed by the BAF (median |BAF − 0.5| > 0.12 over ≥ 200 heterozygous sites
+for three copies; a heterozygous-site rate < 0.15 × the genome's for one). A trisomy 12
+went from 128 fragment DUPs to 13 PASS DUPs on chr12, and its deletions came back (93 ->
+118 PASS DEL), a trisomy 21 lost its 15 fragments of 0.3 to 11 Mb; on 87 genomes the check found the two known trisomies (12 and 21) and
+nothing else. A depth gain without the BAF of three copies (a wave, a GC bias) or over
+part of a chromosome keeps the diploid baseline; the trisomy itself is reported by the
+mosaic scan (constitutional anomalies). The ploidy map, `karyotype` and `aneuploidies`
+are written to the store, where re-genotyping, the panel of normals and the cohort stages
+find them.
 
 **Wave QC.** Some libraries carry megabase-scale coverage oscillations that survive GC
 correction. Vedette measures them per genome: the copy ratio is cut into 10 Mb windows
@@ -293,8 +308,10 @@ before any panel of normals (every threshold is calibrated on it); with a panel,
 corrected depth is scored too (`wave_score_pon`).
 
 **Panel-of-normals normalization (`--pon`).** Each bin's ratio is divided by the panel's
-per-bin median (sex-stratified profile on chrX/chrY) and brought back to the sample's
-baseline (ploidy / 2, so a male chrX stays at 0.5). Bins where the panel is too variable
+per-bin median (sex-stratified profile on chrX/chrY: the male profile for one X, the
+female one for two or more) and brought back to that profile's level (0.5 on the male
+chrX/chrY, 1.0 on the female chrX and the autosomes); the HMM then reads the result
+against the contig's own ploidy, so an XXX chrX at 1.5 is three copies, not a gain. Bins where the panel is too variable
 (MAD > 0.30 × median) or systematically low (median < 0.25 × baseline) are masked. If the
 panel carries SVD components, the sample's projection onto them is removed as well. This
 divides out residual systematic bias the GC model cannot see (mappability, reference
@@ -354,6 +371,7 @@ or 1 copy of the variant allele.
 ```
 /                          attrs: schema_version, sample, reference_id, bin_size,
                                   mean_depth, depth_mad, coverage, ploidy{contig},
+                                  karyotype, karyotype_note, aneuploidies{contig},
                                   insert_mu, insert_sigma, insert_n_pairs, depth_source,
                                   wave_score, wave_by_contig, wave_score_pon, pon, ...
 <contig>/depth_raw         float32[n_bins]   raw binned depth
@@ -544,7 +562,11 @@ the evidence stores of a whole run, without the CRAMs:
    duplication). Junctions need 4 pairs of mean MAPQ ≥ 20.
 2. **Run-level flags.** A 10 kb locus joined to ≥ 10 distinct loci over the run is a
    repeat (`promiscuous`), and two loci joined in ≥ 5 genomes (or 1 %) an artefact or a
-   common variant (`recurrent`); a translocation is private or shared by a family.
+   common variant (`recurrent`); a translocation is private or shared by a family. A
+   recurrent same-strand junction with ≥ 12 pairs is a common inversion (`common`, kept):
+   on 633 trios, 74 % of them sit at loci a child without a carrier parent carries at
+   most a quarter as often as the run (17q21.31 H2 among them), 4 % at loci it carries as
+   often as anyone.
    Counting genomes per locus instead does not work: a 30× genome has ~13,000 raw
    junction clusters, nearly all in repeats, and a median locus has some in 7 of 319
    genomes. Ends within 500 kb of a contig end are `subtelomeric`, ends on unplaced
@@ -572,8 +594,8 @@ junction within 10 kb is about one in a thousand. The scan takes ~20 s per genom
 
 ### 9. Sex-chromosome karyotype
 
-The caller sets the X/Y baseline from the inferred sex, after which an extra X is an
-ordinary gain and a missing one is invisible. The report therefore reads, per genome:
+With a panel of normals, the caller sets the X/Y baseline from this karyotype (see "Sex
+inference and karyotype" above); the report shows it, read from the store, per genome:
 
 - `x_cn`, `y_cn`: twice the median **raw** depth of chrX / chrY over the bins where the
   panel of normals tells the sexes apart (X bins at ~1.0 in women and ~0.5 in men, Y bins
@@ -866,8 +888,47 @@ violations), which the report shows for every family.
 The harness: `vedette bench truth` (stratified Truvari evaluation by size, segdup / LCR /
 tandem-repeat context), `bench compare` (several callers, VCF or WisecondorX entries),
 `bench dup-truth` (tandem-duplication subset of an insertion-represented truth, a fair
-denominator for DUP recall), `bench trios` (violation / transmission sweep). A one-page
+denominator for DUP recall), `bench trios` (violation / transmission sweep), `bench cohort`
+(the gate before deploying a model, below) and `bench pregate` (its quick first step). A one-page
 illustrated overview is in `docs/vedette_overview.html`.
+
+**Deploying a new filter model.** A truth-set holdout, the per-genome PASS median of a
+panel and trio checks at the call level ("does the child's call overlap a parent's
+call?") can all look fine while a model passes a family-shared artifact class (GC waves,
+segdup depth shifts): such calls overlap a parent's call in every family. Re-run the
+whole cohort (filter, merge, genotype, cohort-filter, ped) with the candidate model, then
+
+```bash
+vedette bench cohort prod=runs/COHORT new=runs/COHORT_candidate --out gate.tsv
+```
+
+compares, per child, the de novo calls at PASS sites with GQ >= 20 in the child and both
+parents, by type and size, and the recurrent de novo sites (de novo in >= 5 children). A
+median rise of 25 % and at least 2 calls per child in any class, or of 25 % and 20 sites
+in recurrence, raises an alarm (exit code 1). The same rule runs within the children's
+wave strata (< 0.128, 0.128-0.20, >= 0.20; read from `<run>/samples/<S>/<S>.evidence.zarr`,
+strata of >= 10 children): the few strongly wavy children can take most of a model's
+extra calls while the cohort median stays flat. On dataset_paper, a candidate that kept
+the cohort medians took the 27 children at wave >= 0.20 from 18 to 34 de novo DEL
+>= 10 kb each.
+
+The cohort run takes hours; its first step, the per-sample filter, takes minutes and is
+where these floods start. Run it alone (`--steps filter`), then
+
+```bash
+vedette bench pregate prod=runs/COHORT new=runs/COHORT_candidate --out pregate.tsv
+```
+
+compares, per genome, the carrier calls the candidate PASSes and the LowSQ-only calls at
+SQ >= 1 that the merge loads as sub-threshold members (enough of them rescue a site with
+no PASS member, so a model that only lifts the SQ of the calls it rejects still floods
+the cohort). A rise of the mean per genome of 25 % for PASS calls, 50 % for rescuable
+ones, and at least 0.5 call per genome, in any type and size class, over all genomes or
+within a wave stratum, raises an alarm. On dataset_paper (2,670 genomes) it gives the
+cohort gate's verdict for all seven candidates the gate had judged, among them one that
+took the DUP 1-10 kb PASS calls from 812 to 5,482 (de novo median per child 1 -> 7)
+while the panel showed its DUPs falling by 11 % per genome. An OK at the pre-gate still
+needs `bench cohort`.
 
 ## Commands
 
@@ -893,7 +954,7 @@ illustrated overview is in `docs/vedette_overview.html`.
 | `vedette labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
 | `vedette site-map` | correspondence of cohort sites between two runs (same, moved, split, merged, lost, new) |
 | `vedette train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
-| `vedette bench truth` / `compare` / `dup-truth` / `trios` | benchmark harness |
+| `vedette bench truth` / `compare` / `dup-truth` / `trios` / `cohort` / `pregate` | benchmark harness; `cohort` = de novo gate before a model change, `pregate` = its quick first step on filter-only runs |
 
 Every command has `--help`. Lists of files can be passed as `@filelist` (one path per
 line) to `merge`, `cohort-filter --genotypes` and `pon build`.
@@ -952,7 +1013,9 @@ sequence left of `pos` is joined, `L` when the sequence right of it, `?` without
 reads; `kind` `TRA`, `INV` or `FOLD`. **Junction VCF** (`<S>.bnd.vcf.gz`): the junctions
 with split reads at both ends as breakend pairs (`SVTYPE=BND`, `MATEID`, `EVENT`, `KIND`;
 `FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (≥ 12 pairs), `LowSupport`,
-`NoisyGenome` (same-strand junctions of a genome with more than 500), `Subtelomeric`.
+`NoisyGenome` (same-strand junctions of a genome with more than 500), `Common` (common
+inversions, ~60-70 per genome; ~110-140 in the TSV, ends without split reads included),
+`Subtelomeric`.
 
 **Terminal-loss TSV** (`<S>.terminal.tsv`): `sample contig start end source mechanism
 partner partner_gain telo_clips junction_pe`; `source` `call` or `mosaic`; `mechanism`
@@ -963,7 +1026,9 @@ Coordinates in the TSV outputs are 0-based half-open, except the family export
 (1-based inclusive, see docs/EXPORT.md). VCFs follow the VCF 4.3 rule for symbolic
 alleles: `POS` is the base before the event, `END` its last base (header line
 `##vedette_coords=padded`; VCFs written before v1.4.0 had both one base to the right, and
-are still read correctly).
+are still read correctly). A sample VCF called with a panel records the karyotype that set
+its chrX/chrY baseline (`##vedette_karyotype=XXY`) and any whole-autosome baseline
+(`##vedette_aneuploidy=chr21:3`).
 
 ## Configuration
 
@@ -1046,7 +1111,9 @@ near 48 GB. The SLURM executor submits at most 200 jobs at a time.
 - **Mosaics**: autosomes only, segments ≥ 3 Mb; complete losses cannot be confirmed by
   BAF (no heterozygous sites left).
 - **Karyotype**: only for genomes called with a panel of normals that is still at its
-  recorded path.
+  recorded path; without one the chrX/chrY baseline comes from the threshold rule, and an
+  XXY or XXX is called against XY or XX. Mosaic aneuploidies (45,X/46,XX, a mosaic
+  trisomy) keep the euploid baseline: they are reported, not used as a baseline.
 - **Impact score**: no triplosensitivity (gains of dosage-sensitive genes are
   under-scored), no 5'/3' distinction for partial deletions; inheritance and phenotype are
   not counted.

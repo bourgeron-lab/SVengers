@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+- **Sex-chromosome baseline from the measured karyotype** — with `--pon`,
+  `vedette call` sets the chrX/chrY ploidy from the karyotype (copy number on
+  the panel's sex-informative bins, X heterozygosity, BAF) instead of the
+  chrX < 0.75 / chrY > 0.25 threshold, which read an XXY as a man and an XXX
+  as a woman. On dataset_paper, an XXY went from 168 PASS DEL / 4 DUP on chrX
+  to 143 / 45 and an XXX from 109 / 133 to 129 / 45, both now like an XX
+  woman (173 / 42); an XYY gets chrY 2. The PoN level is that of the profile
+  used (0.5 male chrX/chrY, 1.0 female chrX and autosomes), and genomes with
+  a sex-chromosome aneuploidy no longer enter the panel's sex profiles.
+- **Whole-autosome aneuploidies get their own baseline** — a chromosome at 1
+  or 3 copies over >= 85 % of its 1 Mb windows and confirmed by the BAF is
+  called against that copy number. A trisomy 12 went from 128 to 13 PASS DUP
+  on chr12 (the fragments of the trisomy) and 93 to 118 PASS DEL (deletions
+  masked by the diploid baseline); a trisomy 21 lost its 15 DUP fragments of
+  0.3 to 11 Mb (none left above 10 kb) and went from 107 to 130 PASS DEL
+  on chr21. Checked at calling time on 87 genomes: the known trisomies 12
+  and 21 only.
+- Store attributes `karyotype`, `karyotype_note`, `aneuploidies`; sample VCF
+  headers `##vedette_karyotype` and `##vedette_aneuploidy`. Re-call genomes
+  with a sex-chromosome or autosomal aneuploidy to benefit; euploid genomes
+  are unchanged (autosome calls identical, FILTER as before).
+
+- **`vedette bench cohort`: the de novo gate before a model change** — compares
+  cohort runs (the first is the baseline) on de novo calls per child at PASS
+  sites with GQ >= 20 in the child and both parents, by type and size, and on
+  recurrent de novo sites (de novo in >= 5 children). A median rise of 25 %
+  and 2 calls per child in any class, or of 25 % and 20 recurrent sites,
+  raises an alarm (exit code 1). On dataset_paper (665 children), the current
+  code with model v5n is OK against production (median 27 -> 26), and a
+  candidate model trained with IGV verdicts at weight 20 raises the alarm (DUP
+  1-10 kb median 1 -> 9, DUP >= 10 kb 0 -> 3, recurrent sites 2,480 -> 3,994)
+  although its per-genome PASS median on a 186-genome panel fell (DUP -9.7 %)
+  and its extra child calls mostly overlapped a parent's call.
+  The gate also runs within the children's wave strata (< 0.128, 0.128-0.20,
+  >= 0.20, from the stores; >= 10 children): in the 27 children at wave >=
+  0.20 that candidate went from 18 to 259 de novo DUPs each, and a second
+  candidate (IGV deletion verdicts only), flat on every cohort median, from
+  18 to 34 de novo DEL >= 10 kb.
+
+- **`vedette bench pregate`: the cohort gate's quick first step** — on
+  filter-only runs (`samples/<S>/<S>.filtered.vcf.gz`), compares per genome
+  the carrier calls a candidate PASSes and its rescuable LowSQ calls (SQ >=
+  the merge's `--rescue-min-sq`, which can rescue a site with no PASS
+  member), by type and size, over all genomes and within the wave strata. A
+  rise of the mean per genome of 25 % (PASS) or 50 % (rescuable) and 0.5
+  call raises an alarm (exit code 1). On dataset_paper (2,670 genomes,
+  minutes instead of ~2.5 h) it gives the cohort gate's verdict for the
+  seven candidates the gate had judged, among them one that took the DUP
+  1-10 kb PASS calls from 812 to 5,482 and the rescuable ones from 45k to
+  136k (children's de novo DUP 1-10 kb median 1 -> 7) while the panel showed
+  its DUPs falling by 11 %.
+
+## v1.14.0 — 2026-11-07
+
+`vedette bnd` calibrates standalone inversions on trios: same-strand
+junctions pass at 12 pairs except in genomes with chimeric-library noise, and
+common inversions are kept with FILTER `Common`. Store schema, feature schema
+and model (v5n) unchanged; calling and genotyping unchanged.
+
 - **`vedette bnd`: same-strand junctions pass at 12 pairs** — standalone
   inversion and fold-back junctions with split reads at both ends are PASS
   at the translocations' threshold (12 discordant pairs) instead of all
@@ -11,6 +70,16 @@
   child-only junction per trio came from a few genomes: a median genome has
   7 kept same-strand junctions (PMS 11), 67 of 2,670 have more than 500, and
   their same-strand junctions are now filtered `NoisyGenome`.
+
+- **`vedette bnd`: common inversions are kept** — a same-strand junction in
+  1 % of the run or more was dropped as recurrent; with 12 pairs or more it
+  is now kept (flag `common`, FILTER `Common`). On 633 dataset_paper trios,
+  recurrent same-strand loci split by transmission: at 605, a child without
+  a carrier parent carries the junction at most a quarter as often as the
+  run (17q21.31 H2: 42 % of genomes, 30 pairs), at 942 as often as anyone
+  (artefacts, a median of 4 pairs). Of the junctions with 12 pairs or more,
+  74 % are at the first, 4 % at the second. ~110 per genome in the TSV
+  (PMS ~140), ~60-70 in the VCF.
 
 ## v1.13.0 — 2026-11-07
 

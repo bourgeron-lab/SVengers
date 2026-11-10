@@ -190,3 +190,99 @@ def aneuploid_sex_chromosomes(karyotype: str) -> set[str]:
     if ny > 1:
         out.add("Y")
     return out
+
+
+def sex_ploidy(karyotype: str) -> dict[str, int] | None:
+    """Baseline copy number of chrX / chrY for a karyotype read by ``classify``
+    (XXY -> X 2, Y 1); None when the reading is not an integer karyotype
+    ("?", "intermédiaire"): the caller then keeps its own sex inference."""
+    if not karyotype or set(karyotype) - {"X", "Y", "0"} or "X" not in karyotype:
+        return None
+    return {"chrX": karyotype.count("X"), "chrY": karyotype.count("Y")}
+
+
+class ArraySource:
+    """The store interface ``sex_chromosome_stats`` reads (``sample``,
+    ``bin_size``, ``has_contig``, ``depth``, ``baf``), over the in-memory
+    arrays of ``vedette call`` — the karyotype then sets the X/Y baseline
+    before segmentation instead of being read from the finished store."""
+
+    def __init__(self, sample: str, bin_size: int, raw: dict, mask: dict, baf: dict):
+        self.sample, self.bin_size = sample, bin_size
+        self._raw, self._mask, self._baf = raw, mask, baf
+
+    def has_contig(self, contig: str) -> bool:
+        return contig in self._raw
+
+    def depth(self, contig: str):
+        return self._raw[contig], self._raw[contig], self._mask[contig]
+
+    def baf(self, contig: str, start: int, end: int) -> dict:
+        pos, vaf = (self._baf.get(contig) or (np.array([], np.uint32), np.array([], np.float32)))[:2]
+        keep = (pos >= start) & (pos < end)
+        return {"pos": pos[keep], "vaf": vaf[keep]}
+
+
+# ---------------------------------------------------------------- autosomes
+# Whole-chromosome aneuploidy of an autosome (trisomy 21, a trisomic chr12):
+# with a diploid baseline the extra copy is called as fragmented duplications
+# (dataset_paper: 15 on a trisomy 21, 117 on a chr12 at 2.92) and a deletion
+# of one of the three copies sits at CN 2 and is missed (that chr12: 93 PASS
+# DEL against a cohort median of 149). The call then takes the chromosome's
+# own copy number as its baseline; the aneuploidy itself stays reported by
+# the mosaic scan (CHROMOSOMIQUE rows), which reads the depth, not the ploidy.
+ANEU_WINDOW_BP = 1_000_000
+ANEU_MIN_WINDOWS = 20
+ANEU_WINDOW_TOL = 0.3        # a window "at" k copies: |2 x median ratio - k| <= this
+ANEU_MIN_FRAC = 0.85         # of the informative windows, at the same level
+ANEU_GAP_CN = 0.25           # a window below this is an uncovered gap, not a copy number
+ANEU_BAF_THREE = 0.12        # median |BAF - 0.5| above this: VAF 1/3, 2/3 (diploid ~0.06)
+ANEU_HET_ONE = 0.15          # het rate / genome rate below this: a single copy
+
+
+def autosomal_aneuploidies(
+    ratio: dict[str, np.ndarray], mask: dict[str, np.ndarray], baf: dict, bin_size: int,
+    autosomes: list[str],
+) -> dict[str, int]:
+    """{autosome: copy number} for whole autosomes at 1 or 3 copies, confirmed
+    by the BAF; ``ratio`` is the GC-corrected depth over the autosomal mean."""
+    w = max(1, ANEU_WINDOW_BP // bin_size)
+
+    def hets(c):
+        pos, vaf = baf.get(c, (np.array([]), np.array([])))[:2]
+        vaf = np.asarray(vaf, dtype=np.float64)
+        h = vaf[(vaf > 0.1) & (vaf < 0.9)]
+        return len(vaf), h
+
+    n_all = n_het = 0
+    for c in autosomes:
+        s, h = hets(c)
+        n_all, n_het = n_all + s, n_het + len(h)
+    out = {}
+    for c in autosomes:
+        r, m = np.asarray(ratio[c], dtype=np.float64), np.asarray(mask[c], dtype=bool)
+        cns = []
+        for i in range(0, len(r) - w + 1, w):
+            v = r[i:i + w][~m[i:i + w]]
+            if len(v) >= w // 2:
+                cn = 2.0 * float(np.median(v))
+                # the reference mask leaves some pericentromeric / acrocentric
+                # gaps unmasked (no reads at all): no copy-number information.
+                # On chr21 (~37 windows) four such windows flanking the
+                # centromere put a trisomy just below the agreement threshold
+                if cn >= ANEU_GAP_CN:
+                    cns.append(cn)
+        if len(cns) < ANEU_MIN_WINDOWS:
+            continue
+        cns = np.array(cns)
+        k = int(round(float(np.median(cns))))
+        if k not in (1, 3) or np.mean(np.abs(cns - k) <= ANEU_WINDOW_TOL) < ANEU_MIN_FRAC:
+            continue
+        s, h = hets(c)
+        if not s or not n_all or not n_het:
+            continue
+        if k == 3 and len(h) >= 200 and float(np.median(np.abs(h - 0.5))) > ANEU_BAF_THREE:
+            out[c] = 3
+        elif k == 1 and (len(h) / s) / (n_het / n_all) < ANEU_HET_ONE:
+            out[c] = 1
+    return out
