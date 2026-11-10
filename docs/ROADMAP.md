@@ -6,6 +6,104 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
+### État au 2026-11-10 (v1.15, non publiée) et priorités
+
+Sur `main` depuis v1.14.0 : `bench cohort` (porte de novo, par strates de
+vague), `bench pregate`, ploïdie d'après le caryotype mesuré (gonosomes et
+autosomes entiers), CN entier lu aux bords avec les flancs, modèle **v12b**
+par défaut, `ped-annotate --calls-dir` (`denovo_genotype_only`). Rappel de
+production en cours (dataset_paper puis PMS) : CN injecté depuis un
+re-génotypage, rappel complet des génomes dont le caryotype change, run de
+cohorte dans un dossier à part, pré-porte et porte contre la production,
+puis bascule (archives `_avant_v115/`) et rafraîchissement des exports.
+
+**1. Les de novo de cohorte étaient surtout du génotypage forcé.** Le
+génotypeur de cohorte re-génotype chaque site dans chaque échantillon : un
+enfant peut être porteur à un site proposé par d'autres sans que l'appelant
+ait rien vu chez lui. dataset_paper (665 trios) : 57 705 des 63 934 de novo
+(sites PASS, GQ ≥ 20) sans aucun appel de l'enfant au site, tous filtres
+confondus. Relecture aveugle de 40 cas (images store + lectures) :
+- appel PASS de l'enfant, aucun appel parental, site privé (14) : 10 vrais
+  de novo (dont 2 fragments d'un événement plus grand), 2 CNV héritées
+  (parent mosaïque probable, mère porteuse sur chrX), 1 incertain, 1 faux ;
+- sans appel de l'enfant, site privé (13) : aucun de novo au site,
+  3 fragments d'un événement plus grand que couvre l'appel de l'enfant ;
+- sans appel de l'enfant, site récurrent (13) : 13 faux.
+Faux : rien de visible (la majorité), vagues GC, péricentromères
+multicopies, HLA-DRB, un XXY lu XY, une petite DEL commune homozygote mal
+dimensionnée au site. Estimation : ~0,14 vrai de novo par enfant, contre
+27 « de novo » par enfant affichés jusqu'ici. Fait : `denovo_genotype_only`
+(médiane 7 par enfant restant `denovo`, condition nécessaire, pas
+suffisante : hérités mal génotypés chez un parent, sites récurrents).
+Reste :
+- un niveau « de novo confirmé » : appel PASS de l'enfant, aucun appel
+  parental à aucun filtre, site privé ou presque ; à valider sur une
+  seconde relecture plus large ;
+- les sites sauvés par récurrence (RESCUE=RECURRENT) portent 83 % des de
+  novo DUP 1-10 kb : un drapeau ou un traitement à part ;
+- la porte `bench cohort` mesure donc un fardeau d'artefacts : utile en
+  relatif entre modèles, ce n'est pas un taux de de novo ;
+- tout chiffre de de novo destiné à l'article est à recalculer.
+
+**2. Modèles après v5n : ce qui a été rejeté et pourquoi.**
+- v12a (IGV ×20), v12a5 (×5), v12ad (IGV DEL seules) : DUP de novo 1-10 kb
+  médiane 1 → 8-9 par enfant (v12a, v12a5) ; v12ad neutre en médiane mais
+  DEL ≥ 10 kb des 27 enfants à vague ≥ 0,20 de 18 à 34.
+- v13a-d (étiquettes de transmission des 16 familles ondulées nettoyées) :
+  les étiquettes de transmission récompensent les artefacts systématiques,
+  qui se « transmettent » comme de vrais variants. v13c (étiquettes < 1 kb
+  des familles ondulées retirées) : meilleur F1 HG002 (0,520) mais DUP de
+  novo 1-10 kb 1 → 7 ; cause : DUP « split-read seul » (jonction, PE 0,
+  CN 2, ~1,5 kb) étiquetées vraies 262 fois / fausses 49 dans ces familles,
+  contre 7 / 90 dans GIAB, et SQ relevé des appels LowSQ (sauvetage par
+  récurrence × 3,7). v13d (négatifs < 1 kb remis) : encore pire chez les
+  enfants ondulés (DUP ≥ 10 kb 1 → 33). Lignée abandonnée.
+- v12b retenu : recette v5n sur le nouveau CN. HG002 hors échantillon F1
+  DEL 0,514 (v5q) / 0,582 (CMRG) contre 0,511 / 0,563 ; panel DEL +7,3 %,
+  DUP −17,1 % ; porte calme dans toutes les strates. Point faible : DEL
+  < 1 kb gagnées 5 004 à 61 % avec un appel parental, perdues 859 à 79 %.
+- Leçon : le panel de 186 génomes a dit l'inverse de la cohorte pour les
+  DUP trois fois (DUP par génome en baisse, de novo DUP en hausse) ; il a
+  trop peu de trios complets.
+
+**3. Protocole de déploiement d'un modèle (désormais obligatoire).**
+HG002 hors échantillon et CMRG ; panel PASS par génome ; trios « appel de
+l'enfant avec appel parental » ; puis run `--steps filter` de la cohorte
+entière et `bench pregate` (quelques minutes ; même verdict que la porte
+sur les 7 candidats jugés) ; seulement ensuite le run complet et
+`bench cohort` par strates de vague.
+
+**4. Plan de publication : état** (plan détaillé plus bas, 2026-10-14).
+1. Évaluation hors échantillon : en partie (chiffres v12b sans HG002) ;
+   manque une vérité indépendante de GIAB (Platinum Pedigree, HGSVC).
+2. Comparaisons à d'autres outils (CNVnator, GATK-gCNV, Canvas, Manta,
+   DELLY, dysgu) : pas faites, principal verrou ; `bench compare` est prêt.
+3. Validation orthogonale (puce, MLPA, délétions SHANK3 de PMS) : pas
+   faite, seulement des relectures IGV.
+4. Vagues : PoN médiane en production, SVD écartée, `wave_score` toujours
+   neutralisé dans le modèle.
+5. Cadrage : DUP nettement moins bonnes que les DEL ; rappel DEL global
+   0,36 sur HG002 (DEL < 300 pb, duplications segmentaires) ; de novo à
+   reprendre (point 1).
+6. Reproductibilité hors GHFC : pas faite (modèle en partie sur 16 enfants
+   GHFC privés, config GHFC, ni paquet de ressources, ni conteneur, ni
+   DOI) ; verrou éditeur.
+7. Rédaction : non commencée.
+
+**5. Notes.**
+- PAR1/PAR2 des hommes à CN 1 dans le store : pas un bug. Les CRAM ont le
+  PAR de chrY masqué (aucune lecture), la profondeur brute est bien à
+  2 copies, et la normalisation PoN (profil masculin) ramène tout chrX au
+  niveau d'une copie, cohérent avec le génotypage. Les valeurs aberrantes
+  sont de vraies anomalies : XXY, XYY, XXX, perte mosaïque de Y chez un
+  père, gain de PAR1 familial.
+- Le prototype d'images `runs/_plot/plot2.py` (non suivi) compare la
+  profondeur normalisée par le PoN au profil brut du panel : faux écarts
+  en PAR masculin et aux loci polymorphes. À corriger avant la prochaine
+  relecture.
+- Tests : sur un nœud avec `OMP_NUM_THREADS=1` (~1 min), puis les 4 tests
+  Truvari sur le nœud de connexion (SIGILL sur les nœuds).
+
 ### Translocations, inversions et pertes terminales (`vedette bnd`, 2026-11-06)
 
 Fait (branche `bnd-terminal`) : jonctions inter-chromosomiques et de même
