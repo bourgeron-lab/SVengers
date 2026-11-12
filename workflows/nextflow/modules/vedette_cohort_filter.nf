@@ -14,6 +14,8 @@ process VEDETTE_COHORT_FILTER {
     def ped_arg = params.pedigree ? "--pedigree '${params.pedigree}'" : ""
     def known_arg = params.known_sites ? "--known-sites '${params.known_sites}'" : ""
     """
+    # with the pedigree, the trios also flag LowTransmission and DeNovoExcess
+    # sites (autosomes; thresholds: vedette cohort-filter --help)
     ls -1 ${genotype_tables} > gt_list.txt
     ${params.vedette_bin} cohort-filter ${sites} \\
         --jobs ${task.cpus} \\
