@@ -53,11 +53,18 @@ the three are genotyped with GQ >= ``trio_min_gq``):
   is transmitted half of the time; parents 'carrying' a noise genotype
   transmit nothing.
 - ``DeNovoExcess``: >= ``denovo_excess_n`` carrier children have both
-  parents 0/0 (INFO DN_TRIO), and they are >= ``denovo_excess_frac`` of the
-  carrier children (INFO DN_FRAC). A de novo CNV recurs in two unrelated
-  children at most at a NAHR hotspot (15q11-13 BP1-BP3 in 665 children);
-  a site where children keep carrying what neither parent has is a
-  genotyping artifact of the children's genomes.
+  parents 0/0 and a copy ratio that does not support the SV type (DEL with
+  RD > ``denovo_rd_del``, DUP with RD < ``denovo_rd_dup``; INFO DN_NODEPTH),
+  and they are >= ``denovo_excess_frac`` of the carrier children (DN_FRAC
+  counts every de novo child). A site where children keep carrying what
+  neither parent has, without the depth of the SV, is a genotyping
+  artifact of the children's genomes: on dataset_paper, the de novo
+  children of such DEL sites had a median RD of 0.91, 74 % of them in wavy
+  genomes, their parents 0.97. The depth condition keeps the true recurrent
+  de novo: the 22q13.3 terminal deletion (3 unrelated children, RD 0.48-0.50)
+  and a 74 kb deletion at 11q13.3 (3 children, RD 0.50-0.51) were flagged
+  without it, and in a Phelan-McDermid cohort most probands carry a de novo
+  SHANK3 deletion.
 
 dataset_paper (665 trios), model v14b, PASS sites >= 1 kb: the DUP >= 1 kb
 the v12b model did not have were transmitted 35 % of the time at 1-10 kb and
@@ -219,6 +226,7 @@ def _load_one(path: str | Path):
 TRIO_DEFAULTS = {
     "trio_min_gq": 20, "trio_min_opp": 10, "low_transmission": 0.2,
     "denovo_excess_n": 3, "denovo_excess_frac": 0.5,
+    "denovo_rd_del": 0.75, "denovo_rd_dup": 1.25,
 }
 
 
@@ -251,6 +259,9 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
         ("DN_TRIO", "1", "Integer",
          f"Carrier children (trio GQ >= {t['trio_min_gq']}) whose parents are both 0/0 (autosomes)"),
         ("DN_FRAC", "1", "Float", "DN_TRIO over the carrier children of the trios"),
+        ("DN_NODEPTH", "1", "Integer",
+         f"DN_TRIO children whose RD does not support the SV type (DEL RD > {t['denovo_rd_del']:g}, "
+         f"DUP RD < {t['denovo_rd_dup']:g})"),
     ):
         if line[0] not in header.info:
             header.info.add(*line)
@@ -269,8 +280,8 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
          f"Transmitted to < {t['low_transmission']:g} of the children of a heterozygous x 0/0 "
          f"couple, over >= {t['trio_min_opp']} such trios (TR_OPP, TR_RATE)"),
         ("DeNovoExcess",
-         f">= {t['denovo_excess_n']} carrier children with both parents 0/0, >= "
-         f"{t['denovo_excess_frac']:g} of the carrier children (DN_TRIO, DN_FRAC)"),
+         f">= {t['denovo_excess_n']} carrier children with both parents 0/0 and no depth support, >= "
+         f"{t['denovo_excess_frac']:g} of the carrier children (DN_NODEPTH)"),
     ):
         if name not in header.filters:
             header.filters.add(name, None, None, desc)
@@ -336,6 +347,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             col_nalt = np.array([tables[s]["nalt"][i] for s in samples])
             col_cn = np.array([tables[s]["cn"][i] for s in samples])
             col_gq = np.array([tables[s]["gq"][i] for s in samples])
+            col_rd = np.array([tables[s]["rd"][i] for s in samples])
             called = col_nalt >= 0
             svtype = rec.info.get("SVTYPE", "")
             sex_contig = rec.contig in SEX_CONTIGS
@@ -448,9 +460,15 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                 opp = ok & (((gf == 1) & (gm == 0)) | ((gf == 0) & (gm == 1)))
                 n_opp, n_tr = int(opp.sum()), int((opp & (gc > 0)).sum())
                 car = ok & (gc > 0)
-                n_car, n_dn = int(car.sum()), int((car & (gf == 0) & (gm == 0)).sum())
+                dn = car & (gf == 0) & (gm == 0)
+                n_car, n_dn = int(car.sum()), int(dn.sum())
+                rd_c = col_rd[tc]   # NaN: no depth, no support
+                depth = (rd_c <= trio["denovo_rd_del"]) if svtype == "DEL" else (
+                    rd_c >= trio["denovo_rd_dup"])
+                n_nodepth = int((dn & ~depth).sum())
                 new.info["TR_OPP"] = n_opp
                 new.info["DN_TRIO"] = n_dn
+                new.info["DN_NODEPTH"] = n_nodepth
                 if n_opp:
                     new.info["TR_RATE"] = round(n_tr / n_opp, 4)
                     if (n_opp >= trio["trio_min_opp"]
@@ -458,8 +476,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                         tags.append("LowTransmission")
                 if n_car:
                     new.info["DN_FRAC"] = round(n_dn / n_car, 4)
-                    if (n_dn >= trio["denovo_excess_n"]
-                            and n_dn / n_car >= trio["denovo_excess_frac"]):
+                    if (n_nodepth >= trio["denovo_excess_n"]
+                            and n_nodepth / n_car >= trio["denovo_excess_frac"]):
                         tags.append("DeNovoExcess")
 
             for tag in tags or ["PASS"]:

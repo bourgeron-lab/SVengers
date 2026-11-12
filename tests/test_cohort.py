@@ -522,8 +522,9 @@ def test_cohort_filter_trio_flags(tmp_path):
     # 10 trios (P = father, M = mother, C = child)
     # G: fathers 0/1, half of the children carry      -> transmitted, PASS
     # T: fathers 0/1, no child carries                -> LowTransmission
-    # N: 4 children carry, every parent 0/0           -> DeNovoExcess
+    # N: 4 children carry, every parent 0/0, no depth -> DeNovoExcess
     # R: 2 children carry, parents 0/0 (NAHR hotspot) -> PASS
+    # S: 4 children carry, every parent 0/0, RD 1.5   -> PASS (recurrent de novo with depth)
     fams = range(10)
     (tmp_path / "ped.tsv").write_text("".join(
         f"F{k}\tP{k}\t0\t0\t1\t1\nF{k}\tM{k}\t0\t0\t2\t1\nF{k}\tC{k}\tP{k}\tM{k}\t1\t2\n"
@@ -534,12 +535,13 @@ def test_cohort_filter_trio_flags(tmp_path):
         role, k = smp[0], int(smp[1:])
         if sid in ("G", "T"):
             return role == "P" or (sid == "G" and role == "C" and k < 5)
-        return role == "C" and k < (4 if sid == "N" else 2)
+        return role == "C" and k < (2 if sid == "R" else 4)
 
     sites = [("G", "chr22", 1_000_000, 1_005_000, "DUP"),
              ("T", "chr22", 2_000_000, 2_005_000, "DUP"),
              ("N", "chr22", 3_000_000, 3_005_000, "DUP"),
-             ("R", "chr22", 4_000_000, 4_005_000, "DUP")]
+             ("R", "chr22", 4_000_000, 4_005_000, "DUP"),
+             ("S", "chr22", 5_000_000, 5_005_000, "DUP")]
     samples = [f"{r}{k}" for k in fams for r in "PMC"]
     _write_sites_vcf(tmp_path / "sites.vcf.gz", [
         (*s, sum(carries(s[0], x) for x in samples)) for s in sites
@@ -554,7 +556,8 @@ def test_cohort_filter_trio_flags(tmp_path):
                 c = carries(sid, smp)
                 w.writerow(dict(zip(GENOTYPE_COLUMNS, [
                     sid, contig, start, end, svtype, smp, "0/1" if c else "0/0", 40,
-                    3 if c else 2, 1.5 if c else 1.0, "", 0, 0, 0, 0, "",
+                    3 if c else 2, 40, (1.05 if sid in "NR" else 1.5) if c else 1.0,
+                    0, 0, "", 0, "",
                 ], strict=False)))
         gt_paths.append(path)
 
@@ -567,7 +570,10 @@ def test_cohort_filter_trio_flags(tmp_path):
     assert out["T"].info["TR_RATE"] == 0.0
     assert list(out["N"].filter.keys()) == ["DeNovoExcess"]
     assert out["N"].info["DN_TRIO"] == 4 and out["N"].info["DN_FRAC"] == 1.0
+    assert out["N"].info["DN_NODEPTH"] == 4
     assert list(out["R"].filter.keys()) == ["PASS"]
+    assert list(out["S"].filter.keys()) == ["PASS"]
+    assert out["S"].info["DN_TRIO"] == 4 and out["S"].info["DN_NODEPTH"] == 0
     assert counts["low_transmission"] == 1 and counts["denovo_excess"] == 1
 
     # thresholds: 11 trios needed -> T passes; 2 de novo children suffice -> R flagged

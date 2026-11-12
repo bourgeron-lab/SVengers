@@ -476,6 +476,12 @@ def cohort_filter(
     denovo_excess_frac: float = typer.Option(
         0.5, help="DeNovoExcess: ... that are at least this fraction of the carrier children"
     ),
+    denovo_rd_del: float = typer.Option(
+        0.75, help="DeNovoExcess: a de novo DEL child with RD at or below this has depth support (not counted)"
+    ),
+    denovo_rd_dup: float = typer.Option(
+        1.25, help="DeNovoExcess: a de novo DUP child with RD at or above this has depth support (not counted)"
+    ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics.
@@ -505,6 +511,7 @@ def cohort_filter(
             "low_transmission": low_transmission,
             "denovo_excess_n": denovo_excess_n if denovo_excess_n > 0 else 10**9,
             "denovo_excess_frac": denovo_excess_frac,
+            "denovo_rd_del": denovo_rd_del, "denovo_rd_dup": denovo_rd_dup,
         },
         jobs=resolve_jobs(jobs),
     )
