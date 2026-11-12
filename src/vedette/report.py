@@ -235,6 +235,7 @@ _INHERIT_FR = {
     "denovo": "de novo",
     "denovo_lowconf": "de novo (GQ faible)",
     "denovo_genotype_only": "de novo (génotypage seul, sans appel de l'enfant)",
+    "denovo_weak": "de novo (faible : appel de l'enfant non PASS, appel parental ou site partagé)",
     "maternal": "maternel",
     "paternal": "paternel",
     "biparental": "biparental",

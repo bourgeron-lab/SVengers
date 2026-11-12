@@ -160,7 +160,7 @@ def test_cohort_stages_parallel_equal_serial(cohort):
     assert _text(tmp / "o1.tsv") == _text(tmp / "o3.tsv")
     inh = [ln.split("\t")[13] for ln in _text(tmp / "o1.tsv").splitlines()[1:]]
     assert "denovo_genotype_only" in inh
-    assert sum(x.n_denovo + x.n_denovo_genotype_only for x in o1) == sum(x.n_denovo for x in s1)
+    assert sum(x.n_denovo + x.n_denovo_weak + x.n_denovo_genotype_only for x in o1) == sum(x.n_denovo for x in s1)
 
     assert sweep(cohort_vcf, ped, jobs=1) == sweep(cohort_vcf, ped, jobs=3)
 
