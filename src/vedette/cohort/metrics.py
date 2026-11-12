@@ -43,6 +43,27 @@ at 0.6-0.75 of the cohort, below ``carrier_frac_max``.
   (``CHRY_MIN_SIZE``) are flagged too, their carriers' CN being set by the
   junctions: on the 72 sites left, father/son discordance 34 % (DEL) and
   86 % (DUP) below 1 kb, 10 % and 24 % above.
+
+Two trio flags (with a pedigree, autosomes only; a trio counts at a site when
+the three are genotyped with GQ >= ``trio_min_gq``):
+
+- ``LowTransmission``: among the trios with one heterozygous parent and the
+  other 0/0 (INFO TR_OPP), the child carries in < ``low_transmission`` of
+  them (INFO TR_RATE), with >= ``trio_min_opp`` such trios. A true variant
+  is transmitted half of the time; parents 'carrying' a noise genotype
+  transmit nothing.
+- ``DeNovoExcess``: >= ``denovo_excess_n`` carrier children have both
+  parents 0/0 (INFO DN_TRIO), and they are >= ``denovo_excess_frac`` of the
+  carrier children (INFO DN_FRAC). A de novo CNV recurs in two unrelated
+  children at most at a NAHR hotspot (15q11-13 BP1-BP3 in 665 children);
+  a site where children keep carrying what neither parent has is a
+  genotyping artifact of the children's genomes.
+
+dataset_paper (665 trios), model v14b, PASS sites >= 1 kb: the DUP >= 1 kb
+the v12b model did not have were transmitted 35 % of the time at 1-10 kb and
+41 % at >= 10 kb, vs 46 % for the DEL and 44-45 % for the shared DUP; 27 %
+of the new 1-10 kb DUP sites had a site rate < 0.2 (8-10 % of the DEL), and
+their carrier children had both parents 0/0 twice as often as the DEL's.
 """
 
 from __future__ import annotations
@@ -195,8 +216,15 @@ def _load_one(path: str | Path):
     return _load_table_arrays(path, _SHARED["site_idx"], _SHARED["n_sites"])
 
 
+TRIO_DEFAULTS = {
+    "trio_min_gq": 20, "trio_min_opp": 10, "low_transmission": 0.2,
+    "denovo_excess_n": 3, "denovo_excess_frac": 0.5,
+}
+
+
 def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
-                   known_common_frac) -> pysam.VariantHeader:
+                   known_common_frac, trio: dict | None = None) -> pysam.VariantHeader:
+    t = {**TRIO_DEFAULTS, **(trio or {})}
     with pysam.VariantFile(str(sites_vcf)) as sites:
         header = sites.header.copy()
     header.add_line(f"##source=vedette-cohort-{__version__}")
@@ -217,6 +245,12 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
         ("REF_CARRIER_FRAC", "1", "Float", "Carrier fraction of the matching site in the reference cohort"),
         ("REF_FILTER", "1", "String", "FILTER of the matching site in the reference cohort, '|'-separated"),
         ("REF_ARTIFACT", "0", "Flag", "CohortArtifact taken from the matching reference site (common site, --known-sites)"),
+        ("TR_OPP", "1", "Integer",
+         f"Trios (GQ >= {t['trio_min_gq']}) with one heterozygous parent and the other 0/0 (autosomes)"),
+        ("TR_RATE", "1", "Float", "Fraction of the TR_OPP trios whose child carries the variant"),
+        ("DN_TRIO", "1", "Integer",
+         f"Carrier children (trio GQ >= {t['trio_min_gq']}) whose parents are both 0/0 (autosomes)"),
+        ("DN_FRAC", "1", "Float", "DN_TRIO over the carrier children of the trios"),
     ):
         if line[0] not in header.info:
             header.info.add(*line)
@@ -231,6 +265,12 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
         ("ChrYNoDepth",
          "chrY outside the PARs: shorter than one depth bin, or the copy number of fewer "
          "than half of the carriers supports the SV type (junction-only call in the Y repeats)"),
+        ("LowTransmission",
+         f"Transmitted to < {t['low_transmission']:g} of the children of a heterozygous x 0/0 "
+         f"couple, over >= {t['trio_min_opp']} such trios (TR_OPP, TR_RATE)"),
+        ("DeNovoExcess",
+         f">= {t['denovo_excess_n']} carrier children with both parents 0/0, >= "
+         f"{t['denovo_excess_frac']:g} of the carrier children (DN_TRIO, DN_FRAC)"),
     ):
         if name not in header.filters:
             header.filters.add(name, None, None, desc)
@@ -265,14 +305,17 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
     cn_discordant_frac = sh["cn_discordant_frac"]
     known_common_frac = sh["known_common_frac"]
     known_artifacts = sh.get("known_artifacts", True)
+    trio = {**TRIO_DEFAULTS, **sh.get("trio", {})}
+    tc, tf, tm = sh.get("trio_idx", (np.zeros(0, int),) * 3)
     header = _cohort_header(
         sh["sites_vcf"], samples, carrier_frac_max, cn_discordant_frac,
-        known_common_frac,
+        known_common_frac, trio,
     )
     known = _KnownSites(sh["known_sites"]) if sh["known_sites"] else None
     gt_of_nalt = {0: (0, 0), 1: (0, 1), 2: (1, 1)}
     counts = {"sites": 0, "artifact": 0, "ref_artifact": 0, "high_carrier": 0, "cn_discordant": 0,
-              "common_ref": 0, "chry_no_depth": 0, "pass": 0}
+              "common_ref": 0, "chry_no_depth": 0, "low_transmission": 0,
+              "denovo_excess": 0, "pass": 0}
     fo = BGZFile(part, "wb") if part.endswith(".gz") else open(part, "wb")
     with pysam.VariantFile(str(sh["sites_vcf"])) as sites, fo:
         spec = spec_coords(sites.header)
@@ -292,6 +335,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
 
             col_nalt = np.array([tables[s]["nalt"][i] for s in samples])
             col_cn = np.array([tables[s]["cn"][i] for s in samples])
+            col_gq = np.array([tables[s]["gq"][i] for s in samples])
             called = col_nalt >= 0
             svtype = rec.info.get("SVTYPE", "")
             sex_contig = rec.contig in SEX_CONTIGS
@@ -396,6 +440,28 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                         new.info["REF_ARTIFACT"] = True
                         counts["ref_artifact"] += 1
 
+            if len(tc) and not sex_contig:
+                gc, gf, gm = col_nalt[tc], col_nalt[tf], col_nalt[tm]
+                ok = ((gc >= 0) & (gf >= 0) & (gm >= 0)
+                      & (np.minimum(np.minimum(col_gq[tc], col_gq[tf]), col_gq[tm])
+                         >= trio["trio_min_gq"]))
+                opp = ok & (((gf == 1) & (gm == 0)) | ((gf == 0) & (gm == 1)))
+                n_opp, n_tr = int(opp.sum()), int((opp & (gc > 0)).sum())
+                car = ok & (gc > 0)
+                n_car, n_dn = int(car.sum()), int((car & (gf == 0) & (gm == 0)).sum())
+                new.info["TR_OPP"] = n_opp
+                new.info["DN_TRIO"] = n_dn
+                if n_opp:
+                    new.info["TR_RATE"] = round(n_tr / n_opp, 4)
+                    if (n_opp >= trio["trio_min_opp"]
+                            and n_tr / n_opp < trio["low_transmission"]):
+                        tags.append("LowTransmission")
+                if n_car:
+                    new.info["DN_FRAC"] = round(n_dn / n_car, 4)
+                    if (n_dn >= trio["denovo_excess_n"]
+                            and n_dn / n_car >= trio["denovo_excess_frac"]):
+                        tags.append("DeNovoExcess")
+
             for tag in tags or ["PASS"]:
                 new.filter.add(tag)
             counts["artifact"] += "CohortArtifact" in tags
@@ -403,6 +469,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             counts["cn_discordant"] += "CNDiscordant" in tags
             counts["common_ref"] += "CommonRef" in tags
             counts["chry_no_depth"] += "ChrYNoDepth" in tags
+            counts["low_transmission"] += "LowTransmission" in tags
+            counts["denovo_excess"] += "DeNovoExcess" in tags
             counts["pass"] += not tags
             # str(record) is the line VariantFile.write would emit
             fo.write(str(new).encode())
@@ -423,12 +491,15 @@ def run_cohort_filter(
     known_sites: str | Path | None = None,
     known_common_frac: float = 0.5,
     known_artifacts: bool = True,
+    trio: dict | None = None,
     jobs: int = 1,
 ) -> dict[str, int]:
     """``jobs`` > 1 loads the genotype tables and writes the records in
     parallel (5 h on one core for 2670 samples): each worker writes a
     contiguous block of sites, the blocks are joined in site order, so the
-    records are identical to the serial run."""
+    records are identical to the serial run. ``trio`` overrides
+    ``TRIO_DEFAULTS`` (LowTransmission / DeNovoExcess thresholds); the trio
+    flags need a ``pedigree``."""
     import shutil
     import tempfile
 
@@ -469,6 +540,16 @@ def run_cohort_filter(
             {ind.sample_id for ind in pedigree.founders()} if pedigree else set(samples)
         )
         male = hemizygous_x(tables, samples, np.array(x_sites, dtype=np.int64))
+        pos = {s: k for k, s in enumerate(samples)}
+        trios = [
+            (pos[c.sample_id], pos[f.sample_id], pos[m.sample_id])
+            for c, f, m in (pedigree.trios() if pedigree else [])
+            if all(x.sample_id in pos for x in (c, f, m))
+        ]
+        trio_idx = tuple(np.array(col, dtype=np.int64) for col in zip(*trios, strict=True)) \
+            if trios else (np.zeros(0, dtype=np.int64),) * 3
+        logger.info("cohort-filter: %d complete trios (LowTransmission, DeNovoExcess)",
+                    len(trios))
         logger.info("cohort-filter: %d samples with one chrX", int(male.sum()))
         _SHARED.update(
             tables=tables, samples=samples, male=male,
@@ -481,6 +562,7 @@ def run_cohort_filter(
             cn_discordant_frac=cn_discordant_frac,
             known_common_frac=known_common_frac,
             known_artifacts=known_artifacts,
+            trio={**TRIO_DEFAULTS, **(trio or {})}, trio_idx=trio_idx,
         )
 
         out_path = str(out_vcf)
@@ -497,14 +579,14 @@ def run_cohort_filter(
             ]
             counts = {"sites": 0, "artifact": 0, "ref_artifact": 0, "high_carrier": 0,
                       "cn_discordant": 0, "common_ref": 0, "chry_no_depth": 0,
-                      "pass": 0}
+                      "low_transmission": 0, "denovo_excess": 0, "pass": 0}
             for c in pmap(_write_chunk, tasks, jobs):
                 for k, v in c.items():
                     counts[k] += v
             head = f"{tmp}/header{ext}"
             header = _cohort_header(
                 sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
-                known_common_frac,
+                known_common_frac, trio,
             )
             with pysam.VariantFile(head, mode, header=header):
                 pass
@@ -518,10 +600,12 @@ def run_cohort_filter(
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info(
         "cohort-filter: %d sites, %d PASS, %d CohortArtifact (%d from the reference), "
-        "%d HighCarrierFrac, %d CNDiscordant, %d CommonRef, %d ChrYNoDepth, %d samples",
+        "%d HighCarrierFrac, %d CNDiscordant, %d CommonRef, %d ChrYNoDepth, "
+        "%d LowTransmission, %d DeNovoExcess, %d samples",
         counts["sites"], counts["pass"], counts["artifact"], counts["ref_artifact"],
         counts["high_carrier"],
         counts["cn_discordant"], counts["common_ref"], counts["chry_no_depth"],
+        counts["low_transmission"], counts["denovo_excess"],
         len(samples),
     )
     return counts

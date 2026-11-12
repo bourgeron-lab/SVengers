@@ -461,9 +461,25 @@ def cohort_filter(
         True, "--known-artifacts/--no-known-artifacts",
         help="With --known-sites: a site common here (AF > --artifact-af) whose reference site is CohortArtifact is CohortArtifact too (INFO REF_ARTIFACT)",
     ),
+    trio_min_gq: int = typer.Option(
+        20, help="Trio flags: a trio counts at a site when child and parents have GQ >= this"
+    ),
+    trio_min_opp: int = typer.Option(
+        10, help="LowTransmission: minimum trios with one heterozygous parent and the other 0/0"
+    ),
+    low_transmission: float = typer.Option(
+        0.2, help="LowTransmission: flag when the children of those trios carry at a lower rate (0 disables)"
+    ),
+    denovo_excess_n: int = typer.Option(
+        3, help="DeNovoExcess: minimum carrier children with both parents 0/0 (0 disables)"
+    ),
+    denovo_excess_frac: float = typer.Option(
+        0.5, help="DeNovoExcess: ... that are at least this fraction of the carrier children"
+    ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
-    """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics."""
+    """Assemble genotype tables into a cohort VCF with AF/HWE/artifact metrics.
+    With a --pedigree, the trios flag LowTransmission and DeNovoExcess sites."""
     from .cohort.metrics import run_cohort_filter
     from .parallel import resolve_jobs
     from .ped import parse_ped
@@ -483,13 +499,22 @@ def cohort_filter(
         known_sites=known_sites,
         known_common_frac=known_common_frac,
         known_artifacts=known_artifacts,
+        trio={
+            "trio_min_gq": trio_min_gq, "trio_min_opp": trio_min_opp,
+            # 0 disables: no rate is < 0, no count is >= a huge number
+            "low_transmission": low_transmission,
+            "denovo_excess_n": denovo_excess_n if denovo_excess_n > 0 else 10**9,
+            "denovo_excess_frac": denovo_excess_frac,
+        },
         jobs=resolve_jobs(jobs),
     )
     typer.echo(
         f"{counts['sites']} sites, {counts['pass']} PASS, {counts['artifact']} CohortArtifact "
         f"({counts['ref_artifact']} from the reference), "
         f"{counts['high_carrier']} HighCarrierFrac, {counts['cn_discordant']} CNDiscordant, "
-        f"{counts['common_ref']} CommonRef, {counts['chry_no_depth']} ChrYNoDepth -> {out}"
+        f"{counts['common_ref']} CommonRef, {counts['chry_no_depth']} ChrYNoDepth, "
+        f"{counts['low_transmission']} LowTransmission, {counts['denovo_excess']} DeNovoExcess "
+        f"-> {out}"
     )
 
 

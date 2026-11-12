@@ -508,3 +508,78 @@ def test_cohort_filter_takes_the_reference_artifact_verdict(tmp_path):
                           known_sites=tmp_path / "ref.vcf.gz", **kw)
         c = {r.id: r for r in pysam.VariantFile(str(tmp_path / "c2.vcf.gz"))}["C"]
         assert "CohortArtifact" not in c.filter.keys() and "REF_ARTIFACT" not in c.info
+
+
+def test_cohort_filter_trio_flags(tmp_path):
+    import csv
+
+    import pysam
+
+    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
+    from vedette.cohort.metrics import run_cohort_filter
+    from vedette.ped import parse_ped
+
+    # 10 trios (P = father, M = mother, C = child)
+    # G: fathers 0/1, half of the children carry      -> transmitted, PASS
+    # T: fathers 0/1, no child carries                -> LowTransmission
+    # N: 4 children carry, every parent 0/0           -> DeNovoExcess
+    # R: 2 children carry, parents 0/0 (NAHR hotspot) -> PASS
+    fams = range(10)
+    (tmp_path / "ped.tsv").write_text("".join(
+        f"F{k}\tP{k}\t0\t0\t1\t1\nF{k}\tM{k}\t0\t0\t2\t1\nF{k}\tC{k}\tP{k}\tM{k}\t1\t2\n"
+        for k in fams
+    ))
+
+    def carries(sid, smp):
+        role, k = smp[0], int(smp[1:])
+        if sid in ("G", "T"):
+            return role == "P" or (sid == "G" and role == "C" and k < 5)
+        return role == "C" and k < (4 if sid == "N" else 2)
+
+    sites = [("G", "chr22", 1_000_000, 1_005_000, "DUP"),
+             ("T", "chr22", 2_000_000, 2_005_000, "DUP"),
+             ("N", "chr22", 3_000_000, 3_005_000, "DUP"),
+             ("R", "chr22", 4_000_000, 4_005_000, "DUP")]
+    samples = [f"{r}{k}" for k in fams for r in "PMC"]
+    _write_sites_vcf(tmp_path / "sites.vcf.gz", [
+        (*s, sum(carries(s[0], x) for x in samples)) for s in sites
+    ])
+    gt_paths = []
+    for smp in samples:
+        path = tmp_path / f"{smp}.gt.tsv"
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=GENOTYPE_COLUMNS, delimiter="\t")
+            w.writeheader()
+            for sid, contig, start, end, svtype in sites:
+                c = carries(sid, smp)
+                w.writerow(dict(zip(GENOTYPE_COLUMNS, [
+                    sid, contig, start, end, svtype, smp, "0/1" if c else "0/0", 40,
+                    3 if c else 2, 1.5 if c else 1.0, "", 0, 0, 0, 0, "",
+                ], strict=False)))
+        gt_paths.append(path)
+
+    counts = run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "c.vcf.gz",
+                               pedigree=parse_ped(tmp_path / "ped.tsv"))
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "c.vcf.gz"))}
+    assert list(out["G"].filter.keys()) == ["PASS"]
+    assert out["G"].info["TR_OPP"] == 10 and out["G"].info["TR_RATE"] == 0.5
+    assert list(out["T"].filter.keys()) == ["LowTransmission"]
+    assert out["T"].info["TR_RATE"] == 0.0
+    assert list(out["N"].filter.keys()) == ["DeNovoExcess"]
+    assert out["N"].info["DN_TRIO"] == 4 and out["N"].info["DN_FRAC"] == 1.0
+    assert list(out["R"].filter.keys()) == ["PASS"]
+    assert counts["low_transmission"] == 1 and counts["denovo_excess"] == 1
+
+    # thresholds: 11 trios needed -> T passes; 2 de novo children suffice -> R flagged
+    run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "c2.vcf.gz",
+                      pedigree=parse_ped(tmp_path / "ped.tsv"),
+                      trio={"trio_min_opp": 11, "denovo_excess_n": 2})
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "c2.vcf.gz"))}
+    assert list(out["T"].filter.keys()) == ["PASS"]
+    assert list(out["R"].filter.keys()) == ["DeNovoExcess"]
+
+    # no pedigree, no trio flag
+    run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "c3.vcf.gz")
+    out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "c3.vcf.gz"))}
+    assert all(list(r.filter.keys()) == ["PASS"] for r in out.values())
+    assert "TR_OPP" not in out["G"].info
