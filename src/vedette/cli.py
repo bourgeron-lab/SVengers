@@ -501,7 +501,15 @@ def ped_annotate(
     out_summary: Optional[Path] = typer.Option(None, help="Per-trio summary TSV"),
     calls_dir: Optional[Path] = typer.Option(
         None, help="Per-sample calls <DIR>/<S>/<S>.filtered.vcf.gz: a de novo without a call of the "
-        "child at the site becomes denovo_genotype_only"
+        "child at the site becomes denovo_genotype_only; one without a PASS call of the child, with "
+        "a parental call or on a shared site becomes denovo_weak"
+    ),
+    max_other_carriers: int = typer.Option(
+        2, help="With --calls-dir: carriers outside the child's family a confirmed de novo site may "
+        "have (or --max-other-carrier-frac of the pedigree's samples, whichever is larger)"
+    ),
+    max_other_carrier_frac: float = typer.Option(
+        0.005, help="With --calls-dir: same limit as a fraction of the pedigree's samples"
     ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
@@ -512,14 +520,16 @@ def ped_annotate(
 
     stats = run_ped_annotate(
         cohort_vcf, parse_ped(pedigree), out_report, out_summary,
-        jobs=resolve_jobs(jobs), calls_dir=calls_dir,
+        jobs=resolve_jobs(jobs), calls_dir=calls_dir, max_other_carriers=max_other_carriers,
+        max_other_carrier_frac=max_other_carrier_frac,
     )
     for st in stats:
         tr = f"{st.transmission_rate:.3f}" if st.n_transmit_opportunity else "NA"
         typer.echo(
             f"{st.family_id}/{st.child}: {st.n_genotyped} genotyped, "
             f"{st.n_child_carrier} carrier, {st.n_denovo} de novo"
-            + (f" (+{st.n_denovo_genotype_only} genotype-only)" if calls_dir else "") + ", "
+            + (f" (+{st.n_denovo_weak} weak, +{st.n_denovo_genotype_only} genotype-only)"
+               if calls_dir else "") + ", "
             f"MVR {st.violation_rate:.3f}, transmission {tr}"
         )
 

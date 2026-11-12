@@ -27,11 +27,12 @@ few wavy children (a candidate took 27 children at wave >= 0.20 from 18 to
 460 de novo DUPs >= 1 kb each), and the strata also show whether a rise is
 confined to them. A stratum needs ``MIN_STRATUM`` children to be gated.
 
-The gate counts every de novo, with or without a call of the child at the
-site (``denovo`` and ``denovo_genotype_only`` from ``ped-annotate
+The gate counts every GQ-confident de novo, whatever the child's own call
+(``denovo``, ``denovo_weak`` and ``denovo_genotype_only`` from ``ped-annotate
 --calls-dir``), so that runs annotated with and without the child's own calls
 stay comparable: it measures a burden that is mostly genotyping artifact. The
-de novo confirmed by the child's own call are reported beside it.
+confirmed de novo (``denovo``: PASS call of the child, no parental call,
+private site) are reported beside it.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 SIZE_CLASSES = ("<1kb", "1-10kb", ">=10kb")
 SVTYPES = ("DEL", "DUP")
-DENOVO = ("denovo", "denovo_genotype_only")
+DENOVO = ("denovo", "denovo_weak", "denovo_genotype_only")
 BINS = [("all", "all")] + [(t, s) for t in SVTYPES for s in ("all", *SIZE_CLASSES)]
 
 # wave QC strata: below the calibrated warning threshold, wavy, strongly wavy
@@ -84,7 +85,7 @@ class RunStats:
     transmission: float = float("nan")
     children: list[str] = field(default_factory=list)
     wave: dict[str, float] = field(default_factory=dict)
-    confirmed: dict[tuple[str, str], list[int]] | None = None  # de novo with the child's own call
+    confirmed: dict[tuple[str, str], list[int]] | None = None  # confirmed de novo (ped-annotate --calls-dir)
 
     def values(self, key: tuple[str, str], only: set[str] | None = None) -> list[int]:
         if only is None:
@@ -260,7 +261,8 @@ def summary_lines(s: RunStats) -> list[str]:
         c = s.confirmed
         med = lambda k: statistics.median(c[k]) if c[k] else 0  # noqa: E731
         out.append(
-            f"   confirmed by the child's own call: median {med(('all', 'all')):g} per child "
+            "   confirmed de novo (PASS child call, no parental call, private site): "
+            f"median {med(('all', 'all')):g} per child "
             f"(DEL {med(('DEL', 'all')):g}, DUP {med(('DUP', 'all')):g}), total "
             f"{sum(c[('all', 'all')])} = DEL {sum(c[('DEL', 'all')])}, DUP {sum(c[('DUP', 'all')])}"
         )

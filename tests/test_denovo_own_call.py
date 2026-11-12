@@ -1,4 +1,5 @@
-"""ped-annotate --calls-dir: a de novo without a call of the child at the site is genotype-only."""
+"""ped-annotate --calls-dir: a de novo without a call of the child at the site is genotype-only;
+one with a non-PASS call of the child, a parental call or other carriers is weak."""
 
 import csv
 
@@ -7,11 +8,12 @@ import pysam
 from vedette.cohort.mendel import OwnCalls, run_ped_annotate
 from vedette.ped import parse_ped
 
-SAMPLES = ("C", "F", "M")
+SAMPLES = ("C", "F", "M", "U")   # U: unrelated, carrier where the site says so
 
 
-def _cohort(path, sites):
-    """sites: [(id, svtype, start, end, child_gt)], parents 0/0, GQ 50 everywhere."""
+def _cohort(path, sites, unrelated=()):
+    """sites: [(id, svtype, start, end, child_gt)], parents 0/0, GQ 50 everywhere; U 0/1 at
+    the ``unrelated`` site ids."""
     h = pysam.VariantHeader()
     h.contigs.add("chr1", length=1_000_000)
     h.info.add("SVTYPE", "1", "String", "t")
@@ -25,29 +27,30 @@ def _cohort(path, sites):
             r = out.new_record(contig="chr1", start=s - 1, stop=e, alleles=("N", f"<{t}>"), id=sid)
             r.info["SVTYPE"] = t
             for smp in SAMPLES:
-                r.samples[smp]["GT"] = cgt if smp == "C" else (0, 0)
+                r.samples[smp]["GT"] = (cgt if smp == "C" else
+                                        (0, 1) if smp == "U" and sid in unrelated else (0, 0))
                 r.samples[smp]["GQ"] = 50
             out.write(r)
     pysam.tabix_index(str(path), preset="vcf", force=True)
 
 
-def _calls(path, calls):
-    """calls: [(svtype, start, end, filter, gt, sq)] of sample C."""
+def _calls(path, calls, sample="C"):
+    """calls: [(svtype, start, end, filter, gt, sq)] of one sample."""
     h = pysam.VariantHeader()
     h.contigs.add("chr1", length=1_000_000)
     h.info.add("SVTYPE", "1", "String", "t")
     h.filters.add("LowSQ", None, None, "low")
     h.formats.add("GT", "1", "String", "g")
     h.formats.add("SQ", "1", "Float", "s")
-    h.add_sample("C")
+    h.add_sample(sample)
     with pysam.VariantFile(str(path), "wz", header=h) as out:
         for t, s, e, flt, gt, sq in calls:
             r = out.new_record(contig="chr1", start=s - 1, stop=e, alleles=("N", f"<{t}>"))
             r.info["SVTYPE"] = t
             if flt != "PASS":
                 r.filter.add(flt)
-            r.samples["C"]["GT"] = gt
-            r.samples["C"]["SQ"] = sq
+            r.samples[sample]["GT"] = gt
+            r.samples[sample]["SQ"] = sq
             out.write(r)
     pysam.tabix_index(str(path), preset="vcf", force=True)
 
@@ -75,7 +78,9 @@ def _setup(tmp_path):
     d = tmp_path / "samples" / "C"
     d.mkdir(parents=True)
     _calls(d / "C.filtered.vcf.gz", CALLS)
-    (tmp_path / "ped.tsv").write_text("FAM\tF\t0\t0\t1\t1\nFAM\tM\t0\t0\t2\t1\nFAM\tC\tF\tM\t1\t2\n")
+    (tmp_path / "ped.tsv").write_text(
+        "FAM\tF\t0\t0\t1\t1\nFAM\tM\t0\t0\t2\t1\nFAM\tC\tF\tM\t1\t2\nOTHER\tU\t0\t0\t1\t1\n"
+    )
     return parse_ped(tmp_path / "ped.tsv")
 
 
@@ -103,16 +108,45 @@ def test_genotype_only_label_and_counts(tmp_path):
     r = _rows(tmp_path / "m.tsv")
     assert {k: (v["inheritance"], v["child_call"]) for k, v in r.items()} == {
         "own_pass": ("denovo", "PASS"),
-        "own_lowsq": ("denovo", "LowSQ"),
+        "own_lowsq": ("denovo_weak", "LowSQ"),
         "wrong_type": ("denovo_genotype_only", "none"),
         "too_small": ("denovo_genotype_only", "none"),
         "nothing": ("denovo_genotype_only", "none"),
         "not_carrier": ("denovo_genotype_only", "none"),
     }
     assert r["own_pass"]["dnq"] == "50" and r["nothing"]["dnq"] == ""
-    assert (st.n_denovo, st.n_denovo_genotype_only) == (2, 4)
+    assert r["own_pass"]["parent_call"] == "NA,NA" and r["own_pass"]["other_carriers"] == "0"
+    assert (st.n_denovo, st.n_denovo_weak, st.n_denovo_genotype_only) == (1, 1, 4)
     summ = list(csv.DictReader(open(tmp_path / "s.tsv"), delimiter="\t"))
-    assert (summ[0]["n_denovo"], summ[0]["n_denovo_genotype_only"]) == ("2", "4")
+    assert (summ[0]["n_denovo"], summ[0]["n_denovo_weak"], summ[0]["n_denovo_genotype_only"]) == (
+        "1", "1", "4")
+
+
+def test_parental_call_makes_it_weak(tmp_path):
+    """A LowSQ call of the father at the site: the forced 0/0 missed him."""
+    ped = _setup(tmp_path)
+    d = tmp_path / "samples" / "F"
+    d.mkdir()
+    _calls(d / "F.filtered.vcf.gz", [("DEL", 10_050, 15_000, "LowSQ", (0, 1), 0.8)], sample="F")
+    run_ped_annotate(tmp_path / "cohort.vcf.gz", ped, tmp_path / "m.tsv", None,
+                     calls_dir=tmp_path / "samples")
+    r = _rows(tmp_path / "m.tsv")["own_pass"]
+    assert (r["inheritance"], r["parent_call"]) == ("denovo_weak", "LowSQ,NA")
+
+
+def test_other_carriers_make_it_weak(tmp_path):
+    """A carrier outside the family: allowed up to max_other_carriers."""
+    ped = _setup(tmp_path)
+    _cohort(tmp_path / "cohort.vcf.gz", SITES, unrelated={"own_pass"})
+    for k, want in ((1, "denovo"), (0, "denovo_weak")):
+        run_ped_annotate(tmp_path / "cohort.vcf.gz", ped, tmp_path / "m.tsv", None,
+                         calls_dir=tmp_path / "samples", max_other_carriers=k)
+        r = _rows(tmp_path / "m.tsv")["own_pass"]
+        assert (r["inheritance"], r["other_carriers"]) == (want, "1")
+    # the fraction of the pedigree's samples (4 here) wins when larger
+    run_ped_annotate(tmp_path / "cohort.vcf.gz", ped, tmp_path / "m.tsv", None,
+                     calls_dir=tmp_path / "samples", max_other_carriers=0, max_other_carrier_frac=0.25)
+    assert _rows(tmp_path / "m.tsv")["own_pass"]["inheritance"] == "denovo"
 
 
 def test_low_confidence_stays_lowconf(tmp_path):
@@ -133,7 +167,7 @@ def test_low_confidence_stays_lowconf(tmp_path):
     r = _rows(tmp_path / "m.tsv")
     assert {v["inheritance"] for v in r.values()} == {"denovo_lowconf"}
     assert r["own_pass"]["child_call"] == "PASS" and r["nothing"]["child_call"] == "none"
-    assert (st.n_denovo, st.n_denovo_genotype_only) == (0, 0)
+    assert (st.n_denovo, st.n_denovo_weak, st.n_denovo_genotype_only) == (0, 0, 0)
 
 
 def test_without_calls_dir_unchanged(tmp_path):
@@ -142,6 +176,7 @@ def test_without_calls_dir_unchanged(tmp_path):
     r = _rows(tmp_path / "m.tsv")
     assert {v["inheritance"] for v in r.values()} == {"denovo"}
     assert {v["child_call"] for v in r.values()} == {""}
+    assert {v["parent_call"] for v in r.values()} == {""}
     assert (st.n_denovo, st.n_denovo_genotype_only) == (6, 0)
     summ = list(csv.DictReader(open(tmp_path / "s.tsv"), delimiter="\t"))
-    assert summ[0]["n_denovo_genotype_only"] == "NA"
+    assert summ[0]["n_denovo_genotype_only"] == summ[0]["n_denovo_weak"] == "NA"
