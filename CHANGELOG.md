@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v1.15.0 — 2026-11-13
+
+Model v12b replaces v5n, and the trios now confirm de novo calls and flag
+sites: a confirmed de novo needs a PASS call of the child, no parental call
+and a private site (lifted at a ClinGen dosage-sensitive locus), and the
+cohort VCF gains the LowTransmission and DeNovoExcess flags. Sex-chromosome and
+whole-autosome baselines come from the measured karyotype. Store schema and
+feature schema unchanged; calling unchanged on euploid genomes.
 
 - **Sex-chromosome baseline from the measured karyotype** — with `--pon`,
   `vedette call` sets the chrX/chrY ploidy from the karyotype (copy number on
@@ -87,6 +94,45 @@
   its `samples/`; `bench cohort` gates on both labels (comparable with older
   runs) and prints the confirmed ones; the HTML report's de novo tables keep
   `denovo` only.
+
+- **`ped-annotate --calls-dir`: a confirmed de novo needs a PASS call of the
+  child, no parental call and a private site** — a call of the child was not
+  enough: on dataset_paper 90 % of the de novo that kept one held a LowSQ
+  call, mostly on sites de novo in several unrelated children (a genotyping
+  miss in the parents, not a new mutation). `denovo` now also requires no call
+  of the same type in either parent (any FILTER) and at most
+  max(`--max-other-carriers` 2, `--max-other-carrier-frac` 0.005 x pedigree
+  samples) carriers outside the family; the other GQ-confident de novo with a
+  call of the child are `denovo_weak`. New report columns `parent_call` and
+  `other_carriers`, summary column `n_denovo_weak`; `bench cohort` counts
+  `denovo_weak` in the raw burden. dataset_paper (665 trios): 202 confirmed de
+  novo (DEL 173, DUP 29).
+- **No carrier limit at a ClinGen dosage-sensitive locus** — a pathogenic de
+  novo recurs across families by construction: in the PMS cohort the terminal
+  22q13.3 deletion over SHANK3 has 17 to 74 carriers per site outside the
+  family, and every one became `denovo_weak`. With `--clingen-genes` /
+  `--clingen-regions` (passed by the Nextflow ped step), the limit is lifted
+  for a gene of HI 3 (DEL) or TS 3 (DUP), or a score-3 region covered >= 20 %,
+  while at most `--max-other-carriers` of the outside carriers are parents in
+  the pedigree: the recurrence must come from children (the small deletions of
+  dataset_paper in 3q29, 22q11.2 or BRSK2 have 8 to 92 parent carriers). New
+  report column `dosage_locus`. PMS (94 trios): 29 -> 113 confirmed de novo,
+  84 at SHANK3 in 36 of the 47 children with the 22q13.3 deletion; dataset_paper
+  unchanged. The 11 others hold a LowSQ call of the deletion (a 134 kb
+  terminal loss seen by depth only), a weakness of the model.
+- **`cohort-filter`: LowTransmission and DeNovoExcess trio flags** — with a
+  pedigree, an autosomal site is `LowTransmission` when >= 10 trios with one
+  heterozygous parent and the other 0/0 transmit it at a rate < 0.2
+  (`--trio-min-opp`, `--low-transmission`; trios with GQ >= 20, `--trio-min-gq`), and `DeNovoExcess` when
+  >= 3 carrier children, half of them or more, have both parents 0/0
+  (`--denovo-excess-n`, `--denovo-excess-frac`). A de novo child whose copy
+  ratio supports the type (DEL RD <= 0.75, DUP RD >= 1.25) does not count, so
+  true recurrent de novo deletions (22q13.3, 11q13.3) stay PASS. INFO
+  `TR_OPP`, `TR_RATE`, `DN_TRIO`, `DN_FRAC`, `DN_NODEPTH`. On dataset_paper
+  they remove 8,232 DEL and 581 DUP sites that were otherwise PASS; with the
+  other v1.15 changes, PASS sites DEL 59,598 -> 51,517 and DUP 14,825 ->
+  13,233, and de novo per child (raw burden) median 27 -> 19, 197 -> 103 in
+  the wavy children (wave >= 0.20). Cohort gate quiet on both cohorts.
 
 ## v1.14.0 — 2026-11-07
 

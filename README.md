@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.14.0**, in production
+Status: **v1.15.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -468,7 +468,7 @@ without reading any CRAM; chrY is skipped in women. One job per sample, I/O-ligh
 
 The per-sample tables are assembled into a multi-sample VCF (`GT:GQ:CN:RD:PE:SR`) with
 `AC`, `AN`, `AF`, `NS`, `NCARRIER`, `CARRIER_FRAC`, `HWE_P`, `GTR_DISC`, `CN_DISC`, and
-five site filters:
+five site filters, plus two from the trios with a `--pedigree`:
 
 | FILTER | rule (defaults) |
 |---|---|
@@ -477,6 +477,8 @@ five site filters:
 | `CNDiscordant` | ≥ 0.5 of the carriers (`--cn-discordant-frac`, ≥ 2 carriers) have a re-genotyped CN that contradicts the type: a DUP below, or a DEL above, the carrier's own baseline |
 | `CommonRef` | with `--known-sites` (a reference cohort VCF, e.g. a large `cohort-filter` output), the matching site (same type, reciprocal overlap ≥ 0.5) is carried by ≥ 0.5 of that cohort (`--known-common-frac`); `REF_AF`, `REF_CARRIER_FRAC`, `REF_FILTER` are annotated whenever a match exists |
 | `ChrYNoDepth` | chrY outside the PARs: shorter than one depth bin (1 kb), or fewer than half of the carriers have a CN that supports the type (a DUP above, a DEL below their baseline) |
+| `LowTransmission` | autosomes, with a pedigree: ≥ 10 trios (`--trio-min-opp`; child and parents GQ ≥ 20, `--trio-min-gq`) with one heterozygous parent and the other 0/0, whose children carry the site at a rate < 0.2 (`--low-transmission`; INFO `TR_OPP`, `TR_RATE`) |
+| `DeNovoExcess` | autosomes, with a pedigree: ≥ 3 carrier children (`--denovo-excess-n`), at least half of them (`--denovo-excess-frac`), have both parents 0/0 (INFO `DN_TRIO`, `DN_FRAC`); a de novo child whose copy ratio supports the type (DEL RD ≤ 0.75, DUP RD ≥ 1.25) does not count (`DN_NODEPTH`), so true recurrent de novo deletions stay PASS |
 
 HWE is the Wigginton exact test on the founders of the pedigree (on every sample without
 one). Genotype discordance is **directional**: only "fewer carriers than nominations" is
@@ -499,6 +501,12 @@ not from the pedigree sex, which can be wrong. Then:
   them (20 % on the deletions the CN supports). Below one depth bin the carriers' CN comes
   from the junctions: on the sites left, father/son discordance 34 % (DEL) and 86 % (DUP)
   under 1 kb, 10 % and 24 % above, so those sites are flagged too.
+
+The trio flags catch the genotyping misses a site-level test cannot see: a polymorphism the
+re-genotyping misses in the parents comes out de novo in many children, and an artefact
+in the parents is rarely transmitted. On dataset_paper (665 trios) they remove 8,232 DEL
+and 581 DUP sites that were otherwise PASS, and the median raw de novo burden per child
+falls from 27 to 19 (197 to 103 in the children at wave ≥ 0.20).
 
 `vedette pon artifacts` turns a cohort VCF into a recurrent-artefact BED (founder AF ≥ 0.03
 with HWE p ≤ 1e-6, or ≥ 3 nominators with discordance ≥ 0.5), which `filter --artifact-bed`
@@ -523,14 +531,35 @@ of the same type at the site (reciprocal overlap ≥ 50 %, any FILTER, carrier g
 labelled `denovo_genotype_only` and leaves the `n_denovo` count (summary column
 `n_denovo_genotype_only`); the report's `child_call` column gives the FILTER of the
 child's call (`none` without one). Low-GQ de novo keep `denovo_lowconf`, so `denovo` +
-`denovo_genotype_only` is the former de novo count. On dataset_paper (665 trios), 57,705
-of the 63,934 de novo at PASS sites with GQ ≥ 20 in the trio had no call of the child,
+`denovo_genotype_only` (+ `denovo_weak`, below) is the former de novo count. On
+dataset_paper (665 trios), 57,705 of the 63,934 de novo at PASS sites with GQ ≥ 20 in the trio had no call of the child,
 leaving a median of 7 per child (DEL 6, DUP 1) instead of 27. In a blind image review of
 40 of them, none of the 26 without a call was a de novo at the site (3 were fragments of a
 larger event the child's own call covers), and 10 of 14 were with a PASS call of the
 child, no parental call and a site private to the child; a call of the child is necessary,
 not sufficient (the 7 per child still hold inherited variants mis-genotyped in a parent
 and recurrent sites).
+
+A de novo is therefore **confirmed** (`denovo`, counted in `n_denovo`) only when the three
+properties of the true ones hold: the child's own call is PASS; neither parent holds a call
+of the same type at the site (any FILTER: a LowSQ parental call is the evidence the forced
+0/0 missed; report column `parent_call`); and at most max(`--max-other-carriers` 2,
+`--max-other-carrier-frac` 0.005 × pedigree samples) samples outside the family carry the
+site (`other_carriers`). The other GQ-confident de novo with a call of the child are
+`denovo_weak` (`n_denovo_weak`). On dataset_paper this leaves 202 confirmed de novo
+(DEL 173, DUP 29) in 665 children.
+
+At an established **ClinGen dosage-sensitive locus** (`--clingen-genes`,
+`--clingen-regions`: a gene of haploinsufficiency score 3 for a deletion,
+triplosensitivity 3 for a duplication, or such a region covered ≥ 20 %) a pathogenic de
+novo recurs across families by construction, so the carrier limit is lifted, as long as
+at most `--max-other-carriers` of the outside carriers are parents in the pedigree (the
+recurrence must come from children; small polymorphic deletions in 3q29, 22q11.2 or BRSK2
+have 8 to 92 parent carriers). The report names the locus (`dosage_locus`). In a
+Phelan-McDermid cohort (94 trios) this takes the confirmed de novo from 29 to 113, 84 of
+them the terminal 22q13.3 deletion over SHANK3 (17 to 74 carriers per site outside the
+family); dataset_paper is unchanged. The Nextflow ped step passes the ClinGen lists
+configured for the report.
 
 **X- and Y-linked inheritance.** The child's sex is the ploidy its own genotypes show on
 chrX outside the pseudo-autosomal regions (pedigree sex as fallback):
@@ -943,9 +972,10 @@ strata of >= 10 children): the few strongly wavy children can take most of a mod
 extra calls while the cohort median stays flat. On dataset_paper, a candidate that kept
 the cohort medians took the 27 children at wave >= 0.20 from 18 to 34 de novo DEL
 >= 10 kb each.
-The gate counts `denovo` and `denovo_genotype_only` alike, so runs annotated with and
-without the child's own calls compare: it measures a burden that is mostly genotyping
-artifact, and prints the de novo confirmed by a call of the child beside it.
+The gate counts `denovo`, `denovo_weak` and `denovo_genotype_only` alike, so runs annotated
+with and without the child's own calls compare: it measures a burden that is mostly
+genotyping artifact, and prints the confirmed de novo (PASS call of the child, no parental
+call, private site) beside it.
 
 The cohort run takes hours; its first step, the per-sample filter, takes minutes and is
 where these floods start. Run it alone (`--steps filter`), then
@@ -1033,11 +1063,11 @@ sr cig baf_n baf_dev`.
 from `merge` (`NSAMPLES`, `SQMAX`, `RESCUE`, …) is carried over.
 
 **Mendelian report**: `site_id contig start end svtype family_id child child_gt child_gq
-father_gt father_gq mother_gt mother_gq inheritance violation dnq child_call`; only
-informative rows (child carrier or violation); `child_call` is filled for de novo rows
-with `--calls-dir`. **Summary**: `family_id child n_genotyped n_child_carrier n_denovo
-n_violation violation_rate transmission_rate n_denovo_genotype_only` (`NA` without
-`--calls-dir`).
+father_gt father_gq mother_gt mother_gq inheritance violation dnq child_call parent_call
+other_carriers dosage_locus`; only informative rows (child carrier or violation); the
+last four are filled for de novo rows with `--calls-dir`. **Summary**: `family_id child
+n_genotyped n_child_carrier n_denovo n_violation violation_rate transmission_rate
+n_denovo_genotype_only n_denovo_weak` (the last two `NA` without `--calls-dir`).
 
 **Mosaic TSV**: `sample contig start end svtype cn fraction baf_dev baf_expected n_windows
 mosaic` (`mosaic` = 1 for a fractional segment, 0 for a whole-copy one).
