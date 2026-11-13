@@ -47,6 +47,22 @@ review found in the true ones hold:
   carriers; with at most 2 other carriers, every de novo 15q11-13 and 22q11
   duplication of dataset_paper was lost.
 
+  The limit does not apply at an established dosage-sensitive locus of
+  ClinGen (``clingen``: a gene of haploinsufficiency score 3 for a deletion,
+  triplosensitivity 3 for a duplication, or such a region covered >= 20 %):
+  there a pathogenic de novo recurs across families by construction. In the
+  PMS cohort (Phelan-McDermid), the terminal 22q13.3 deletion over SHANK3 is
+  de novo in 47 of 94 children, 17 to 74 carriers per site outside the family:
+  the limit (2 there) made every one of them ``denovo_weak``. The recurrence
+  must come from children, though: the exemption holds only while at most
+  ``max_other_carriers`` (the floor, not the fraction) of the carriers outside
+  the family are parents in the pedigree. The SHANK3 sites have 0 to 2 parent
+  carriers; the small deletions of dataset_paper that sit in a recurrent
+  region (3q29, 22q11.2, 15q11-13: 90 of 93 under 10 kb) or a gene (BRSK2,
+  41 parent carriers in PMS) are polymorphisms with 8 to 92. The report names
+  the locus that lifted the limit (``dosage_locus``). The two other
+  properties still apply.
+
 Other GQ-confident de novo with a call of the child are ``denovo_weak``
 (``n_denovo_weak``). The report gives the parents' own calls
 (``parent_call``, father,mother) and the carriers outside the family
@@ -64,6 +80,7 @@ from pathlib import Path
 
 import pysam
 
+from ..clingen import ClinGen
 from ..ped import Pedigree
 from ..vcfout import span, spec_coords
 
@@ -73,6 +90,7 @@ REPORT_COLUMNS = [
     "site_id", "contig", "start", "end", "svtype", "family_id", "child",
     "child_gt", "child_gq", "father_gt", "father_gq", "mother_gt", "mother_gq",
     "inheritance", "violation", "dnq", "child_call", "parent_call", "other_carriers",
+    "dosage_locus",
 ]
 
 
@@ -290,16 +308,19 @@ def own_call_paths(calls_dir: str | Path, samples) -> dict[str, str]:
     return out
 
 
-def _carriers_by_family(rec, family_of: dict[str, str]) -> dict[str, int]:
-    """Carriers (a non-reference allele) of the record per pedigree family,
-    over the decoded samples."""
-    out: dict[str, int] = {}
+def _carriers_by_family(rec, family_of: dict[str, str],
+                        parents: frozenset[str] = frozenset()) -> dict[str, list[int]]:
+    """[carriers, carriers who are a parent in the pedigree] (a non-reference
+    allele) of the record per pedigree family, over the decoded samples."""
+    out: dict[str, list[int]] = {}
     for s, fmt in rec.samples.items():
         gt = fmt.get("GT")
         if gt and any(a for a in gt if a is not None):
             f = family_of.get(s)
             if f is not None:
-                out[f] = out.get(f, 0) + 1
+                c = out.setdefault(f, [0, 0])
+                c[0] += 1
+                c[1] += s in parents
     return out
 
 
@@ -311,7 +332,8 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
     from ..parallel import fetch_region
 
     (cohort_vcf, region, usable, part, min_denovo_child_gq, min_denovo_parent_gq,
-     male, own_paths, own_overlap, family_of, max_other_carriers) = task
+     male, own_paths, own_overlap, family_of, max_other_carriers, clingen, max_other_parents,
+     parents) = task
     own = OwnCalls(own_paths, own_overlap) if own_paths else None
     counters = {child.sample_id: [0, 0, 0, 0, 0, 0, 0, 0] for child, _f, _m in usable}
     with pysam.VariantFile(str(cohort_vcf)) as vcf, open(part, "w", newline="") as fh:
@@ -345,7 +367,7 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                         st[4] += 1
                         if sum(cgt) > 0:
                             st[5] += 1
-                dnq = child_call = parent_call = other = ""
+                dnq = child_call = parent_call = other = locus = ""
                 if inheritance == "denovo":
                     confident = cgq >= min_denovo_child_gq and min(fgq, mgq) >= min_denovo_parent_gq
                     svtype = rec.info.get("SVTYPE", "")
@@ -358,14 +380,17 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                               for p in (father, mother)]
                         parent_call = ",".join(pc)
                         if carriers_by_family is None:
-                            carriers_by_family = _carriers_by_family(rec, family_of)
-                        n_other = sum(carriers_by_family.values()) - carriers_by_family.get(
-                            child.family_id, 0)
+                            carriers_by_family = _carriers_by_family(rec, family_of, parents)
+                        others = [c for f, c in carriers_by_family.items() if f != child.family_id]
+                        n_other = sum(c[0] for c in others)
                         other = str(n_other)
+                        if (n_other > max_other_carriers and clingen is not None
+                                and sum(c[1] for c in others) <= max_other_parents):
+                            locus = clingen.dosage_locus(rec.contig, start, end, svtype == "DUP")
                         strict = (
                             child_call.split(";")[0] == "PASS"
                             and all(c in ("none", "NA") for c in pc)
-                            and n_other <= max_other_carriers
+                            and (n_other <= max_other_carriers or bool(locus))
                         )
                     else:
                         strict = True
@@ -394,6 +419,7 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                     "inheritance": inheritance,
                     "violation": int(violation), "dnq": dnq, "child_call": child_call,
                     "parent_call": parent_call, "other_carriers": other,
+                    "dosage_locus": locus,
                 })
     if own is not None:
         own.close()
@@ -412,11 +438,13 @@ def run_ped_annotate(
     own_overlap: float = 0.5,
     max_other_carriers: int = 2,
     max_other_carrier_frac: float = 0.005,
+    clingen: ClinGen | None = None,
 ) -> list[TrioStats]:
     """``jobs`` > 1 (indexed VCF) annotates position-ordered regions in
     parallel and joins their rows in file order: same report as serial.
     ``calls_dir`` (``<dir>/<S>/<S>.filtered.vcf.gz``) checks each de novo
-    against the child's own calls (module docstring)."""
+    against the child's own calls (module docstring); ``clingen`` lifts the
+    limit on carriers outside the family at its dosage-sensitive loci."""
     import shutil
     import tempfile
 
@@ -443,15 +471,19 @@ def run_ped_annotate(
     family_of = {s: ind.family_id for s, ind in pedigree.individuals.items()}
     n_ped = sum(1 for s in vcf_samples if s in family_of)
     max_other = max(max_other_carriers, int(max_other_carrier_frac * n_ped))
+    # anyone the pedigree names as a parent, sequenced trio or not
+    parents = frozenset(p for ind in pedigree.individuals.values()
+                        for p in (ind.father_id, ind.mother_id) if p)
     if calls_dir is not None:
-        logger.info("ped: a confirmed de novo site has <= %d carriers outside the family", max_other)
+        logger.info("ped: a confirmed de novo site has <= %d carriers outside the family%s", max_other,
+                    ", or hits a ClinGen dosage-sensitive locus" if clingen is not None else "")
     regions = split_regions(cohort_vcf, jobs)
     tmp = tempfile.mkdtemp(prefix=".ped_parts_", dir=Path(out_report).parent)
     try:
         tasks = [
             (str(cohort_vcf), region, usable, f"{tmp}/part{k:05d}.tsv",
              min_denovo_child_gq, min_denovo_parent_gq, male, own_paths, own_overlap,
-             family_of, max_other)
+             family_of, max_other, clingen, max_other_carriers, parents)
             for k, region in enumerate(regions)
         ]
         parts = [f"{tmp}/header.tsv"]

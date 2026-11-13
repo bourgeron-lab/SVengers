@@ -543,9 +543,18 @@ def ped_annotate(
     max_other_carrier_frac: float = typer.Option(
         0.005, help="With --calls-dir: same limit as a fraction of the pedigree's samples"
     ),
+    clingen_genes: Optional[Path] = typer.Option(
+        None, help="With --calls-dir: ClinGen_gene_curation_list_GRCh38.tsv; no limit on carriers "
+        "outside the family on a gene of HI 3 (DEL) / TS 3 (DUP): a recurrent pathogenic de novo"
+    ),
+    clingen_regions: Optional[Path] = typer.Option(
+        None, help="With --calls-dir: ClinGen_region_curation_list_GRCh38.tsv; same, on a region "
+        "of score 3 covered >= 20 %"
+    ),
     jobs: int = typer.Option(0, help="Worker processes (0 = every allowed CPU)"),
 ) -> None:
     """Mendelian consistency, inheritance and de novo annotation on a cohort VCF."""
+    from .clingen import ClinGen
     from .cohort.mendel import run_ped_annotate
     from .parallel import resolve_jobs
     from .ped import parse_ped
@@ -554,6 +563,8 @@ def ped_annotate(
         cohort_vcf, parse_ped(pedigree), out_report, out_summary,
         jobs=resolve_jobs(jobs), calls_dir=calls_dir, max_other_carriers=max_other_carriers,
         max_other_carrier_frac=max_other_carrier_frac,
+        clingen=(ClinGen.load(clingen_genes, clingen_regions)
+                 if clingen_genes or clingen_regions else None),
     )
     for st in stats:
         tr = f"{st.transmission_rate:.3f}" if st.n_transmit_opportunity else "NA"

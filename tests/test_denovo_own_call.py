@@ -149,6 +149,40 @@ def test_other_carriers_make_it_weak(tmp_path):
     assert _rows(tmp_path / "m.tsv")["own_pass"]["inheritance"] == "denovo"
 
 
+def test_clingen_locus_lifts_the_carrier_limit(tmp_path):
+    """A recurrent pathogenic de novo (PMS: terminal 22q13.3 over SHANK3 in half
+    the children): carriers outside the family are allowed at a ClinGen locus of
+    score 3 for the CNV's type; the call and parental-call rules still apply."""
+    from vedette.clingen import ClinGen, Region
+
+    ped = _setup(tmp_path)
+    _cohort(tmp_path / "cohort.vcf.gz", SITES, unrelated={"own_pass", "own_lowsq"})
+
+    def label(cg):
+        run_ped_annotate(tmp_path / "cohort.vcf.gz", ped, tmp_path / "m.tsv", None,
+                         calls_dir=tmp_path / "samples", max_other_carriers=0, clingen=cg)
+        r = _rows(tmp_path / "m.tsv")
+        return {k: (r[k]["inheritance"], r[k]["dosage_locus"]) for k in ("own_pass", "own_lowsq")}
+
+    hi3 = ClinGen([], {}, [Region("SHANK3", "SHANK3", "chr1", 12_000, 13_000, 3, 1)])
+    assert label(hi3) == {"own_pass": ("denovo", "SHANK3"), "own_lowsq": ("denovo_weak", "")}
+    ts3 = ClinGen([], {}, [Region("G", "G", "chr1", 12_000, 13_000, 1, 3)])   # DEL needs HI 3
+    assert label(ts3)["own_pass"] == ("denovo_weak", "")
+    # the DUP site with a LowSQ call of the child stays weak at a TS 3 locus
+    dup3 = ClinGen([], {}, [Region("G", "G", "chr1", 30_500, 31_000, 1, 3)])
+    assert label(dup3)["own_lowsq"] == ("denovo_weak", "G")
+    reg = ClinGen([Region("ISCA-9", "chr1 recurrent region", "chr1", 9_000, 30_000, 3, 0)], {})
+    assert label(reg)["own_pass"] == ("denovo", "ISCA-9 chr1 recurrent region")
+    assert label(None)["own_pass"] == ("denovo_weak", "")
+
+    # a polymorphism in the gene: the carrier outside the family is a parent
+    (tmp_path / "ped.tsv").write_text(
+        "FAM\tF\t0\t0\t1\t1\nFAM\tM\t0\t0\t2\t1\nFAM\tC\tF\tM\t1\t2\n"
+        "OTHER\tU\t0\t0\t1\t1\nOTHER\tV\t0\t0\t2\t1\nOTHER\tK\tU\tV\t1\t1\n")
+    ped = parse_ped(tmp_path / "ped.tsv")
+    assert label(hi3)["own_pass"] == ("denovo_weak", "")
+
+
 def test_low_confidence_stays_lowconf(tmp_path):
     """A de novo below the GQ floors keeps denovo_lowconf (with or without a call of
     the child): denovo + denovo_genotype_only is the old de novo count."""
