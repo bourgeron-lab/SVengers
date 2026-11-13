@@ -176,6 +176,22 @@ def _clingen_fixture(tmp_path):
     return str(genes), str(reg)
 
 
+def test_clingen_dosage_locus(tmp_path):
+    """ped-annotate's privacy exemption: a gene of score 3 for the CNV's type
+    (any overlap) or a region of score 3 covered >= 20 % or containing it."""
+    from vedette.clingen import ClinGen
+
+    cg = ClinGen.load(*_clingen_fixture(tmp_path))
+    assert cg.dosage_locus("chr22", 510_000, 515_000, dup=False) == "PLAIN"
+    assert cg.dosage_locus("22", 519_000, 600_000, dup=True) == "PLAIN"
+    assert cg.dosage_locus("chr22", 205_000, 210_000, dup=False) == ""     # HI 30
+    assert cg.dosage_locus("chr22", 1_100_000, 1_150_000, dup=False).startswith("ISCA-1 ")  # inside
+    assert cg.dosage_locus("chr22", 1_700_000, 2_500_000, dup=True).startswith("ISCA-1 ")   # 30 %
+    assert cg.dosage_locus("chr22", 1_950_000, 2_500_000, dup=True) == ""  # 5 %, no gene
+    assert cg.dosage_locus("chr22", 3_100_000, 3_200_000, dup=False) == ""  # HI 40
+    assert cg.dosage_locus("chr1", 510_000, 515_000, dup=False) == ""
+
+
 def test_impact_score_reads_the_clingen_dosage_map(tmp_path):
     """A recurrent region and ClinGen gene scores: the v5 review found a de
     novo 15q11.2q13 duplication (TS 3 region) scored +0.15."""

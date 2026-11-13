@@ -15,8 +15,11 @@ process VEDETTE_PED {
     path "trio_sweep.png", emit: sweep_plot, optional: true
 
     script:
+    // ClinGen dosage map: a de novo at a dosage-sensitive locus may recur across families
+    def clingen_arg = (params.clingen_genes ? "--clingen-genes '${params.clingen_genes}' " : "") \
+        + (params.clingen_regions ? "--clingen-regions '${params.clingen_regions}'" : "")
     """
-    ${params.vedette_bin} ped-annotate ${cohort_vcf} \\
+    ${params.vedette_bin} ped-annotate ${cohort_vcf} ${clingen_arg} \\
         --jobs ${task.cpus} \\
         --pedigree '${params.pedigree}' \\
         --out-report mendel_report.tsv \\

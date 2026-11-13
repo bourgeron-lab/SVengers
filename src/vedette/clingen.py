@@ -86,14 +86,13 @@ def _norm(contig: str) -> str:
 class ClinGen:
     """Region and gene dosage scores, with overlap lookups."""
 
-    def __init__(self, regions: list[Region], genes: dict[str, tuple[int | None, int | None]]):
+    def __init__(self, regions: list[Region], genes: dict[str, tuple[int | None, int | None]],
+                 gene_spans: list[Region] | None = None):
         self.genes = genes
-        self._by_contig: dict[str, list[Region]] = {}
-        for r in sorted(regions, key=lambda r: (r.contig, r.start)):
-            self._by_contig.setdefault(_norm(r.contig), []).append(r)
-        self._starts = {c: [r.start for r in rs] for c, rs in self._by_contig.items()}
-        # longest region per contig bounds the left search
-        self._maxlen = {c: max(r.end - r.start for r in rs) for c, rs in self._by_contig.items()}
+        self._regions = _Index(regions)
+        # genes with a location, as Region(symbol, symbol, ...): the de novo
+        # privacy exemption of ped-annotate (dosage_locus)
+        self._genes = _Index(gene_spans or [])
 
     @classmethod
     def load(cls, genes_tsv: str | Path | None = None,
@@ -109,16 +108,21 @@ class ClinGen:
                     _score(row.get("Haploinsufficiency Score")),
                     _score(row.get("Triplosensitivity Score")),
                 ))
-        genes = {}
+        genes, spans = {}, []
         if genes_tsv:
             for row in _read(genes_tsv, "Gene Symbol"):
-                genes[row["Gene Symbol"]] = (_score(row.get("Haploinsufficiency Score")),
-                                             _score(row.get("Triplosensitivity Score")))
-        return cls(regions, genes)
+                sym = row["Gene Symbol"]
+                hi, ts = (_score(row.get("Haploinsufficiency Score")),
+                          _score(row.get("Triplosensitivity Score")))
+                genes[sym] = (hi, ts)
+                loc = _location(row.get("Genomic Location", ""))
+                if loc is not None:
+                    spans.append(Region(sym, sym, *loc, hi, ts))
+        return cls(regions, genes, spans)
 
     @property
     def n_regions(self) -> int:
-        return sum(len(rs) for rs in self._by_contig.values())
+        return self._regions.n
 
     def gene(self, symbol: str) -> tuple[int | None, int | None] | None:
         """(HI, TS) of a gene symbol, None if ClinGen has no curation for it."""
@@ -127,6 +131,35 @@ class ClinGen:
     def regions(self, contig: str, start: int, end: int) -> list[tuple[Region, float, bool]]:
         """[(region, fraction of the region covered, event inside the region)]
         of the regions overlapping [start, end)."""
+        return self._regions.overlaps(contig, start, end)
+
+    def dosage_locus(self, contig: str, start: int, end: int, dup: bool) -> str:
+        """The established dosage-sensitive locus (score 3: HI for a loss, TS for
+        a gain) a CNV hits, '' when none: a gene it overlaps, or a region it
+        covers >= PARTIAL_FRAC of or lies inside. ped-annotate lets a de novo
+        there be recurrent across families (module docstring of cohort.mendel)."""
+        for r, frac, inside in self._regions.overlaps(contig, start, end):
+            if (r.ts if dup else r.hi) == 3 and (frac >= PARTIAL_FRAC or inside):
+                return f"{r.isca} {r.short_name()}"
+        for g, _frac, _inside in self._genes.overlaps(contig, start, end):
+            if (g.ts if dup else g.hi) == 3:
+                return g.isca
+        return ""
+
+
+class _Index:
+    """Intervals by contig, with an overlap lookup."""
+
+    def __init__(self, items: list[Region]):
+        self._by_contig: dict[str, list[Region]] = {}
+        for r in sorted(items, key=lambda r: (r.contig, r.start)):
+            self._by_contig.setdefault(_norm(r.contig), []).append(r)
+        self._starts = {c: [r.start for r in rs] for c, rs in self._by_contig.items()}
+        # longest interval per contig bounds the left search
+        self._maxlen = {c: max(r.end - r.start for r in rs) for c, rs in self._by_contig.items()}
+        self.n = len(items)
+
+    def overlaps(self, contig: str, start: int, end: int) -> list[tuple[Region, float, bool]]:
         c = _norm(contig)
         rs = self._by_contig.get(c)
         if not rs:
