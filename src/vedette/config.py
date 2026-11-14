@@ -162,6 +162,24 @@ class FilterConfig:
     large_dup_rescue_min_baf_dev: float = 0.12
     large_dup_rescue_max_segdup: float = 0.5
     large_dup_rescue_max_mask: float = 0.5
+    # A terminal deletion has a single breakpoint, often in subtelomeric
+    # repeats, so it has little junction evidence by nature, and the model
+    # gives that evidence nearly all its weight: a clean depth-only deletion
+    # scores SQ ~1 whatever its depth (v5n did the same). The terminal 22q13.3
+    # deletion of 11 PMS children (134 kb to qter, copy ratio 0.48, CN 1, GQ
+    # 99) was LowSQ, so its de novo was not confirmed and `bnd` never saw it.
+    # A deletion this large reaching a contig end (bnd.TERMINAL_BP, with at
+    # most bnd.TERMINAL_TAIL_BP of callable sequence past it) whose depth
+    # shows a clean copy loss keeps its PASS. In trios, the parents' clean
+    # depth-only terminal deletions >= 100 kb are as heritable at SQ < 5 as
+    # at SQ >= 5 (transmitted minus found in an unrelated child: +0.36 vs
+    # +0.49 in dataset_paper), and none of the labelled training calls
+    # meets the rule. About one per genome, mostly common subtelomeric
+    # deletions (20q13.33, 6q27, 3q29, 16q24.3).
+    terminal_del_rescue_size: int = 100_000
+    terminal_del_rescue_max_ratio: float = 0.65
+    terminal_del_rescue_min_consistent: float = 0.9
+    terminal_del_rescue_max_mask: float = 0.5
 
 
 @dataclass(frozen=True)

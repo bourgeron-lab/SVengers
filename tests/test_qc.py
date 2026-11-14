@@ -1286,6 +1286,55 @@ def test_large_duplication_keeps_pass_when_the_allelic_balance_shows_a_gain():
     assert sq_override("DEL", 6_427_000, dict(gain, fc_chrom=0.528, cn=1), f) == "LARGE_DEL_DEPTH"
 
 
+def test_terminal_deletion_keeps_its_pass():
+    """The terminal 22q13.3 deletion of 11 PMS children (134 kb to qter, copy
+    ratio 0.48, CN 1) had no junction evidence and scored SQ ~1: a clean
+    copy loss reaching a contig end keeps its PASS; the same call 50 kb of
+    callable sequence short of the end, too small, or with a noisy depth
+    does not."""
+    import numpy as np
+
+    from vedette.config import load_config
+    from vedette.filter.pipeline import reaches_contig_end, sq_override
+
+    f = load_config(None).filter
+    loss = {"cn": 1, "dhffc": 0.478, "frac_consistent": 0.99, "maskfrac": 0.185,
+            "fc_chrom": 0.456}
+    assert sq_override("DEL", 134_467, loss, f, terminal=True) == "TERMINAL_DEL_DEPTH"
+    assert sq_override("DEL", 134_467, loss, f, terminal=False) is None
+    assert sq_override("DEL", 60_000, loss, f, terminal=True) is None
+    assert sq_override("DEL", 134_467, dict(loss, dhffc=0.8), f, terminal=True) is None
+    assert sq_override("DEL", 134_467, dict(loss, frac_consistent=0.7), f, terminal=True) is None
+    assert sq_override("DEL", 134_467, dict(loss, cn=2), f, terminal=True) is None
+    assert sq_override("DEL", 134_467, dict(loss, cn=-1), f, terminal=True) is None
+    assert sq_override("DUP", 134_467, dict(loss, cn=3, baf_n=0, baf_dev=-1, segdup_ovl=0.5),
+                       f, terminal=True) is None
+
+    class Store:
+        bin_size = 1000
+
+        def __init__(self, n, masked=()):
+            self.mask = np.zeros(n, dtype=bool)
+            for a, b in masked:
+                self.mask[a:b] = True
+
+        def has_contig(self, contig):
+            return contig == "chr22"
+
+        def depth(self, contig):
+            return None, None, self.mask
+
+    n = 50_818_468
+    store = Store(n // 1000 + 1, masked=[(50_810, 50_819)])        # last 8 kb masked
+    assert reaches_contig_end(store, "chr22", 50_684_000, 50_810_000, n)
+    assert reaches_contig_end(store, "chr22", 50_684_000, n, n)
+    assert not reaches_contig_end(store, "chr22", 50_584_000, 50_750_000, n)  # 60 kb callable past it
+    assert not reaches_contig_end(store, "chr22", 40_000_000, 40_200_000, n)
+    assert reaches_contig_end(Store(n // 1000 + 1), "chr22", 0, 150_000, n)       # pter
+    assert not reaches_contig_end(store, "chr21", 50_684_000, n, n)
+    assert not reaches_contig_end(store, "chr22", 50_684_000, n, None)
+
+
 def test_constitutional_segments_are_rows_unless_calls_cover_them():
     """A trisomy 21 came back as LowSQ pieces and was on no family page: the
     scan's whole-copy segment becomes a row. A PMS terminal deletion already

@@ -32,16 +32,43 @@ _NEW_INFO = [
      "Reason the calibrated SQ was overridden (LARGE_DEL_DEPTH: deletion beyond the "
      "model's training size range whose chromosome-level depth confirms a copy loss; "
      "LARGE_DUP_BAF: large duplication whose heterozygous sites show the allelic "
-     "imbalance of a copy gain)"),
+     "imbalance of a copy gain; TERMINAL_DEL_DEPTH: deletion reaching a contig end, "
+     "with a single breakpoint and so little junction evidence, whose depth shows a clean "
+     "copy loss)"),
 ]
 
 
-def sq_override(svtype: str, size: int, feats: dict, cf) -> str | None:
-    """Why a low SQ does not reject this call, or None (see FilterConfig)."""
+def reaches_contig_end(store, contig: str, start: int, end: int, length: int | None) -> bool:
+    """A loss reaching a contig end, as `bnd` reads it: within TERMINAL_BP of
+    it, with at most TERMINAL_TAIL_BP of callable (unmasked) sequence past it."""
+    import numpy as np
+
+    from ..bnd import TERMINAL_BP, TERMINAL_TAIL_BP
+
+    if not length or not store.has_contig(contig):
+        return False
+    qter = end >= length - TERMINAL_BP
+    if not (qter or start <= TERMINAL_BP):
+        return False
+    _, _, mask = store.depth(contig)
+    pos = np.nonzero(~np.asarray(mask, dtype=bool))[0] * store.bin_size
+    tail = (pos >= end).sum() if qter else (pos + store.bin_size <= start).sum()
+    return tail * store.bin_size <= TERMINAL_TAIL_BP
+
+
+def sq_override(svtype: str, size: int, feats: dict, cf, terminal: bool = False) -> str | None:
+    """Why a low SQ does not reject this call, or None (see FilterConfig).
+    `terminal`: the call reaches a contig end (`reaches_contig_end`)."""
     if (svtype == "DEL" and size >= cf.large_del_rescue_size
             and feats["fc_chrom"] < cf.large_del_rescue_fc_chrom
             and feats["maskfrac"] < cf.large_del_rescue_max_mask):
         return "LARGE_DEL_DEPTH"
+    if (svtype == "DEL" and terminal and size >= cf.terminal_del_rescue_size
+            and 0 <= feats["cn"] <= 1
+            and feats["dhffc"] <= cf.terminal_del_rescue_max_ratio
+            and feats["frac_consistent"] >= cf.terminal_del_rescue_min_consistent
+            and feats["maskfrac"] < cf.terminal_del_rescue_max_mask):
+        return "TERMINAL_DEL_DEPTH"
     if (svtype == "DUP" and size >= cf.large_dup_rescue_size and feats["cn"] >= 3
             and feats["baf_n"] >= cf.large_dup_rescue_min_baf_n
             and feats["baf_dev"] >= cf.large_dup_rescue_min_baf_dev
@@ -88,8 +115,11 @@ def run_filter(
     tags_all: list[tuple[list[str], list[str]]] = []  # (hard_tags, all_tags)
     svtypes: list[str] = []
     spans: list[tuple[int, int]] = []
+    terminal: list[bool] = []
     with pysam.VariantFile(str(vcf_in)) as vcf:
         sample = list(vcf.header.samples)[0]
+        lengths = {c: vcf.header.contigs[c].length for c in vcf.header.contigs}
+        cf = config.filter
         spec = spec_coords(vcf.header)
         for rec in vcf:
             svtype = rec.info["SVTYPE"]
@@ -125,6 +155,10 @@ def run_filter(
             feats_all.append(feats)
             tags_all.append((tags, sorted(set(existing) | set(tags))))
             svtypes.append(svtype)
+            terminal.append(
+                svtype == "DEL" and end - start >= cf.terminal_del_rescue_size
+                and reaches_contig_end(store, rec.contig, start, end, lengths.get(rec.contig))
+            )
 
     sq_all = model.score_batch(feats_all, svtypes) if model is not None else None
 
@@ -156,8 +190,8 @@ def run_filter(
                     sq = float(sq_all[i])
                     new_rec.samples[sample]["SQ"] = round(sq, 2)
                     new_rec.info["MODEL_VER"] = model.version
-                    cf = config.filter
-                    override = sq_override(svtypes[i], spans[i][1] - spans[i][0], feats, cf)
+                    override = sq_override(svtypes[i], spans[i][1] - spans[i][0], feats, cf,
+                                           terminal[i])
                     if sq < cf.low_sq_threshold and not override:
                         all_tags.append("LowSQ")
                         counts["low_sq"] += 1
