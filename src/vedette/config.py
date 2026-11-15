@@ -180,6 +180,24 @@ class FilterConfig:
     terminal_del_rescue_max_ratio: float = 0.65
     terminal_del_rescue_min_consistent: float = 0.9
     terminal_del_rescue_max_mask: float = 0.5
+    # Unique-sequence depth-only deletions. The same model blind spot outside
+    # repeats: a clean copy loss >= 10 kb with no junction evidence (depth-only
+    # call, CN <= 1, copy ratio <= 0.65, >= 90 % consistent bins) away from
+    # segmental duplications and low-complexity sequence scores like a wave dip.
+    # In dataset_paper trios where parent and child sit on different flowcells
+    # (no shared batch artifact), the parents' calls of this class at SQ < 5
+    # are transmitted at 0.45 against 0.07 in unrelated genomes of other
+    # flowcells, i.e. ~85 % real, no worse than at SQ >= 5; ~3.4 per genome.
+    # In children at wave < 0.20, 12-19 % of them are absent from both parents
+    # (25 % for the class at SQ >= 5, already PASS); at wave >= 0.20, 82 % are,
+    # wave dips, hence the wave ceiling. In repeats the class is ~60 % real at
+    # any SQ, which no SQ threshold can sort: left to the model.
+    unique_del_rescue_size: int = 10_000
+    unique_del_rescue_max_ratio: float = 0.65
+    unique_del_rescue_min_consistent: float = 0.9
+    unique_del_rescue_max_repeat: float = 0.2     # segdup_ovl and lcr_ovl
+    unique_del_rescue_max_mask: float = 0.5
+    unique_del_rescue_max_wave: float = 0.20
 
 
 @dataclass(frozen=True)

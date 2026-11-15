@@ -575,6 +575,15 @@ def test_cohort_filter_trio_flags(tmp_path):
     assert list(out["S"].filter.keys()) == ["PASS"]
     assert out["S"].info["DN_TRIO"] == 4 and out["S"].info["DN_NODEPTH"] == 0
     assert counts["low_transmission"] == 1 and counts["denovo_excess"] == 1
+    # FORMAT/FT: a carrier with no pair and RD 1.05 has no support of its own
+    # (read as missing by the trio tools); RD 1.5 does; the site flags use every genotype
+    from vedette.cohort.mendel import _gt_of
+    assert out["N"].samples["C0"]["FT"] == "WeakSupport"
+    assert _gt_of(out["N"], "C0") == (None, 0)
+    assert out["G"].samples["C0"].get("FT") is None     # no weak genotype: no FT on the record
+    assert _gt_of(out["G"], "C0") == ((0, 1), 40)
+    assert out["N"].samples["C9"]["FT"] == "PASS"       # 0/0: never flagged
+    assert out["N"].samples["P0"]["FT"] == "PASS"
 
     # thresholds: 11 trios needed -> T passes; 2 de novo children suffice -> R flagged
     run_cohort_filter(tmp_path / "sites.vcf.gz", gt_paths, tmp_path / "c2.vcf.gz",
@@ -589,3 +598,22 @@ def test_cohort_filter_trio_flags(tmp_path):
     out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "c3.vcf.gz"))}
     assert all(list(r.filter.keys()) == ["PASS"] for r in out.values())
     assert "TR_OPP" not in out["G"].info
+
+
+def test_weak_genotype():
+    """No discordant pair and a copy ratio near 1: the de novo genotypes of
+    dataset_paper children (DEL 1-10 kb PE 0 RD ~0.75-1.0, inherited PE ~10
+    RD ~0.6); a deletion from 10 kb needs RD <= 0.62; below 1 kb never."""
+    import numpy as np
+
+    from vedette.cohort.metrics import weak_genotype
+
+    pe = np.array([0, 0, 3, 0, 0])
+    rd = np.array([0.9, 0.55, 0.9, np.nan, 0.7])
+    assert weak_genotype("DEL", 5_000, pe, rd).tolist() == [True, False, False, False, False]
+    assert weak_genotype("DEL", 50_000, pe, rd).tolist() == [True, False, False, False, True]
+    assert not weak_genotype("DEL", 800, pe, rd).any()
+    assert weak_genotype("DUP", 5_000, pe, np.array([1.1, 1.5, 1.1, np.nan, 1.3])).tolist() == [
+        True, False, False, False, False]
+    assert not weak_genotype("INV", 5_000, pe, rd).any()
+    assert weak_genotype("DEL", 5_000, pe, rd, {"weak_del_rd": 0.95}).tolist() == [False] * 5

@@ -34,7 +34,8 @@ _NEW_INFO = [
      "LARGE_DUP_BAF: large duplication whose heterozygous sites show the allelic "
      "imbalance of a copy gain; TERMINAL_DEL_DEPTH: deletion reaching a contig end, "
      "with a single breakpoint and so little junction evidence, whose depth shows a clean "
-     "copy loss)"),
+     "copy loss; UNIQUE_DEL_DEPTH: depth-only deletion >= 10 kb outside repeats whose depth "
+     "shows a clean copy loss, in a genome without coverage waves)"),
 ]
 
 
@@ -69,6 +70,16 @@ def sq_override(svtype: str, size: int, feats: dict, cf, terminal: bool = False)
             and feats["frac_consistent"] >= cf.terminal_del_rescue_min_consistent
             and feats["maskfrac"] < cf.terminal_del_rescue_max_mask):
         return "TERMINAL_DEL_DEPTH"
+    if (svtype == "DEL" and size >= cf.unique_del_rescue_size
+            and feats["src_both"] == 0 and feats["src_junction"] == 0
+            and 0 <= feats["cn"] <= 1
+            and feats["dhffc"] <= cf.unique_del_rescue_max_ratio
+            and feats["frac_consistent"] >= cf.unique_del_rescue_min_consistent
+            and feats["segdup_ovl"] < cf.unique_del_rescue_max_repeat
+            and feats["lcr_ovl"] < cf.unique_del_rescue_max_repeat
+            and feats["maskfrac"] < cf.unique_del_rescue_max_mask
+            and 0 <= feats["wave_score"] < cf.unique_del_rescue_max_wave):
+        return "UNIQUE_DEL_DEPTH"
     if (svtype == "DUP" and size >= cf.large_dup_rescue_size and feats["cn"] >= 3
             and feats["baf_n"] >= cf.large_dup_rescue_min_baf_n
             and feats["baf_dev"] >= cf.large_dup_rescue_min_baf_dev

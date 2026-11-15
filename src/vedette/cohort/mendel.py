@@ -126,6 +126,8 @@ def _gt_of(rec, sample: str) -> tuple[tuple[int, ...] | None, int]:
     gt = fmt.get("GT")
     if gt is None or any(a is None for a in gt):
         return None, 0
+    if fmt.get("FT") not in ("PASS", ".", "", None):
+        return None, 0    # FORMAT/FT (WeakSupport): no support of its own, read as missing
     return tuple(gt), int(fmt.get("GQ") or 0)
 
 

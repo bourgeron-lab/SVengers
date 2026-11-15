@@ -1299,7 +1299,8 @@ def test_terminal_deletion_keeps_its_pass():
 
     f = load_config(None).filter
     loss = {"cn": 1, "dhffc": 0.478, "frac_consistent": 0.99, "maskfrac": 0.185,
-            "fc_chrom": 0.456}
+            "fc_chrom": 0.456, "src_both": 0, "src_junction": 0, "segdup_ovl": 0.505,
+            "lcr_ovl": 0.597, "wave_score": 0.11}
     assert sq_override("DEL", 134_467, loss, f, terminal=True) == "TERMINAL_DEL_DEPTH"
     assert sq_override("DEL", 134_467, loss, f, terminal=False) is None
     assert sq_override("DEL", 60_000, loss, f, terminal=True) is None
@@ -1413,3 +1414,28 @@ def test_child_quality_names_what_weakens_a_genome():
     assert child_quality("A", waves) == f"wavy {WAVE_WARN + 0.01:.3f}"
     assert child_quality("B", waves) == ""
     assert child_quality("IP00X", waves, ("IP",), {"IP00X": 6.2}) == "génome ancien, charge 6.2×"
+
+
+def test_unique_depth_deletion_keeps_its_pass():
+    """A clean depth-only copy loss >= 10 kb outside repeats, in a genome
+    without coverage waves, keeps its PASS (parents' calls of this class at
+    SQ < 5: transmitted 0.45 vs 0.07 in unrelated genomes of other flowcells)."""
+    from vedette.config import load_config
+    from vedette.filter.pipeline import sq_override
+
+    f = load_config(None).filter
+    loss = {"cn": 1, "dhffc": 0.52, "frac_consistent": 0.97, "maskfrac": 0.05,
+            "fc_chrom": 1.0, "src_both": 0, "src_junction": 0, "segdup_ovl": 0.0,
+            "lcr_ovl": 0.05, "wave_score": 0.11}
+    assert sq_override("DEL", 25_000, loss, f) == "UNIQUE_DEL_DEPTH"
+    assert sq_override("DEL", 9_000, loss, f) is None
+    assert sq_override("DEL", 25_000, dict(loss, segdup_ovl=0.3), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, lcr_ovl=0.3), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, src_junction=1), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, src_both=1), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, wave_score=0.25), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, wave_score=-1.0), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, dhffc=0.7), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, cn=2), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, frac_consistent=0.8), f) is None
+    assert sq_override("DEL", 25_000, dict(loss, maskfrac=0.6), f) is None

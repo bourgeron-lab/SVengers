@@ -227,7 +227,40 @@ TRIO_DEFAULTS = {
     "trio_min_gq": 20, "trio_min_opp": 10, "low_transmission": 0.2,
     "denovo_excess_n": 3, "denovo_excess_frac": 0.5,
     "denovo_rd_del": 0.75, "denovo_rd_dup": 1.25,
+    # FORMAT/FT=WeakSupport (weak_genotype): no discordant pair and a copy
+    # ratio that barely moves; the trio tools read such a genotype as missing
+    "weak_min_size": 1000, "weak_large_size": 10_000,
+    "weak_del_rd": 0.75, "weak_del_rd_large": 0.62, "weak_dup_rd": 1.25,
 }
+
+
+def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None):
+    """True where a non-reference genotype has no support of its own: no
+    discordant pair, and a copy ratio that does not show the SV type (DEL
+    above weak_del_rd, weak_del_rd_large from weak_large_size; DUP below
+    weak_dup_rd), from weak_min_size (below one depth bin the ratio says
+    nothing). Vectorised over samples (pe, rd arrays; NaN rd is not weak).
+
+    Calibrated on dataset_paper (665 trios, PASS sites, GQ >= 20): de novo
+    genotypes of children are split-read-only calls on a copy ratio near 1
+    (DEL 1-10 kb: PE 0, RD 0.74-0.78, GQ ~48; inherited ones PE ~10, RD 0.6,
+    GQ 99), concentrated on some flowcells (three children of one flowcell
+    carry 1,600-3,200 each). The rule removes 36-72 % of the de novo DEL
+    1-10 kb (35 % in wave >= 0.20) for 2-8 % of the inherited genotypes, and
+    halves the de novo DEL >= 10 kb for 4-6 %; DUP >= 1 kb de novo -49 to -80 %."""
+    import numpy as np
+
+    t = {**TRIO_DEFAULTS, **(t or {})}
+    pe = np.asarray(pe)
+    rd = np.asarray(rd, dtype=float)
+    if length < t["weak_min_size"] or svtype not in ("DEL", "DUP"):
+        return np.zeros(pe.shape, dtype=bool)
+    if svtype == "DEL":
+        thr = t["weak_del_rd_large"] if length >= t["weak_large_size"] else t["weak_del_rd"]
+        off = rd > thr
+    else:
+        off = rd < t["weak_dup_rd"]
+    return (pe == 0) & off & ~np.isnan(rd)
 
 
 def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
@@ -292,6 +325,11 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
         ("RD", "1", "Float", "Mean copy ratio"),
         ("PE", "1", "Integer", "Discordant pairs"),
         ("SR", "1", "Integer", "Split reads"),
+        ("FT", "1", "String",
+         f"WeakSupport: non-reference genotype >= {t['weak_min_size']} bp with no discordant "
+         f"pair and a copy ratio that does not show the SV type (DEL RD > {t['weak_del_rd']:g}, "
+         f"> {t['weak_del_rd_large']:g} from {t['weak_large_size']} bp; DUP RD < "
+         f"{t['weak_dup_rd']:g}); read as missing by the trio tools"),
     ):
         if line[0] not in header.formats:
             header.formats.add(*line)
@@ -352,9 +390,16 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             svtype = rec.info.get("SVTYPE", "")
             sex_contig = rec.contig in SEX_CONTIGS
             ploidy = np.where(male, 1, 2) if sex_contig else np.full(len(samples), 2)
+            col_pe = np.array([tables[s]["pe"][i] for s in samples])
+            weak = (col_nalt > 0) & weak_genotype(svtype, end - start, col_pe, col_rd, trio)
+            # FT on every sample of a record that has one (a string FORMAT left
+            # unset next to set ones reads back as padding bytes)
+            any_weak = bool(weak.any())
             for s_i, s in enumerate(samples):
                 fmt = new.samples[s]
                 t = tables[s]
+                if any_weak:
+                    fmt["FT"] = "WeakSupport" if weak[s_i] else ("PASS" if called[s_i] else ".")
                 if not called[s_i]:
                     fmt["GT"] = (None, None)
                     continue
