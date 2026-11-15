@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.15.1 — 2026-11-15
+
+A clean terminal deletion keeps its PASS. Model, store schema and feature
+schema unchanged; only the filter stage changes.
+
+- **`TERMINAL_DEL_DEPTH` override** — a depth-only deletion >= 100 kb that
+  reaches a chromosome end (within 300 kb of it, with <= 10 kb of callable
+  sequence left beyond, as in `vedette bnd`), at CN <= 1, depth ratio <= 0.65,
+  >= 90 % consistent bins and < 50 % masked bins, is PASS whatever its SQ
+  (`INFO/SQ_OVERRIDE=TERMINAL_DEL_DEPTH`). A terminal deletion has no far
+  junction, and model v12b, which weighs paired-end and junction evidence
+  above all, scored such deletions at SQ ~1: the 134 kb 22q13.3 deletion
+  (SHANK3) of eleven children of a Phelan-McDermid cohort stayed `LowSQ`, so
+  their de novo was only "weak" and `vedette bnd` did not list the terminal
+  loss. They are now confirmed de novo (DNQ 99). In trios, the parents'
+  depth-only terminal deletions >= 100 kb are transmitted at 0.56-0.59 against
+  0.10-0.20 for an unrelated child, whatever their SQ. On the two production
+  cohorts (2,989 genomes) the rule touches 14 + 19 calls; the pre-gate and the
+  de novo gate (by wave stratum) are unchanged, HG002 calls are identical, and
+  no labelled training call is affected. New `filter` settings
+  `terminal_del_rescue_size`, `_max_ratio`, `_min_consistent`, `_max_mask`.
+
 ## v1.15.0 — 2026-11-13
 
 Model v12b replaces v5n, and the trios now confirm de novo calls and flag

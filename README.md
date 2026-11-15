@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.15.0**, in production
+Status: **v1.15.1**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -421,7 +421,7 @@ P(true) is isotonic-calibrated: SQ 5 is P ≈ 0.68, SQ 13 is P ≈ 0.95. Calls b
 does not match the build (a model trained on a prefix of the current schema is accepted).
 
 **Overrides.** The model has almost never seen very large events, and scores them badly.
-Two rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
+Three rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
 
 - `LARGE_DEL_DEPTH`: deletion ≥ 200 kb whose depth relative to its chromosome is < 0.75,
   with < 50 % masked bins. Without it, half of the 1-10 Mb deletions of a family cohort
@@ -433,6 +433,12 @@ Two rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
   mimic them); allelic balance can. A trisomy 21, two 15q11-q13 duplications, a 7q11.23
   duplication, a trisomy 13 and a trisomy X were `LowSQ` before it; it rescues one
   duplication per genome in median.
+- `TERMINAL_DEL_DEPTH`: depth-only deletion ≥ 100 kb that reaches a chromosome end (within
+  300 kb of it, ≤ 10 kb of callable sequence left beyond), at CN ≤ 1, depth ratio ≤ 0.65,
+  ≥ 90 % consistent bins and < 50 % masked bins. A terminal deletion has no far junction to
+  read, and the model, which weighs junction evidence above all, scored the 134 kb 22q13.3
+  deletion (SHANK3) of eleven children at SQ ≈ 1. On the two production cohorts it touches
+  14 calls per 2,670 genomes and leaves the de novo gate unchanged.
 
 `--features-out` also writes the feature matrix (TSV), the input of model training.
 
