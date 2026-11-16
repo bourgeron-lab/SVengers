@@ -79,30 +79,33 @@ DENOVO_RANK = ("denovo", "denovo_weak", "denovo_genotype_only", "denovo_lowconf"
 
 def majority_inheritance(labels: list[str], rank=DENOVO_RANK,
                          weights: list[int] | None = None) -> tuple[str, int]:
-    """(label, n of labels it stands for) over the sites of a merged row: the
-    label that covers most of the row (`weights`: the sites' lengths; one vote
-    each without them), the de novo labels voting as one; when they win, the
-    row takes the strongest de novo label of its sites. A terminal or
-    chromosomal event is cut into sub-sites, the confirmed de novo on the
-    child's own call and the others only genotyped, and picks up small
-    inherited polymorphisms: a vote by count showed the 22q13.3 deletion of 16
-    children as genotype-only, a 10q26.3 deletion as biparental and a 17 Mb
-    de novo duplication of chr18 as paternal (six paternal sites of 60-260 bp
-    against three de novo of 2.7-7.9 Mb)."""
+    """(label, n of labels it stands for) over the sites of a merged row.
+
+    A terminal or chromosomal event is cut into sub-sites, the confirmed de
+    novo on the child's own call and the others only genotyped, and picks up
+    small inherited polymorphisms: a plain vote by count showed the 22q13.3
+    deletion of 16 children as genotype-only, a 10q26.3 deletion as
+    biparental and a 17 Mb de novo duplication of chr18 as paternal (six
+    paternal sites of 60-260 bp against three de novo of 2.7-7.9 Mb). So:
+    the GQ-confident de novo labels (all of `rank` but the last, low-GQ one)
+    vote as one, weighted by the sites' lengths (`weights`); when they cover
+    at least as much of the row as the leading other label, the row takes
+    the strongest of them. Otherwise the vote is by count, as before, among
+    the other labels; a low-GQ de novo counts only when nothing else does."""
     w = weights if weights is not None else [1] * len(labels)
-    cover: Counter = Counter()
-    count: Counter = Counter()
-    for x, k in zip(labels, w, strict=True):
-        if x:
-            cover[x] += k
-            count[x] += 1
-    if not cover:
+    pairs = [(x, k) for x, k in zip(labels, w, strict=True) if x]
+    if not pairs:
         return "", 0
-    dn = sum(cover[x] for x in rank)
-    other = sorted((x for x in cover if x not in rank), key=lambda x: (-cover[x], -count[x], x))
-    if dn and (not other or dn >= cover[other[0]]):
-        return next(x for x in rank if x in cover), sum(count[x] for x in rank)
-    return other[0], count[other[0]]
+    lowconf = rank[-1]
+    confident = [(x, k) for x, k in pairs if x != lowconf] or pairs
+    cover: Counter = Counter()
+    for x, k in confident:
+        cover[x] += k
+    dn = [x for x in rank if x in cover and x != lowconf]
+    rest = Counter(x for x, _ in confident if x not in dn)
+    if dn and (not rest or sum(cover[x] for x in dn) >= max(cover[x] for x in rest)):
+        return dn[0], sum(1 for x, _ in confident if x in dn)
+    return rest.most_common(1)[0]
 
 
 def _inheritance(labels: list[tuple]) -> tuple[str, str]:

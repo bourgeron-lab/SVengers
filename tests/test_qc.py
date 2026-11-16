@@ -845,9 +845,15 @@ def test_merged_denovo_row_shows_the_strongest_denovo():
                                  "denovo_genotype_only"]) == ("denovo", 3)
     # a non-de novo majority is left alone
     assert majority_inheritance(["maternal", "maternal", "denovo"]) == ("maternal", 2)
-    assert majority_inheritance(["denovo_lowconf", "denovo_weak", "paternal"]) == ("denovo_weak", 2)
+    assert majority_inheritance(["denovo_weak", "denovo_weak", "paternal"]) == ("denovo_weak", 2)
+    # a low-GQ de novo does not outvote a confident label, and counts alone
+    assert majority_inheritance(["denovo_lowconf", "denovo_lowconf", "paternal"],
+                                weights=[900, 900, 300]) == ("paternal", 1)
     assert majority_inheritance(["denovo_genotype_only"] * 3 + ["denovo_lowconf"]) == (
-        "denovo_genotype_only", 4)
+        "denovo_genotype_only", 3)
+    assert majority_inheritance(["denovo_lowconf", "denovo_lowconf"]) == ("denovo_lowconf", 2)
+    # ties among inherited labels keep the first seen, as before
+    assert majority_inheritance(["maternal", "biparental"], weights=[300, 500]) == ("maternal", 1)
     assert majority_inheritance([]) == ("", 0)
 
     # weighted by the sites' lengths: a 17 Mb de novo duplication of chr18 in
