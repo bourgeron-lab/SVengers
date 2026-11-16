@@ -785,6 +785,18 @@ def _bridges(a_pos: int, a_end: int, b_pos: int, b_end: int) -> bool:
     return gap <= tol and min(a_end - a_pos, b_end - b_pos) >= gap
 
 
+def _span(e: dict) -> int:
+    return max(1, int(e["end"]) - int(e["pos"]))
+
+
+def _sized_inh_by(e: dict) -> dict[str, list[tuple]]:
+    """The event's per-child (label, dnq) with its length, the vote weight of
+    `majority_inheritance` once rows merge."""
+    n = _span(e)
+    return {c: [(t[0], t[1], t[2] if len(t) > 2 else n) for t in v]
+            for c, v in (e.get("_inh_by") or {}).items()}
+
+
 def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                     segdup_iv=None, lcr_iv=None) -> list[dict]:
     """Merge overlapping same-type events carried by exactly the same members.
@@ -821,7 +833,8 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
                 if e.get("own") == "PASS" or (e.get("own") and not cur.get("own")):
                     cur["own"] = e["own"]
                 cur["_inh"].append(e.get("inherit") or "")
-                for c, labels in (e.get("_inh_by") or {}).items():
+                cur["_inh_w"].append(_span(e))
+                for c, labels in _sized_inh_by(e).items():
                     cur["_inh_by"].setdefault(c, []).extend(labels)
                 if e.get("rescue"):
                     cur["rescue"] = e["rescue"]
@@ -829,19 +842,20 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
             if cur is not None:
                 out.append(cur)
             cur = dict(e, _ids=list(e.get("_ids") or [e["id"]]), _inh=[e.get("inherit") or ""],
-                       _inh_by={c: list(v) for c, v in (e.get("_inh_by") or {}).items()})
+                       _inh_w=[_span(e)], _inh_by=_sized_inh_by(e))
         if cur is not None:
             out.append(cur)
     # re-annotate merged spans: genes, impact and masks describe the union
     for e in out:
-        # inheritance of a merged row: the label most of its sites agree on,
-        # not the concatenation of every variant seen. A terminal deletion
-        # picks up a handful of sites a parent also carries, and listing them
-        # all buried the fact that the event is de novo. A de novo majority
-        # shows the strongest de novo label of the sites (majority_inheritance).
-        labels = [x for x in e.pop("_inh", []) if x]
+        # inheritance of a merged row: the label that covers most of it, not
+        # the concatenation of every variant seen. A terminal deletion picks
+        # up a handful of sites a parent also carries, and listing them all
+        # buried the fact that the event is de novo; a de novo majority shows
+        # the strongest de novo label of the sites (majority_inheritance).
+        inh, inh_w = e.pop("_inh", []), e.pop("_inh_w", [])
+        labels = [x for x in inh if x]
         if labels:
-            top, n = majority_inheritance(labels, _DENOVO_FR)
+            top, n = majority_inheritance(inh, _DENOVO_FR, inh_w)
             e["inherit"] = top if n == len(labels) else f"{top} ({n}/{len(labels)})"
         e["n_sites"] = len(e["_ids"])
         e["size"] = e["end"] - e["pos"]

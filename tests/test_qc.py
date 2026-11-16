@@ -850,6 +850,20 @@ def test_merged_denovo_row_shows_the_strongest_denovo():
         "denovo_genotype_only", 4)
     assert majority_inheritance([]) == ("", 0)
 
+    # weighted by the sites' lengths: a 17 Mb de novo duplication of chr18 in
+    # three sub-sites, with six paternal polymorphisms of 60-260 bp inside
+    labels = ["denovo"] * 3 + ["paternal"] * 6
+    sizes = [6_307_000, 7_916_000, 2_748_000] + [263, 249, 227, 108, 162, 82]
+    assert majority_inheritance(labels) == ("paternal", 6)                    # by count
+    assert majority_inheritance(labels, weights=sizes) == ("denovo", 3)
+    rows = collapse_events([dict(ev(28_246_000 + i, 28_246_000 + i + n, f"d{i}", c),
+                                 svtype="DUP", carriers=["SMP-09"],
+                                 _inh_by={"SMP-09": [(c, "")]})
+                            for i, (c, n) in enumerate(zip(labels, sizes, strict=True))])
+    assert len(rows) == 1
+    assert rows[0]["inherit"] == "de novo (3/9)"
+    assert _inheritance(rows[0]["_inh_by"]["SMP-09"])[0] == "denovo"
+
 
 def test_denovo_cutoff_is_cohort_relative():
     """An absolute 20 flagged 664 of 665 dataset_paper children; 5x the
