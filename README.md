@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.16.0**, in production
+Status: **v1.16.1**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -723,7 +723,11 @@ status and own-call status, sortable, opened from disk. Each row has:
 
 - **one row per event**: overlapping or adjacent sites carried by the same members are
   merged (`--no-collapse-events` keeps one row per site); mosaic fragments fold into their
-  mosaic segment's row;
+  mosaic segment's row. The row's inheritance is that of its sites: the GQ-confident de
+  novo labels vote as one, weighted by length, and when they cover at least as much of the
+  row as the leading other label the row shows the strongest of them (`denovo` before
+  `denovo_weak` and `denovo_genotype_only`); otherwise the vote is by count, a low-GQ
+  de novo counting only when nothing else does;
 - **bounds** from the carriers' own chained PASS calls; for deletions ≥ 50 kb on carriers
   with wave < 0.2, set on the carriers' depth against the family's non-carriers, as one
   would do by eye in IGV (start error from a median 0.5 Mb to a few kb on reviewed rows);

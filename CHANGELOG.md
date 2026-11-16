@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.16.1 — 2026-11-16
+
+The family tables and pages showed the wrong inheritance on merged rows.
+Calling, filtering, genotyping and the Mendelian report are unchanged; only
+`vedette report` changes.
+
+- **Inheritance of a merged row** — a terminal or chromosomal event is cut
+  into sub-sites, the confirmed de novo on the child's own call and the others
+  only genotyped, and the row picks up small inherited polymorphisms. A vote
+  by count over the sub-sites showed the 22q13.3 deletion of 16 children of a
+  Phelan-McDermid cohort as `denovo_genotype_only`, a 10q26.3 deletion as
+  biparental and a 17 Mb de novo duplication of chr18 as paternal (six
+  paternal sites of 60-260 bp against three de novo of 2.7-7.9 Mb). The
+  GQ-confident de novo labels now vote as one, weighted by length; when they
+  cover at least as much of the row as the leading other label, the row shows
+  the strongest of them (`denovo` > `denovo_weak` > `denovo_genotype_only`).
+  Otherwise the vote stays by count, and a low-GQ de novo (`denovo_lowconf`)
+  counts only when nothing else does: it no longer outvotes a confident
+  inherited label. The rows with a confirmed de novo of the child shown under
+  another label go from 50 to 0 in the Phelan-McDermid cohort (94 trios; all
+  33 de novo events >= 1 Mb on a PASS call of the child now `denovo`, against
+  3) and from 32 to 2 in dataset_paper (665 trios; the two left are the
+  pseudo-autosomal rows of an XXY child, labelled by its karyotype). On
+  dataset_paper 2,961 of 1.77 million family rows change label, mostly a
+  low-GQ de novo replaced by the confident label beside it, and 964 "de novo
+  < 1 kb" alerts go.
+
 ## v1.16.0 — 2026-11-16
 
 Depth-only deletions outside repeats keep their PASS, and the cohort VCF flags
