@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vedette.segment import hmm
+from svengers.segment import hmm
 
 
 def _ratio(n, rng, sigma=0.08):

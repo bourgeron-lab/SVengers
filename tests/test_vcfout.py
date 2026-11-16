@@ -1,8 +1,8 @@
 import pysam
 
-from vedette.reference import Contig
-from vedette.variants import CNVCall
-from vedette.vcfout import clamp_end, span, spec_coords, write_vcf
+from svengers.reference import Contig
+from svengers.variants import CNVCall
+from svengers.vcfout import clamp_end, span, spec_coords, write_vcf
 
 CHRX_LEN = 156_040_895  # GRCh38 chrX; dataset_paper had a site ending 156,041,002
 

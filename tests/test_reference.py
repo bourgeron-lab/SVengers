@@ -1,6 +1,6 @@
 import numpy as np
 
-from vedette.reference import _contig_kind, _seq_tracks, bed_bin_overlap, build_bin_mask
+from svengers.reference import _contig_kind, _seq_tracks, bed_bin_overlap, build_bin_mask
 
 
 def test_seq_tracks_gc_and_n():
@@ -47,7 +47,7 @@ def test_interval_set_matches_across_contig_naming(tmp_path):
     """BED tracks mix UCSC and Ensembl naming; a 'chr'-less track must still
     answer for 'chr'-prefixed calls (the GHFC selfchain-LCR track is Ensembl-
     named, which silently zeroed every lcr_ovl until 2026-09-25)."""
-    from vedette.filter.annotate import IntervalSet
+    from svengers.filter.annotate import IntervalSet
 
     ensembl = tmp_path / "ensembl.bed"
     ensembl.write_text("1\t100\t200\n2\t0\t50\n")

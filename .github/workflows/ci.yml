@@ -28,7 +28,7 @@ jobs:
           environment-file: containers/environment.yml
           environment-name: ci
           cache-environment: true
-      - name: Install vedette
+      - name: Install svengers
         shell: micromamba-shell {0}
         run: |
           # pyabpoa >1.5.2 ships a broken sdist and no cp312 wheels (fatal:
@@ -45,6 +45,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build Docker image
-        run: docker build -f containers/Dockerfile -t vedette:ci .
+        run: docker build -f containers/Dockerfile -t svengers:ci .
       - name: Smoke test
-        run: docker run --rm vedette:ci --version
+        run: docker run --rm svengers:ci --version

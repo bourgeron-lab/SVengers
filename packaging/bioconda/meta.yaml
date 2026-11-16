@@ -1,9 +1,9 @@
-# Bioconda recipe skeleton for Vedette.
+# Bioconda recipe skeleton for SVengers.
 # Submission checklist (after the first PyPI release):
 #   1. update version + sha256 (from the PyPI sdist)
-#   2. fork bioconda/bioconda-recipes, add as recipes/vedette/meta.yaml
+#   2. fork bioconda/bioconda-recipes, add as recipes/svengers/meta.yaml
 #   3. Biocontainers then auto-builds Docker + Apptainer images
-{% set name = "vedette" %}
+{% set name = "svengers" %}
 {% set version = "0.1.0" %}
 
 package:
@@ -11,7 +11,7 @@ package:
   version: "{{ version }}"
 
 source:
-  url: "https://pypi.org/packages/source/v/vedette/vedette-{{ version }}.tar.gz"
+  url: "https://pypi.org/packages/source/s/svengers/svengers-{{ version }}.tar.gz"
   sha256: "TODO_FILL_FROM_PYPI_SDIST"
 
 build:
@@ -19,7 +19,8 @@ build:
   noarch: python
   script: "{{ PYTHON }} -m pip install . --no-deps -vv"
   entry_points:
-    - vedette = vedette.cli:app
+    - svengers = svengers.cli:app
+    - vedette = svengers.cli:app
 
 requirements:
   host:
@@ -39,16 +40,16 @@ requirements:
 
 test:
   commands:
-    - vedette --version
-    - vedette --help
+    - svengers --version
+    - svengers --help
 
 about:
-  home: "https://github.com/darkxander/vedette"
+  home: "https://github.com/bourgeron-lab/SVengers"
   license: MIT
   license_family: MIT
   license_file: LICENSE
   summary: "Multi-evidence germline CNV caller (DEL/DUP) for short-read WGS with calibrated post-calling filtering"
-  dev_url: "https://github.com/darkxander/vedette"
+  dev_url: "https://github.com/bourgeron-lab/SVengers"
 
 extra:
   recipe-maintainers:

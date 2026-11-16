@@ -1,4 +1,4 @@
-# Vedette configuration for GIAB runs (training and benchmark).
+# SVengers configuration for GIAB runs (training and benchmark).
 # Same reference/masks as the GHFC cohort; the CRAM scan bins depth at 1 kb
 # so evidence-store statistics match the cohort's fast-path stores.
 

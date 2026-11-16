@@ -1,7 +1,7 @@
-# Example parameters for the Vedette Nextflow pipeline (GHFC 'test' cohort)
+# Example parameters for the SVengers Nextflow pipeline (GHFC 'test' cohort)
 # Usage: ./run_pipeline.sh -params-file params.yml
 
-manifest: "test.manifest.tsv"          # from: vedette manifest discover ... --pedigree test.pedigree.tsv
+manifest: "test.manifest.tsv"          # from: svengers manifest discover ... --pedigree test.pedigree.tsv
 pedigree: "/pasteur/helix/projects/ghfc_wgs/WGS/GHFC-GRCh38/cohorts/test/test.pedigree.tsv"
 outdir: "results/test"
 

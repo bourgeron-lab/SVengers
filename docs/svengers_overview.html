@@ -1,0 +1,294 @@
+<!-- SVengers overview — self-contained page, docs/svengers_overview.html -->
+<title>SVengers</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#f7f8f6; --surface:#ffffff; --ink:#1c2321; --muted:#5c6763;
+  --line:#dde2de; --del:#b3362b; --dup:#2a6f97; --accent:#2a6f97;
+  --code-bg:#eef1ee; --chip:#e7ece8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181a; --surface:#1b2124; --ink:#e6e9e6; --muted:#93a09a;
+    --line:#2c3438; --del:#e06152; --dup:#5da3c9; --accent:#5da3c9;
+    --code-bg:#20282c; --chip:#243036;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181a; --surface:#1b2124; --ink:#e6e9e6; --muted:#93a09a;
+  --line:#2c3438; --del:#e06152; --dup:#5da3c9; --accent:#5da3c9;
+  --code-bg:#20282c; --chip:#243036;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.65;
+  padding-inline:20px; padding-block:0 4rem; margin:0;
+}
+.wrap{max-width:76ch; margin:0 auto}
+h1,h2,h3{font-family:"Bricolage Grotesque","Arial Narrow",sans-serif; line-height:1.15; text-wrap:balance}
+h1{font-size:3.1rem; font-weight:800; margin:.4em 0 .1em}
+h2{font-size:1.65rem; font-weight:700; margin:2.6em 0 .5em; display:flex; align-items:baseline; gap:.55em}
+h2 .n{font-family:"JetBrains Mono",monospace; font-size:.72em; font-weight:600; color:var(--accent)}
+h3{font-size:1.12rem; font-weight:700; margin:1.8em 0 .4em}
+p{margin:.6em 0}
+a{color:var(--accent)}
+.lede{font-size:1.22rem; color:var(--muted); max-width:62ch; margin-top:.2em}
+.kicker{font-family:"JetBrains Mono",monospace; font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-top:3rem}
+code,pre{font-family:"JetBrains Mono",monospace; font-size:.84em}
+code{background:var(--code-bg); padding:.1em .35em; border-radius:4px}
+pre{background:var(--code-bg); border:1px solid var(--line); border-radius:8px;
+    padding:14px 16px; overflow-x:auto; line-height:1.5}
+pre code{background:none; padding:0}
+table{border-collapse:collapse; font-size:.9rem; margin:1em 0; width:100%;
+      font-family:"Source Serif 4",serif}
+.tablewrap{overflow-x:auto}
+th,td{border-bottom:1px solid var(--line); padding:7px 12px; text-align:right;
+      font-variant-numeric:tabular-nums}
+th{font-family:"Bricolage Grotesque",sans-serif; font-size:.8rem; letter-spacing:.04em;
+   text-transform:uppercase; color:var(--muted); font-weight:700}
+th:first-child,td:first-child{text-align:left}
+tr.hl td{font-weight:600}
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin:1.2em 0}
+.ev{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+.ev b{font-family:"Bricolage Grotesque",sans-serif; font-size:.98rem; display:block; margin-bottom:.25em}
+.ev p{font-size:.88rem; color:var(--muted); margin:0}
+.tag{font-family:"JetBrains Mono",monospace; font-size:.7rem; background:var(--chip);
+     border-radius:99px; padding:2px 9px; color:var(--muted); white-space:nowrap}
+.note{border-left:3px solid var(--accent); background:var(--surface); padding:10px 16px;
+      border-radius:0 8px 8px 0; font-size:.94rem; margin:1.2em 0}
+.legend{display:flex; gap:1.4em; font-size:.8rem; color:var(--muted); font-family:"JetBrains Mono",monospace; margin-top:.3em; flex-wrap:wrap}
+.sw{display:inline-block; width:.85em; height:.85em; border-radius:3px; vertical-align:-.1em; margin-right:.4em}
+figure{margin:1.4em 0}
+figcaption{font-size:.83rem; color:var(--muted); margin-top:.4em}
+svg text{font-family:"JetBrains Mono",monospace}
+.pipe{overflow-x:auto}
+ul{padding-left:1.2em}
+li{margin:.3em 0}
+.muted{color:var(--muted)}
+hr{border:0; border-top:1px solid var(--line); margin:3rem 0}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">GHFC · Institut Pasteur — germline CNV caller · <a href="svengers_overview.fr.html">Version française</a></p>
+<h1>SVengers</h1>
+<p class="lede">A copy-number variant caller (DEL/DUP) for Illumina WGS,
+from 1 to 10,000 genomes, built around one conviction: the CNV problem
+is not detecting them, it is <em>sorting the real ones from the false ones</em>.</p>
+
+<!-- stylized depth track: one het DEL, one DUP -->
+<figure>
+<svg viewBox="0 0 760 130" role="img" aria-label="Depth track with a deletion and a duplication">
+  <line x1="20" y1="100" x2="740" y2="100" stroke="var(--line)" stroke-width="1"/>
+  <text x="20" y="118" font-size="10" fill="var(--muted)">chr2:50.60 Mb</text>
+  <text x="700" y="118" font-size="10" fill="var(--muted)">51.05 Mb</text>
+  <text x="12" y="52" font-size="10" fill="var(--muted)" text-anchor="start">30×</text>
+  <!-- depth: diploid ~ y=48, het DEL ~ y=74, DUP ~ y=30 -->
+  <path d="M20,48 L200,47 L205,74 L300,75 L305,47 L460,48 L465,30 L580,31 L585,48 L740,47"
+        fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="203" y="20" width="100" height="80" fill="var(--del)" opacity="0.12"/>
+  <rect x="463" y="20" width="120" height="80" fill="var(--dup)" opacity="0.12"/>
+  <text x="253" y="16" font-size="11" fill="var(--del)" text-anchor="middle" font-weight="600">DEL 0/1 · CN=1</text>
+  <text x="523" y="16" font-size="11" fill="var(--dup)" text-anchor="middle" font-weight="600">DUP 0/1 · CN=3</text>
+  <!-- discordant pairs below the track -->
+  <g stroke="var(--del)" stroke-width="1.6">
+    <line x1="180" y1="92" x2="320" y2="92"/><line x1="188" y1="96" x2="312" y2="96"/>
+  </g>
+  <g stroke="var(--dup)" stroke-width="1.6">
+    <line x1="470" y1="92" x2="590" y2="92"/><line x1="480" y1="96" x2="575" y2="96"/>
+  </g>
+</svg>
+<figcaption>The base signal: GC-corrected binned depth, plus junctions
+(discordant pairs, clipped reads). SVengers models both <em>within the same likelihood</em>.</figcaption>
+</figure>
+
+<h2><span class="n">§</span>At a glance</h2>
+<ul>
+<li><b>Input</b>: aligned CRAMs (bwa-mem2) — and, when available, precomputed 1&nbsp;kb depth bedgraphs (GHFC fast path).</li>
+<li><b>Output</b>: per-sample VCF, then multi-sample cohort VCF (GT/GQ/SQ/CN), HTML report, per-family workspaces.</li>
+<li><b>Differentiator</b>: a three-tier post-calling filter, including a calibrated score (SQ) learned from GIAB truth and GHFC trios — calling stays deliberately permissive, specificity is the filter's job.</li>
+<li><b>Scale</b>: validated on 2,670 genomes (665 trios); cohort re-genotyping without ever re-reading a CRAM; a full genome re-filtered in ~14&nbsp;s after a model update.</li>
+</ul>
+
+<h2><span class="n">1</span>The evidence channels</h2>
+<p>A single pass over the CRAM feeds six channels, stored once and for all:</p>
+<div class="grid">
+  <div class="ev"><b>Read depth (RD)</b><p>binned (100&nbsp;bp or 1&nbsp;kb), GC-corrected by strata, N/exclusion masks, normalized to the diploid autosomal median.</p></div>
+  <div class="ev"><b>Discordant pairs (PE)</b><p>+/− orientation with a long insert = DEL; everted −/+ pairs = tandem DUP.</p></div>
+  <div class="ev"><b>Split reads (SR) + hidden splits</b><p>clips ≥20&nbsp;bp are realigned locally (fit alignment): the realignment geometry yields base-pair-precise junctions — and recovers tandem DUPs smaller than the insert size, the classic blind spot.</p></div>
+  <div class="ev"><b>CIGAR deletions</b><p>D operations ≥30&nbsp;bp carried by the reads themselves, merged per read.</p></div>
+  <div class="ev"><b>Insert-size shift</b><p>binned track of concordant-pair insert sizes: a run of shifted bins betrays a small DEL without a clean junction.</p></div>
+  <div class="ev"><b>BAF</b><p>allele fractions at heterozygous SNVs — in the HMM emissions <em>and</em> in the genotype likelihood.</p></div>
+</div>
+<p>On top of this, a <b>sample QC</b> computed in passing: the <em>wave score</em>
+(fraction of spectral energy at periods ≥200&nbsp;kb of the corrected ratio), which flags
+libraries with oscillating coverage — 5× slower to process and prolific producers of false calls.</p>
+
+<h2><span class="n">2</span>The evidence store</h2>
+<p>All the evidence for one genome fits in a versioned <b>Zarr</b> store (~91&nbsp;MB):
+it is the contract between stages. The filter, cohort re-genotyping and trio analyses
+re-read this store — <b>never the CRAM</b>. This is what makes it possible to
+re-genotype 2,670 samples at 500,000 sites in a few hours,
+or to fully re-filter after a model update in one hour of cluster time.</p>
+
+<h2><span class="n">3</span>The pipeline</h2>
+<figure class="pipe">
+<svg viewBox="0 0 900 180" role="img" aria-label="SVengers pipeline stages" style="min-width:720px">
+  <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L8,4 L0,8 z" fill="var(--muted)"/></marker></defs>
+  <!-- per-sample boxes -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="10"  y="30" width="100" height="44" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="60" y="49" fill="var(--ink)" font-weight="600">call</text>
+    <text x="60" y="64" fill="var(--muted)" font-size="9.5">HMM + junctions</text>
+    <rect x="150" y="30" width="100" height="44" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.6"/>
+    <text x="200" y="49" fill="var(--ink)" font-weight="600">filter</text>
+    <text x="200" y="64" fill="var(--muted)" font-size="9.5">3 tiers + SQ</text>
+    <rect x="290" y="30" width="100" height="44" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="340" y="49" fill="var(--ink)" font-weight="600">merge</text>
+    <text x="340" y="64" fill="var(--muted)" font-size="9.5">cohort sites</text>
+    <rect x="430" y="30" width="110" height="44" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="485" y="49" fill="var(--ink)" font-weight="600">genotype</text>
+    <text x="485" y="64" fill="var(--muted)" font-size="9.5">from the stores</text>
+    <rect x="580" y="30" width="110" height="44" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="635" y="49" fill="var(--ink)" font-weight="600">cohort-filter</text>
+    <text x="635" y="64" fill="var(--muted)" font-size="9.5">AF · HWE · artifacts</text>
+    <rect x="730" y="6"  width="80" height="36" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="770" y="28" fill="var(--ink)" font-weight="600">ped</text>
+    <rect x="730" y="60" width="80" height="36" rx="8" fill="var(--surface)" stroke="var(--muted)"/>
+    <text x="770" y="82" fill="var(--ink)" font-weight="600">report</text>
+  </g>
+  <g stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ar)" fill="none">
+    <line x1="110" y1="52" x2="146" y2="52"/><line x1="250" y1="52" x2="286" y2="52"/>
+    <line x1="390" y1="52" x2="426" y2="52"/><line x1="540" y1="52" x2="576" y2="52"/>
+    <path d="M690,45 C706,38 712,30 726,26"/><path d="M690,60 C706,66 712,74 726,77"/>
+  </g>
+  <!-- parallelism annotations -->
+  <text x="130" y="105" font-size="10" fill="var(--muted)">× N samples, in parallel</text>
+  <rect x="8" y="88" width="244" height="2" fill="var(--accent)" opacity=".35"/>
+  <text x="560" y="105" font-size="10" fill="var(--muted)">cohort level</text>
+  <!-- store -->
+  <rect x="10" y="126" width="240" height="34" rx="8" fill="none" stroke="var(--dup)" stroke-dasharray="4 3"/>
+  <text x="130" y="147" font-size="11" fill="var(--dup)" text-anchor="middle">evidence store (.zarr) — re-read by filter/genotype</text>
+</svg>
+<figcaption>Every arrow is an artifact on disk; you can resume from any stage.
+The Nextflow wrapper orchestrates everything on SLURM (<code>--steps call,…,report</code>),
+including the <em>re-filter</em> mode (<code>--steps filter,… --calls_dir</code>) after a model update.</figcaption>
+</figure>
+
+<h3>What <code>call</code> does</h3>
+<p>A CN-state HMM {0…5} segments the depth ratio (ratio-Gaussian emissions
++ beta mixture on the BAF); in parallel, PE/SR/CIGAR junctions are clustered and
+clips are realigned. Segments and junctions are <em>reconciled</em>, then each candidate is
+genotyped by the unified likelihood: depth (with sub-bin dilution), junctions
+(negative binomial on read counts) and BAF. This is methodological claim
+#1: <b>one likelihood for all evidence types</b>, where existing callers
+use BAF (at best) post hoc.</p>
+
+<h2><span class="n">4</span>The four-tier filter</h2>
+<ul>
+<li><b>Tier 1 — transparent hard filters</b>: minimum size, N/exclusion mask overlap,
+segdup without SR support, insufficient informative bins. Every tag is readable in the VCF FILTER column.</li>
+<li><b>Tier 2 — calibrated SQ score</b>: two gradient-boosting models (DEL and DUP) over 30 features
+(depth, junctions, BAF, genomic context, wave QC), monotonic constraints, chromosome-held-out
+cross-validation, isotonic calibration — SQ is a phred of P(true). Trained on GIAB HG002
+v5.0q truth, HG003/HG004 <em>transmission semi-supervision</em>, and since v5 on wavy
+GHFC trios labeled by parental transmission. Current operating threshold: <b>SQ ≥ 5</b> ≈ 0.95 precision.</li>
+<li><b>Tier 3 — cohort</b>: inflation-free AF (bounded-centroid clustering, never transitive
+chaining), exact HWE, recurrent artifacts (<code>CohortArtifact</code>), and <em>recurrence rescue</em>:
+a site below threshold in every carrier but recurrent (≥2 carriers, SQ sum ≥ 8) is rescued
+and traced <code>RESCUE=RECURRENT</code> — this is what recovered a familial SHANK3 deletion
+present in 7 relatives at SQ ~2 each.</li>
+<li><b>Tier 4 — cross-cohort common-variant flags</b> (<code>svengers cohort-filter</code>):
+<code>HighCarrierFrac</code> (carried by ≥85% of genotyped samples — reference/mappability
+artifacts HWE cannot see, since "everyone 1/1" is in Hardy-Weinberg equilibrium),
+<code>CNDiscordant</code> (the re-genotyped copy number of most carriers contradicts the SV
+type — a "DUP" sitting at CN=1), and, with <code>--known-sites &lt;reference cohort.vcf.gz&gt;</code>,
+<code>CommonRef</code> (matches a site carried by ≥50% of a larger reference cohort). Added
+2026-09-24 after manual IGV review of a 9-member family run: 10 of 13 reviewed PASS calls
+were false, every one sharing this exact signature (8–9/9 local carriers, 46–100% frequency
+in a 2,670-genome reference) — a small family run has no frequency of its own to catch it.</li>
+</ul>
+<div class="note">Two QC guardrails complete the triage: <em>wavy</em> samples
+(score ≥ 0.145) are flagged in the report, and a child carrying more than 20 PASS
+<em>de novo</em> candidates is marked as a technical outlier — a real genome carries fewer than one.</div>
+
+<h2><span class="n">5</span>Manual validation loop (IGV)</h2>
+<p><code>svengers report --family-events</code> writes one interactive page per family workspace
+(<code>families/&lt;FID&gt;/events.html</code>): every DEL/DUP the family carries, with
+chromosome/type/validation filters, click-to-sort columns, an inheritance column (de novo /
+maternal / paternal / biparental, crossed from the Mendel report), the Tier-4 context columns
+above (SQmax, run carrier fraction, reference-cohort frequency) and per-member GT:GQ:CN.</p>
+<p>Each row carries an <b>IGV</b> link — jumps a running IGV desktop to the locus (±20% flanks)
+via its batch-command port — and three exclusive checkboxes, <b>vrai / faux / incertain</b>,
+for a manual verdict (a forced true/false choice pollutes labels on genuinely ambiguous calls:
+borderline coverage, a fuzzy breakpoint, a repeat region). Verdicts live in the browser's local
+storage and export as a TSV, re-importable and matched by site id, then locus, then ≥90%
+reciprocal overlap — so a re-merged cohort's renumbered sites still line up. This loop produced
+the Tier 4 flags above and feeds the next filter model's training labels.</p>
+
+<h2><span class="n">6</span>Usage</h2>
+<h3>One sample</h3>
+<pre><code># calling (CRAM + bedgraph fast path) then filtering with the current model
+svengers call --sample S1 --out-dir out/ --config configs/ghfc.toml \
+    --cram S1.cram --depth-bedgraph S1.by1000.bedgraph.gz --vaf-bedgraph S1.vaf.bedgraph.gz
+svengers filter out/S1.svengers.vcf.gz --store out/S1.evidence.zarr \
+    --out out/S1.filtered.vcf.gz --config configs/ghfc.toml --model-dir models/v5</code></pre>
+<h3>A cohort (Nextflow + SLURM)</h3>
+<pre><code>./launch_driver.sh --manifest cohort.manifest.tsv --pedigree cohort.pedigree.tsv \
+    --outdir runs/cohort --model_dir models/v5 \
+    --steps call,filter,merge,genotype,cohort,ped,report -with-report -resume</code></pre>
+<p class="muted">The manifest is generated from the GHFC directory layout with
+<code>svengers manifest discover</code>; <code>svengers report</code> produces the HTML page
+(KPIs, size spectra, Mendel sweep, family sections with genes and NDD impact score) and the
+<code>families/&lt;FID&gt;/</code> workspaces.</p>
+
+<h2><span class="n">7</span>How it performs</h2>
+<h3>HG002 vs GIAB v5.0q truth — deletions</h3>
+<div class="tablewrap"><table>
+<tr><th>callset</th><th>precision</th><th>recall</th><th>F1</th></tr>
+<tr><td>Manta</td><td>0.934</td><td>0.376</td><td>0.536</td></tr>
+<tr><td>DELLY</td><td>0.826</td><td>0.284</td><td>0.423</td></tr>
+<tr class="hl"><td>SVengers SQ≥5 (v5)</td><td>0.951</td><td>0.334</td><td>0.495</td></tr>
+<tr><td>SVengers 1–10 kb (SQ≥7)</td><td>0.980</td><td>0.727</td><td>0.834</td></tr>
+<tr><td>SVengers raw (pre-filter)</td><td>0.328</td><td>0.413</td><td>—</td></tr>
+</table></div>
+<p class="muted">The raw callset shows the reservoir: the best recall of the panel, which the
+filter converts into precision. On the 1–10&nbsp;kb stratum, SVengers has the best absolute F1 of the panel.</p>
+
+<h3>Duplications, evaluated honestly (tandem-only)</h3>
+<div class="tablewrap"><table>
+<tr><th>callset</th><th>precision</th><th>recall</th></tr>
+<tr><td>Manta</td><td>0.601</td><td>0.030</td></tr>
+<tr class="hl"><td>SVengers SQ≥7</td><td>0.913</td><td>0.030</td></tr>
+<tr><td>SVengers raw</td><td>—</td><td>0.148 <span class="muted">(5× Manta)</span></td></tr>
+</table></div>
+
+<h3>GIAB-independent specificity — 665 GHFC trios (PASS sites)</h3>
+<div class="tablewrap"><table>
+<tr><th>GQ threshold</th><th>Mendelian violation rate</th><th>transmission</th></tr>
+<tr><td>raw</td><td>1.22%</td><td>0.61</td></tr>
+<tr class="hl"><td>≥ 20</td><td>0.17%</td><td>0.59</td></tr>
+</table></div>
+<p class="muted">A transmission rate close to 0.5–0.6 is the mark of a clean callset: shared
+artifacts are "transmitted" at ~100% and artificially inflate this figure.</p>
+
+<h2><span class="n">8</span>Known limits &amp; next steps</h2>
+<ul>
+<li>Small-DEL recall (50–300&nbsp;bp) plateaus at ~30% in short-read — like the state of the art.</li>
+<li>Inversions and translocations (v2): the INV/INTER PE evidence is already stored, not yet called.</li>
+<li>Recurrence rescue is deliberately permissive at scale — filterable in one stroke on <code>RESCUE</code>; a cohort-size-adaptive criterion is planned.</li>
+<li>PyPI/bioconda release: prepared (container, CI, CITATION.cff), triggered only on the team's decision.</li>
+<li>The transmission-based semi-supervision labels (v5, wavy GHFC trios) turn out to be
+contaminated by shared familial artifacts — a real fix is cleaning them with the Tier-4
+reference frequency before the next training round (v6).</li>
+</ul>
+
+<hr>
+<p class="muted" style="font-size:.85rem">SVengers — GHFC, Institut Pasteur. Python 3.12 ·
+pysam · numba · Zarr v3 · scikit-learn · Nextflow. MIT license. The numbers on this page
+come from the versioned benchmarks in <code>docs/</code> (HG002 v5.0q, tandem-only DUP
+evaluation, dataset_paper trio sweeps).</p>
+
+</div>

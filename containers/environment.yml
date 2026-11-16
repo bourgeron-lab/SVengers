@@ -1,6 +1,6 @@
-# Runtime environment for Vedette (container + CI)
+# Runtime environment for SVengers (container + CI)
 # (the container installs it into -n base explicitly; CI overrides the name too)
-name: vedette
+name: svengers
 channels:
   - conda-forge
   - bioconda

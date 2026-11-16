@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from vedette.config import GenotypeConfig
-from vedette.genotype.likelihood import ContigData, Genotyper, expected_ratio
-from vedette.variants import CNVCall
+from svengers.config import GenotypeConfig
+from svengers.genotype.likelihood import ContigData, Genotyper, expected_ratio
+from svengers.variants import CNVCall
 
 
 def _data(ratio, ploidy=2, baf_pos=None, baf_vaf=None, bin_size=1000, het_rate=None):
@@ -144,7 +144,7 @@ def test_overdispersion_flattens_het_hom_likelihood_gap():
     """The NB junction term must shrink the het-vs-hom log-likelihood gap a
     raw read count can produce (the measured Mendelian-violation mechanism),
     while barely touching the carrier-vs-noncarrier contrast."""
-    from vedette.genotype.likelihood import _nb_loglik, _poisson_loglik
+    from svengers.genotype.likelihood import _nb_loglik, _poisson_loglik
 
     lam_het, lam_hom, lam_bg = 2.1, 4.2, 0.175
     for count in (4, 8, 12):

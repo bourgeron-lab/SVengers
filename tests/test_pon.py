@@ -2,8 +2,8 @@ import numpy as np
 import pysam
 import pytest
 
-from vedette.cohort.pon import PanelOfNormals, artifacts_bed, build_pon
-from vedette.extract.store import EvidenceStoreWriter
+from svengers.cohort.pon import PanelOfNormals, artifacts_bed, build_pon
+from svengers.extract.store import EvidenceStoreWriter
 
 N_BINS = 1000
 MEAN_DEPTH = 30.0
@@ -45,7 +45,7 @@ def test_build_and_normalize(tmp_path, cohort_stores):
     assert np.median(median[300:320]) == pytest.approx(1.0, abs=0.08)
 
     # normalize the carrier sample
-    from vedette.extract.store import EvidenceStore
+    from svengers.extract.store import EvidenceStore
 
     s0 = EvidenceStore(cohort_stores[0])
     _raw, corr, mask = s0.depth("chr1")
@@ -123,7 +123,7 @@ def test_svd_denoising_removes_batch_wave_keeps_cnv(tmp_path):
     pon = PanelOfNormals(
         build_pon(paths, tmp_path / "pon.zarr", min_samples=8, denoise_k=3)
     )
-    from vedette.extract.store import EvidenceStore
+    from svengers.extract.store import EvidenceStore
 
     s = EvidenceStore(target_path)
     _raw, corr, mask = s.depth("chr1")
@@ -144,7 +144,7 @@ def test_svd_denoising_removes_batch_wave_keeps_cnv(tmp_path):
 
 def test_artifacts_bed(tmp_path):
     h = pysam.VariantHeader()
-    h.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    h.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     h.contigs.add("chr1", length=1_000_000)
     for line in (
         ("SVTYPE", "1", "String", "t"), ("END", "1", "Integer", "e"),

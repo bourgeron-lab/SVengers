@@ -1,5 +1,5 @@
 #!/bin/bash
-# Detached Nextflow driver for Vedette cohort runs on maestro/helix.
+# Detached Nextflow driver for SVengers cohort runs on maestro/helix.
 #
 # The driver must survive the launching session (a driver killed mid-run
 # leaves unrecorded task completions and stale lock files), so launch it

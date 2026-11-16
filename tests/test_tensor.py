@@ -5,14 +5,14 @@ import pysam
 import pytest
 import zarr
 
-from vedette.extract.store import (
+from svengers.extract.store import (
     PE_DEL,
     SR_LEFT_CLIP,
     SR_RIGHT_CLIP,
     EvidenceStoreWriter,
     _create_array,
 )
-from vedette.filter.tensor import CHANNELS, SCALARS, L, run_tensors
+from svengers.filter.tensor import CHANNELS, SCALARS, L, run_tensors
 
 BIN = 1000
 N = 300  # bins per contig (300 kb)

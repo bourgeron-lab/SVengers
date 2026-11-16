@@ -7,10 +7,10 @@ from pathlib import Path
 import pysam
 import pytest
 
-from vedette.bench.compare import run_compare, wisecondorx_to_vcf
-from vedette.bench.plots import plot_size_stratified, plot_trio_sweep
-from vedette.bench.truth import Stratifier, _size_class, evaluate
-from vedette.reference import Contig
+from svengers.bench.compare import run_compare, wisecondorx_to_vcf
+from svengers.bench.plots import plot_size_stratified, plot_trio_sweep
+from svengers.bench.truth import Stratifier, _size_class, evaluate
+from svengers.reference import Contig
 
 truvari_missing = (
     shutil.which("truvari") is None
@@ -106,14 +106,14 @@ def test_compare_with_wisecondorx_entry(tmp_path, truth_and_bed):
         ("chr1", 299_990, 305_000, ("N", "<DEL>"), "DEL", -5010, "c2"),
     ])
     rows = run_compare(
-        [("vedette", "vcf", str(calls)), ("wisecondorx", "wisecondorx", str(wcx))],
+        [("svengers", "vcf", str(calls)), ("wisecondorx", "wisecondorx", str(wcx))],
         truth, bed, CONTIGS, tmp_path / "cmp",
     )
     by = {
         (r["caller"], r["svtype"], r["stratum"]): r
         for r in rows if r["stratum_kind"] == "all"
     }
-    assert float(by[("vedette", "DEL", "all")]["recall"]) == 1.0
+    assert float(by[("svengers", "DEL", "all")]["recall"]) == 1.0
     assert float(by[("wisecondorx", "DEL", "all")]["recall"]) == 0.5
     assert (tmp_path / "cmp" / "comparison.tsv").exists()
 
@@ -146,7 +146,7 @@ def test_records_of_an_explicit_allele_vcf_without_sv_header(tmp_path):
     keys, which crashed the CMRG benchmark."""
     import pysam
 
-    from vedette.bench.truth import _records
+    from svengers.bench.truth import _records
 
     hdr = pysam.VariantHeader()
     hdr.contigs.add("chr1", length=1_000_000)

@@ -5,8 +5,8 @@ import csv
 import pysam
 from typer.testing import CliRunner
 
-from vedette.bench.cohort import gate, load_run, size_class
-from vedette.cli import app
+from svengers.bench.cohort import gate, load_run, size_class
+from svengers.cli import app
 
 REPORT = [
     "site_id", "contig", "start", "end", "svtype", "family_id", "child", "child_gt",
@@ -111,7 +111,7 @@ def test_wave_strata_catch_a_burst_in_the_wavy_children(tmp_path):
     median flat; the wave stratum raises the alarm."""
     import zarr
 
-    from vedette.bench import cohort as bc
+    from svengers.bench import cohort as bc
 
     kids = [f"K{i}" for i in range(30)]
     wavy = kids[:8]

@@ -1,15 +1,15 @@
 import numpy as np
 import pytest
 
-from vedette.breakpoints.cluster import Junction
-from vedette.breakpoints.resolve import (
+from svengers.breakpoints.cluster import Junction
+from svengers.breakpoints.resolve import (
     _fit_align,
     merge_junction_sets,
     microhomology,
     recover_junctions,
 )
-from vedette.config import BreakpointConfig
-from vedette.extract.store import SR_LEFT_CLIP, SR_RIGHT_CLIP
+from svengers.config import BreakpointConfig
+from svengers.extract.store import SR_LEFT_CLIP, SR_RIGHT_CLIP
 
 
 @pytest.fixture(scope="module")
@@ -145,7 +145,7 @@ def test_sr_index_matches_linear_scan():
     including the first of equal-support pileups."""
     import random
 
-    from vedette.breakpoints.cluster import (
+    from svengers.breakpoints.cluster import (
         SR_LEFT_CLIP,
         SR_RIGHT_CLIP,
         SRBreakpoint,

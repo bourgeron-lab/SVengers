@@ -5,8 +5,8 @@ from collections import Counter
 import pysam
 from typer.testing import CliRunner
 
-from vedette.bench.pregate import PreStats, count_sample, load_filtered, pregate
-from vedette.cli import app
+from svengers.bench.pregate import PreStats, count_sample, load_filtered, pregate
+from svengers.cli import app
 
 
 def _vcf(path, records):

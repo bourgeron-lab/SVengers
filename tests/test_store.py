@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vedette.extract.store import PE_DEL, PE_DUP, EvidenceStore, EvidenceStoreWriter
+from svengers.extract.store import PE_DEL, PE_DUP, EvidenceStore, EvidenceStoreWriter
 
 
 @pytest.fixture()
@@ -118,8 +118,8 @@ def test_baf_backfill_from_a_deepvariant_vcf(store, tmp_path):
     backfill keeps every PASS SNV with DP >= 10, whatever its QUAL, and drops
     RefCall records, indels and low-depth sites. The previous arrays stay as
     baf_track/; a VCF matching none of the store's contigs changes nothing."""
-    from vedette.extract.baf import backfill_baf
-    from vedette.extract.store import SCHEMA_VERSION
+    from svengers.extract.baf import backfill_baf
+    from svengers.extract.store import SCHEMA_VERSION
 
     vcf = tmp_path / "S1.vcf.gz"
     _snv_vcf(vcf, [

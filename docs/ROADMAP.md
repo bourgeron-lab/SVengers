@@ -1,4 +1,4 @@
-# Vedette roadmap
+# SVengers roadmap
 
 État au 2026-09-08 : cœur v0.1 fonctionnel bout-en-bout (call → filter →
 merge → genotype → cohort-filter → ped-annotate), validé sur le trio `test`
@@ -109,7 +109,7 @@ sur les 7 candidats jugés) ; seulement ensuite le run complet et
 - Tests : sur un nœud avec `OMP_NUM_THREADS=1` (~1 min), puis les 4 tests
   Truvari sur le nœud de connexion (SIGILL sur les nœuds).
 
-### Translocations, inversions et pertes terminales (`vedette bnd`, 2026-11-06)
+### Translocations, inversions et pertes terminales (`svengers bnd`, 2026-11-06)
 
 Fait (branche `bnd-terminal`) : jonctions inter-chromosomiques et de même
 brin lues dans les stores (pas de CRAM), drapeaux de cohorte par loci
@@ -123,7 +123,7 @@ terminales, 9 translocations (6 avec le gain partenaire), 5 inv-dup,
 dataset_paper : jonctions de l'enfant seul 0,13 par trio au seuil PASS.
 
 Reste à faire :
-1. ~~Étape du workflow Nextflow~~ : `VEDETTE_BND` avant le rapport (testé
+1. ~~Étape du workflow Nextflow~~ : `SVENGERS_BND` avant le rapport (testé
    sur le trio public, 2026-11-06).
 2. ~~Inversions isolées~~ (FAIT) : le ~1 par trio venait de quelques
    génomes à banque chimérique. Jonctions de même brin placées à ≥ 12
@@ -169,18 +169,18 @@ BAF) à côté des originaux, `*.pedigree.fix.tsv` + journal : PMS 33
 corrections (77 -> 94 trios analysés, relancé), dataset_paper 4 corrections
 (aucun trio ne change, à intégrer à la prochaine relance de production).
 
-Issues genetics-viz (onglet Vedette de l'outil de curation GHFC, #5-#11) :
+Issues genetics-viz (onglet SVengers de l'outil de curation GHFC, #5-#11) :
 v1.4.0 FAIT — coordonnées VCF à la norme (`POS` = base de padding, `END` =
 dernière base ; avant : les deux une base à droite, et le merge ajoutait +1
-au site), export machine des pages familles (`<FID>.vedette.tsv/.qc.tsv/
+au site), export machine des pages familles (`<FID>.svengers.tsv/.qc.tsv/
 .json`, docs/EXPORT.md : #5, #7, #10). v1.7.0 FAIT — sites non-PASS portés
 par <= 20 % de la cohorte dans l'export, pas sur la page (#10, reste ; les
 autres, sur dataset_paper, sont à 88 % portés par plus de la moitié
 de la cohorte). Restent, à faire ensemble pendant les recalculs du BAF
-(point 3) : FAIT (v1.9.0) — `vedette labels --from-genetics-viz` (#11 ;
+(point 3) : FAIT (v1.9.0) — `svengers labels --from-genetics-viz` (#11 ;
 `validations/vedette.tsv` absent à ce jour), et en une seule évolution du
 format d'export : appel propre de chaque membre avec SOURCE, précision,
-SQ/PE/SR/CG/RD/CNQ et INFO du site (#8), `site_key` + `vedette site-map`
+SQ/PE/SR/CG/RD/CNQ et INFO du site (#8), `site_key` + `svengers site-map`
 (mêmes bornes, puis meilleures paires mutuelles à chevauchement réciproque
 >= 0,5, puis sites coupés ou fusionnés : #9) et Parquet long (#6).
 
@@ -208,7 +208,7 @@ Priorités :
    c. v11 : les 131 labels tranchés à l'entraînement (caryotypes à part : les
       DUP du X d'un XXY ont reçu des verdicts contraires).
 2. **Second avis CNN (1sexdecies)** — étape 1 FAITE (v1.3.0, 2026-11-04) :
-   `vedette tensors`, 13 canaux x 256 points + 12 scalaires par appel
+   `svengers tensors`, 13 canaux x 256 points + 12 scalaires par appel
    (PASS/LowSQ >= 1 kb, ~1 200 par génome, ~20 s, ~1 Mo). Le contexte de
    cohorte est le panel de normaux (médiane et MAD de 300 fondateurs par
    bin), sans calcul supplémentaire. Contrôle : la DEL SHANK3 de PMS (SQ
@@ -230,19 +230,19 @@ Priorités :
    gardent un rapport het/hom normal. Le store reproduit la piste à
    l'identique : l'import n'est pas en cause. Plan : commande qui réécrit
    `baf/` des stores existants depuis le VCF DeepVariant (PASS, DP >= 10,
-   sans QUAL ; pas de relecture des CRAM, comme `vedette wave`), montée de
+   sans QUAL ; pas de relecture des CRAM, comme `svengers wave`), montée de
    `SCHEMA_VERSION`. Les traits BAF du modèle changent de distribution :
    réentraîner (à faire avec v11 pour ne réentraîner qu'une fois) et
    contrôles de déploiement habituels. Recensement : script non suivi
    `runs/_sexpon/vaf_census.py`.
-   Commande `vedette baf` FAITE (v1.8.0, store 0.6, ancien BAF gardé en
+   Commande `svengers baf` FAITE (v1.8.0, store 0.6, ancien BAF gardé en
    `baf_track/`, ~1 min par génome). Sur des copies de 5 stores : het/hom
    autosomique 0,04 -> 0,91 (IP 75x), 0,08 -> 1,18 (91x), 1,40 -> 1,70
    (ordinaires) ; caryotypes inchangés, x_het des hommes IP 0,08-0,12 ->
    0,02-0,03 (seuil « un seul X » 0,15). Reste : passage sur les stores de
    production, contrôle cohorte (caryotypes, parenté IBS0 des paires
    parent-enfant IP), puis recalcul de BAFN/BAFDEV des appels depuis le
-   store (`vedette regenotype`, FAIT en v1.10.0 : reproduit les valeurs de
+   store (`svengers regenotype`, FAIT en v1.10.0 : reproduit les valeurs de
    l'appel sur un store non réécrit) et v11.
    Stores de production réécrits le 2026-11-05 (2 973, 0 échec). Bilan
    (`runs/_baf/`) : parenté — KING médian des paires parent-enfant 0,116 ->
@@ -368,7 +368,7 @@ SQ >= 5, rapport v1.1.0. Deux relectures IGV par Alexandre (138 + 44 cas,
   pas au-dessus de wave 0,2 ;
 - fragments de mosaïque regroupés sous leur segment ; un événement plus
   profond à l'intérieur reste à part.
-- `vedette wave` a rempli la `wave_score` des stores anciens : 476/2 670
+- `svengers wave` a rempli la `wave_score` des stores anciens : 476/2 670
   génomes ondulés sur dataset_paper (97 visibles avant), ~100/319 sur PMS.
 
 Relecture assistée : page HTML par série avec export TSV, graphiques de
@@ -515,7 +515,7 @@ qu'il faudra pour la soumettre, des verrous aux finitions :
    complet : à décider ; méthodes, figures, éthique des cohortes.
 
 ### 0. (archive) Production : models/v5 + seuil SQ>=5 (2026-09-18)
-v5 = GIAB + 16 trios wavy GHFC (labels par transmission, `vedette label-trio`).
+v5 = GIAB + 16 trios wavy GHFC (labels par transmission, `svengers label-trio`).
 Holdout 8 enfants wavy : DUP PR-AUC 0,908 (v4) -> 0,988 ; DEL 0,989 -> 0,997.
 HG002 : non-régression (SQ5 : P 0,951 / R 0,334 vs v4 0,953 / 0,337).
 Filtre optimisé FAIT : scoring batché (2026-09-18, 6h05 -> 21 min) puis
@@ -640,7 +640,7 @@ forcé à 0,16 : 5 070 → 42 764. Production touchée :
 HG002 avec pistes de production, v5 : DEL P 0,456 / R 0,327.
 
 **v5n** (`models/v5n`, commit e4c58b1) = estimateurs v5 inchangés, `wave_score`
-neutralisée à −1 au scoring (`neutral_features` du manifeste ; `vedette train
+neutralisée à −1 au scoring (`neutral_features` du manifeste ; `svengers train
 --neutralize`). Identique à v5 sur tout génome sans wave ou sous la marche.
 PASS par génome : génomes normaux identiques ; génomes ondulés 10-18k → 3,3-6k
 (DUP de jonction < 1 kb 10-11k → 0,4-0,9k). HG002 pistes de production :
@@ -691,7 +691,7 @@ rastériser perd de l'information et coûte cher. Invariant respecté : le
 second avis ne lit que le store, jamais le CRAM.
 
 **Plan.**
-1. *Tenseurs* (`vedette/filter/tensor.py`, nouveau) : pour chaque appel,
+1. *Tenseurs* (`svengers/filter/tensor.py`, nouveau) : pour chaque appel,
    fenêtre = appel + un flanc de même longueur de chaque côté (bornée, min
    10 kb), rééchantillonnée à L = 256 points ; canaux :
    - log2 du ratio de profondeur normalisé diploïde, et masque ;
@@ -702,7 +702,7 @@ second avis ne lit que le store, jamais le CRAM.
      de la cohorte (ou d'un panel de référence) sur les mêmes bins — le levier
      contre les artefacts systématiques (creux chr16:28-31 Mb de toute la
      cohorte PMS, vagues GC). Coût : un résumé par bin calculé une fois par
-     cohorte (comme `vedette mosaic`, ~1-4 min), pas par appel ;
+     cohorte (comme `svengers mosaic`, ~1-4 min), pas par appel ;
    - canaux scalaires concaténés après la convolution : log10 taille, type,
      source, `popcov_stdev`, `segdup_ovl`, `lcr_ovl`.
    Extraction ~ms par appel ; à borner aux appels pré-filtrés (hard filters
@@ -824,13 +824,13 @@ Correctif (fait) : **v6** — rappeler HG003/HG004 avec le code v1 (HG002 l'est 
 réentraîner (avec `lcr_ovl` désormais vivante et des grands événements
 réalistes, cf. 1ter / 1nonies) ; re-benchmarker. Garde-fou à ajouter : le
 manifeste du modèle doit stocker des quantiles de référence par feature, et
-`vedette filter` avertir quand la distribution servie s'en écarte (test de
+`svengers filter` avertir quand la distribution servie s'en écarte (test de
 dérive) — ce décalage serait sorti au premier run de production.
 
-### 1quaterdecies. Mosaïques chromosomiques (`vedette mosaic`, 2026-10-02)
+### 1quaterdecies. Mosaïques chromosomiques (`svengers mosaic`, 2026-10-02)
 
 Vérifié par Alexandre dans IGV sur le père SMP-02 (famille FAM-03) : une seule
-délétion chr10:83,36 Mb-fin là où Vedette rendait 57 fragments CN=1. La
+délétion chr10:83,36 Mb-fin là où SVengers rendait 57 fragments CN=1. La
 profondeur donne **CN ≈ 1,33 homogène** sur 50 Mb : une perte dans ~2/3 des
 cellules. Le même clone (fraction 0,62-0,67) porte 12 segments ≥ 5 Mb — pertes
 2q, 6q, chr9, 10q, 12p, 17p, gains 4p et 17q (profil d'isochromosome 17q) —
@@ -840,11 +840,11 @@ transmis aux enfants : clone somatique (artefact de culture d'une lignée
 lymphoblastoïde, ou processus clonal dans le prélèvement), pas un événement
 constitutionnel — signalé à Alexandre comme possible découverte fortuite.
 
-Pourquoi Vedette le ratait : le CN-HMM n'a que des états entiers ; un rapport
+Pourquoi SVengers le ratait : le CN-HMM n'a que des états entiers ; un rapport
 de 0,665 alterne entre CN 1 et CN 2 (fragments), et les gains à CN 2,67 ne
 tombent sur aucun état (non appelés).
 
-Passe ajoutée (`src/vedette/mosaic.py`, `vedette mosaic --run-dir`, ~1 s par
+Passe ajoutée (`src/svengers/mosaic.py`, `svengers mosaic --run-dir`, ~1 s par
 échantillon depuis le store) : fenêtres de 1 Mb, segmentation binaire, fraction
 cellulaire sous hypothèse de changement d'une copie (perte CN = 2 − f, gain
 CN = 2 + f), puis deux filtres : **homogénéité** (≥ 75 % des fenêtres à ±0,2 du
@@ -951,11 +951,11 @@ recalibrer contre les labels du wave-detector (docs/wave_qc_validation.md).
 ### 1decies. Les stores d'évidence publiés détruits par publishDir (2026-09-29)
 
 Au relancement de dataset_paper (filter -> report, correctif grandes DEL), les
-2670 tâches VEDETTE_FILTER se sont terminées en 10 min avec exit 0 — et
+2670 tâches SVENGERS_FILTER se sont terminées en 10 min avec exit 0 — et
 **2071 des 2670 `samples/<S>/<S>.evidence.zarr` publiés sont devenus illisibles**
 (`OSError 40: Too many levels of symbolic links`).
 
-Mécanisme : `VEDETTE_FILTER` reçoit le store en entrée et le **ré-émet en
+Mécanisme : `SVENGERS_FILTER` reçoit le store en entrée et le **ré-émet en
 sortie** (pour l'enchaîner vers genotype). Nextflow stage l'entrée par un lien
 symbolique vers le chemin publié, puis `publishDir` republie *toutes* les
 sorties — dont le store — vers ce même chemin publié. Résultat : le chemin
@@ -964,15 +964,15 @@ chemin publié. Cycle. Un répertoire ne se hardlinke pas, donc `mode: 'link'`
 retombe silencieusement sur le lien symbolique et rien n'avertit.
 
 Aucune donnée perdue : les vrais stores vivent dans les répertoires work de
-`VEDETTE_CALL`, seul le pointeur avait sauté. Réparation : repointer chaque
+`SVENGERS_CALL`, seul le pointeur avait sauté. Réparation : repointer chaque
 lien cassé vers le store réel (choix par nombre de contigs puis mtime), 2071/2071
 réparés, 0 irréparable. Vérifications : les 2670 stores s'ouvrent, l'attribut
 `sample` correspond au répertoire pour les 2670 (aucun mélange d'échantillons),
-et un `vedette filter` rejoué sur trois échantillons réparés redonne le VCF
+et un `svengers filter` rejoué sur trois échantillons réparés redonne le VCF
 publié **au bit près** — le store repointé est bien celui qu'avait lu le filtre.
 
 Correctifs : `publishDir ... saveAs: { fn -> fn.endsWith('.evidence.zarr') ? null : fn }`
-dans `modules/vedette_filter.nf`, et `tests/test_workflow_modules.py`, qui échoue
+dans `modules/svengers_filter.nf`, et `tests/test_workflow_modules.py`, qui échoue
 si un module republie une entrée qu'il ré-émet (vérifié en remettant l'ancienne
 version : le test tombe).
 
@@ -985,7 +985,7 @@ assumer le work dir comme emplacement canonique.
 ### 1nonies. Les grandes délétions tombaient sous le seuil SQ (2026-09-28)
 
 Alexandre, sur FAM-01-001 : IGV montre une délétion terminale nette
-chr22:41,9-50,8 Mb chez le proposant, Vedette n'en rapportait que des morceaux.
+chr22:41,9-50,8 Mb chez le proposant, SVengers n'en rapportait que des morceaux.
 
 Les appels propres couvraient pourtant toute la région — mais avec des SQ de
 3,73 et 4,31 sur les deux plus gros segments (6,43 Mb et 229 kb), donc
@@ -1366,7 +1366,7 @@ que sur GIAB elle ne touche presque rien. Les labels wavy v5 sont donc
 contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
 
 À faire pour v6 :
-- `vedette label-trio --known-sites <cohort.vcf.gz>` : exclure des labels (ou
+- `svengers label-trio --known-sites <cohort.vcf.gz>` : exclure des labels (ou
   passer en FP) les appels dont le site de référence a REF_CARRIER_FRAC ≥ 0,5,
   et ceux flagués HighCarrierFrac / CNDiscordant dans le run ;
 - réentraîner, comparer sur HG002 (non-régression) et sur les validations IGV
@@ -1385,7 +1385,7 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
   - CRAM HG002/HG003/HG004 ~35x GRCh38 (GIAB FTP, PCR-free ILMN)
   - Vérité HG002-Q100 v1.1 (`.../T2T-Q100_SVs_v1.1/GRCh38/`) + CMRG v1.00 SV
   - GIAB genome-stratifications (segdup/LCR/TR) + UCSC simpleRepeat + Umap k100
-- `vedette call` permissif sur HG002/3/4 → labels par `truvari bench`
+- `svengers call` permissif sur HG002/3/4 → labels par `truvari bench`
   (`--pctseq 0 --pctsize 0.7 --refdist 1000`, restreint au BED de confiance ;
   hors-BED = exclu de l'entraînement).
 - 2 modèles HistGradientBoosting séparés DEL / DUP, contraintes monotones
@@ -1402,7 +1402,7 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
   {50-300, 300-1k, 1-10k, 10-100k, 100k-1M, >1M} × contexte {clean, segdup,
   LCR, TR} ; sortie TSV+JSON.
 - `bench compare` : Manta/DELLY/dysgu (installés dans tools/) + WisecondorX/
-  ClinSV existants, même protocole ; Vedette avant/après filtre.
+  ClinSV existants, même protocole ; SVengers avant/après filtre.
 - `bench trios` : MVR et transmission en fonction du seuil SQ sur les cohortes
   GHFC (figure de spécificité indépendante de GIAB).
 - `bench cohort` (2026-11-09) : porte de déploiement d'un modèle. Cohorte
@@ -1426,13 +1426,13 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
   1. télécharger les BAM Illumina et la vérité (accord d'Alexandre requis,
      tailles annoncées avant) ;
   2. produire les pistes au format GHFC (mosdepth 1 kb, VAF DeepVariant,
-     cf. recette des pistes) puis `vedette call` sans PoN, et avec un PoN
+     cf. recette des pistes) puis `svengers call` sans PoN, et avec un PoN
      construit sur les membres de la famille (le PoN GHFC ne vaut pas pour
      un autre centre) ;
   3. comparer DEL seules par taille + DUP en tandem extraites des INS
-     (`bench dup-truth`), pas les F1 tous types (62 % d'INS, que Vedette
+     (`bench dup-truth`), pas les F1 tous types (62 % d'INS, que SVengers
      n'appelle pas) ; Manta et Dysgu relancés à l'identique (tools/) ;
-  4. transmission parent → enfant des appels Vedette contre la vérité ;
+  4. transmission parent → enfant des appels SVengers contre la vérité ;
   5. limite à écrire : vérité riche en 100-500 pb, pauvre en > 10 kb, segdups
      et multi-alléliques — complète HG002, ne le remplace pas.
 
@@ -1446,7 +1446,7 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
 
 ### 4. Panel of normals — FAIT (2026-09-08)
 - `cohort/pon.py` : médiane+MAD par bin en streaming (mémoire plate à 10k
-  échantillons), stratifié par sexe, `vedette call --pon`, catalogue
+  échantillons), stratifié par sexe, `svengers call --pon`, catalogue
   d'artefacts (`pon artifacts` + `filter --artifact-bed`).
 - Sémantique validée sur chr20 GHFC (panel 20 fondateurs EAGER) : segments
   depth 264 → 14, 12/14 survivants rares. Les CNV COMMUNS sortent du canal
@@ -1457,8 +1457,8 @@ contaminés par les artefacts familiaux communs, et v5 a appris à les accepter.
 
 ### 5. Industrialisation
 - Wrapper Nextflow calqué sur tools/ghfc-ngs (DSL2, profils slurm+apptainer).
-- ~~INV puis BND/translocations~~ : `vedette bnd` (2026-11-06, voir plus haut).
-- Packaging : PyPI (`vedette` — réservation à faire, ACCORD D'ALEXANDRE requis
+- ~~INV puis BND/translocations~~ : `svengers bnd` (2026-11-06, voir plus haut).
+- Packaging : PyPI (`svengers` — réservation à faire, ACCORD D'ALEXANDRE requis
   avant toute publication), bioconda, conteneur, mkdocs, CITATION.cff, Zenodo.
 - Perf : profiler `extract/scan.py` ; si >40 % du runtime, port Rust ciblé
   (PyO3/rust-htslib) de ce seul module.

@@ -3,9 +3,9 @@ import json
 import numpy as np
 import pytest
 
-from vedette.filter.model import FilterModel
-from vedette.filter.schema import FEATURES, schema_hash
-from vedette.train.train import chromosome_folds, train_models
+from svengers.filter.model import FilterModel
+from svengers.filter.schema import FEATURES, schema_hash
+from svengers.train.train import chromosome_folds, train_models
 
 N_PER_TYPE = 3000
 
@@ -112,8 +112,8 @@ def test_constant_feature_guard():
     import numpy as np
     import pytest
 
-    from vedette.filter.schema import FEATURES
-    from vedette.train.train import check_feature_variance, constant_features
+    from svengers.filter.schema import FEATURES
+    from svengers.train.train import check_feature_variance, constant_features
 
     rng = np.random.default_rng(0)
     X = rng.random((200, len(FEATURES)))

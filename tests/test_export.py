@@ -3,8 +3,8 @@ import json
 
 import numpy as np
 
-from vedette.export import SCHEMA_VERSION, impact_fields
-from vedette.report import _FamilySpill, _write_all_family_events
+from svengers.export import SCHEMA_VERSION, impact_fields, read_family_meta
+from svengers.report import _FamilySpill, _write_all_family_events
 
 
 def test_impact_fields():
@@ -27,7 +27,7 @@ def _own_call_vcf(path, sample, records):
 
     path.parent.mkdir(parents=True, exist_ok=True)
     hdr = pysam.VariantHeader()
-    hdr.add_line("##vedette_coords=padded")
+    hdr.add_line("##svengers_coords=padded")
     hdr.contigs.add("chr1", length=1_000_000)
     for k, d in (("DEL", "Deletion"), ("DUP", "Duplication")):
         hdr.add_line(f'##ALT=<ID={k},Description="{d}">')
@@ -43,7 +43,7 @@ def _own_call_vcf(path, sample, records):
     with pysam.VariantFile(str(path), "wz", header=hdr) as vf:
         for contig, start0, end, svtype, filt, source, imprecise, fmt in records:
             rec = vf.new_record(contig=contig, start=start0 - 1, stop=end,
-                                alleles=("N", f"<{svtype}>"), id=f"vedette_{svtype}_{start0}")
+                                alleles=("N", f"<{svtype}>"), id=f"svengers_{svtype}_{start0}")
             rec.info["SVTYPE"], rec.info["SOURCE"], rec.info["MODEL_VER"] = svtype, source, "v5n"
             rec.info["CIPOS"], rec.info["CIEND"] = (-5, 5), (-10, 10)
             if imprecise:
@@ -99,7 +99,7 @@ def test_family_export_rows(tmp_path):
                                  sample_info=info, export_meta={"cohort": "test"})
     assert n == 1
     fam = tmp_path / "families" / "F1"
-    rows = {r["row_id"]: r for r in _rows(fam / "F1.vedette.tsv")}
+    rows = {r["row_id"]: r for r in _rows(fam / "F1.svengers.tsv")}
     r = rows["s1"]
     assert (r["kind"], r["site_ids"], r["start"], r["end"], r["vcf_pos"], r["size"]) == (
         "site", "s1", "1000", "2000", "999", "1001")
@@ -113,12 +113,13 @@ def test_family_export_rows(tmp_path):
     assert "charge 5.5×" in r["qc_alerts"]
     assert (rows["s2"]["INH_kid"], rows["s2"]["DNQ_kid"]) == ("paternal", "")
     assert r["inheritance"] == "kid:denovo" and r["genes"] == "GENE1"
-    qc = {q["sample"]: q for q in _rows(fam / "F1.vedette.qc.tsv")}
+    qc = {q["sample"]: q for q in _rows(fam / "F1.svengers.qc.tsv")}
     assert qc["kid"]["flags"] == "carrier_load;denovo_outlier;wavy"
     assert qc["kid"]["pass_sites_carried"] == "19626" and qc["dad"]["flags"] == ""
-    meta = json.loads((fam / "F1.vedette.json").read_text())
+    meta = json.loads((fam / "F1.svengers.json").read_text())
     assert meta["schema_version"] == SCHEMA_VERSION and meta["members"] == samples
     assert meta["cohort"] == "test"
+    assert read_family_meta(fam, "F1")["svengers_version"] == meta["svengers_version"]
 
     # #9: the cohort site's own bounds; #8: site evidence and own calls
     assert r["site_key"] == "chr1:1000-2000:del" and rows["s2"]["site_key"] == "chr1:10000-12000:dup"
@@ -131,8 +132,8 @@ def test_family_export_rows(tmp_path):
     # #6: long Parquet, one line per row x member, typed, versions in the metadata
     import pyarrow.parquet as pq
 
-    assert meta["parquet"] == "F1.vedette.parquet"
-    t = pq.read_table(fam / "F1.vedette.parquet")
+    assert meta["parquet"] == "F1.svengers.parquet"
+    t = pq.read_table(fam / "F1.svengers.parquet")
     assert t.num_rows == 2 * len(samples)
     assert str(t.schema.field("start").type) == "int64" and str(t.schema.field("sq").type) == "double"
     import pyarrow as pa
@@ -140,13 +141,13 @@ def test_family_export_rows(tmp_path):
     assert pa.types.is_list(t.schema.field("exonic_genes").type)
     md = {k.decode(): v.decode() for k, v in t.schema.metadata.items()}
     assert md["schema_version"] == str(SCHEMA_VERSION) and md["cohort"] == "test"
-    assert json.loads(md["vedette"])["members"] == samples
+    assert json.loads(md["svengers"])["members"] == samples
     d = t.to_pylist()
     kid = next(x for x in d if x["row_id"] == "s1" and x["sample"] == "kid")
     assert (kid["carrier"], kid["gt"], kid["cn"], kid["inheritance"], kid["dnq"]) == (
         True, "0/1", 1, "denovo", 45)
     assert (kid["own_call_id"], kid["own_filter"], kid["source"], kid["precise"]) == (
-        "vedette_DEL_999", "PASS", "BOTH", True)
+        "svengers_DEL_999", "PASS", "BOTH", True)
     assert (kid["own_start"], kid["own_end"], kid["cipos"], kid["pe"], kid["sr"]) == (
         1000, 2000, [-5, 5], 5, 3)
     assert kid["sq"] == 12.3 or abs(kid["sq"] - 12.3) < 1e-4

@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from vedette.extract.store import EvidenceStore, EvidenceStoreWriter
-from vedette.mosaic import expected_baf_excess, read_tsv, scan_store, write_tsv
+from svengers.extract.store import EvidenceStore, EvidenceStoreWriter
+from svengers.mosaic import expected_baf_excess, read_tsv, scan_store, write_tsv
 
 BIN = 10_000            # 100 bins per 1 Mb window: fast, same window logic
 CONTIG_MB = 40
@@ -73,7 +73,7 @@ def test_normal_genome_is_silent_and_tsv_round_trips(tmp_path):
 
 
 def test_mosaic_flags_on_family_rows():
-    from vedette.report import mosaic_flags
+    from svengers.report import mosaic_flags
 
     seg = [{"contig": "chr10", "start": 83_000_000, "end": 133_000_000, "svtype": "DEL",
             "fraction": 0.67, "mosaic": True}]
@@ -94,7 +94,7 @@ def test_blend_of_integer_levels_is_not_a_mosaic(tmp_path):
     1.65, 1.03, 1.02) have intermediate medians but are not clones."""
     import numpy as np
 
-    from vedette.mosaic import homogeneous
+    from svengers.mosaic import homogeneous
 
     assert not homogeneous(np.array([2.9, 2.5, 3.0, 1.15]), 2.5)
     assert not homogeneous(np.array([1.66, 1.65, 1.03, 1.02]), 1.65)
@@ -121,7 +121,7 @@ def test_mosaic_segment_is_a_row_of_the_family_page(tmp_path):
     default, flagged as mosaic."""
     import numpy as np
 
-    from vedette.report import _FamilySpill, _write_all_family_events
+    from svengers.report import _FamilySpill, _write_all_family_events
 
     samples = ["kid", "dad", "mum"]
     sites = [{"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL",
@@ -165,7 +165,7 @@ def test_low_fraction_segment_of_a_wavy_genome_is_not_a_mosaic(tmp_path):
     is read without the segment's own contig (a large CNV raises it)."""
     import zarr
 
-    from vedette.mosaic import WAVY_MIN_FRAC, contig_wave
+    from svengers.mosaic import WAVY_MIN_FRAC, contig_wave
 
     def wavy(path, chr8=0.13):
         per = {f"chr{k}": 0.15 for k in range(1, 13)} | {"chr8": chr8}
@@ -195,7 +195,7 @@ def test_inner_edges_are_refined_to_the_bin(tmp_path):
 def test_edge_is_kept_when_no_step_is_within_reach():
     """A duplication running on past the window next to it (PMS, scanned at
     44-48 Mb for 41.5-49.25 Mb) has no step to place: the edge stays."""
-    from vedette.mosaic import WINDOW_BP, refine_edge
+    from svengers.mosaic import WINDOW_BP, refine_edge
 
     pos = np.arange(40_000_000, 46_000_000, 1000)
     rng = np.random.default_rng(0)
@@ -229,7 +229,7 @@ def test_one_clone_on_a_small_drift_is_one_row(tmp_path):
 
 
 def test_straddling_window_and_peel():
-    from vedette.mosaic import merge_close, peel, straddling
+    from svengers.mosaic import merge_close, peel, straddling
 
     lv = np.array([1.0, 1.0, 1.0, 1.25, 1.5, 1.5, 1.5]) / 1.0
     assert straddling(lv).tolist() == [False, False, False, True, False, False, False]

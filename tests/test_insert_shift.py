@@ -1,9 +1,9 @@
 import numpy as np
 
-from vedette.breakpoints.insert_shift import dedupe_against, detect_insert_shift_dels
-from vedette.config import BreakpointConfig
-from vedette.extract.store import InsertModel
-from vedette.variants import CNVCall
+from svengers.breakpoints.insert_shift import dedupe_against, detect_insert_shift_dels
+from svengers.config import BreakpointConfig
+from svengers.extract.store import InsertModel
+from svengers.variants import CNVCall
 
 INSERT = InsertModel(mu=360.0, sigma=76.0, n_pairs=1_000_000)
 BIN = 100

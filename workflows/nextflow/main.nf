@@ -2,31 +2,31 @@
 
 /*
 ========================================================================================
-    Vedette cohort CNV-calling pipeline
+    SVengers cohort CNV-calling pipeline
 ========================================================================================
     call -> filter -> merge -> genotype -> cohort -> ped -> (mosaic, bnd) -> report
 
-    Input: a Vedette manifest TSV (sample_id, cram, batch, sex, depth_bedgraph,
-    vaf_bedgraph) built with `vedette manifest discover`, plus optionally a
+    Input: an SVengers manifest TSV (sample_id, cram, batch, sex, depth_bedgraph,
+    vaf_bedgraph) built with `svengers manifest discover`, plus optionally a
     pedigree. Sample-level steps run in parallel; cohort steps fan in.
     Restartable with -resume.
 ----------------------------------------------------------------------------------------
 */
 
-include { VEDETTE_CALL } from './modules/vedette_call'
-include { VEDETTE_FILTER } from './modules/vedette_filter'
-include { VEDETTE_MERGE } from './modules/vedette_merge'
-include { VEDETTE_GENOTYPE } from './modules/vedette_genotype'
-include { VEDETTE_COHORT_FILTER } from './modules/vedette_cohort_filter'
-include { VEDETTE_PED } from './modules/vedette_ped'
-include { VEDETTE_MOSAIC } from './modules/vedette_mosaic'
-include { VEDETTE_BND } from './modules/vedette_bnd'
-include { VEDETTE_REPORT } from './modules/vedette_report'
+include { SVENGERS_CALL } from './modules/svengers_call'
+include { SVENGERS_FILTER } from './modules/svengers_filter'
+include { SVENGERS_MERGE } from './modules/svengers_merge'
+include { SVENGERS_GENOTYPE } from './modules/svengers_genotype'
+include { SVENGERS_COHORT_FILTER } from './modules/svengers_cohort_filter'
+include { SVENGERS_PED } from './modules/svengers_ped'
+include { SVENGERS_MOSAIC } from './modules/svengers_mosaic'
+include { SVENGERS_BND } from './modules/svengers_bnd'
+include { SVENGERS_REPORT } from './modules/svengers_report'
 
 def validatedSteps() {
     def valid_steps = ['call', 'filter', 'merge', 'genotype', 'cohort', 'ped', 'report']
     if (!params.manifest) {
-        error "ERROR: --manifest parameter is required (vedette manifest discover ...)"
+        error "ERROR: --manifest parameter is required (svengers manifest discover ...)"
     }
     // --steps on the CLI arrives as a comma-separated string; params files give a list
     def steps = (params.steps instanceof List ? params.steps : params.steps.toString().tokenize(','))
@@ -50,24 +50,33 @@ def validatedSteps() {
         error "ERROR: steps must be a prefix of ${valid_steps.join(' -> ')} (or start at 'filter' with --calls_dir; got: ${wanted.join(', ')})"
     }
     if (wanted[0] == 'filter' && !params.calls_dir) {
-        error "ERROR: starting at 'filter' requires --calls_dir (published <sample>/<sample>.vedette.vcf.gz + evidence store)"
+        error "ERROR: starting at 'filter' requires --calls_dir (published <sample>/<sample>.svengers.vcf.gz, or .vedette.vcf.gz before v2.0, + evidence store)"
     }
     return wanted
 }
 
-// Re-filter mode: the report (and a later `vedette report` by hand) reads each
+// A sample's published raw calls: <S>.svengers.vcf.gz, or <S>.vedette.vcf.gz
+// for calls made before v2.0 (when SVengers was Vedette)
+def publishedRawCalls(String sample, dir) {
+    def vcf = file("${dir}/${sample}.svengers.vcf.gz")
+    def legacy = file("${dir}/${sample}.vedette.vcf.gz")
+    return (!vcf.exists() && legacy.exists()) ? legacy : vcf
+}
+
+// Re-filter mode: the report (and a later `svengers report` by hand) reads each
 // store at <outdir>/samples/<S>/, but only the filter outputs are published
 // there -- a 2670-sample re-filter lost the sex-chromosome section and wave
 // alerts without a word (2026-11-02). Symlink the published call instead: no
 // copy of the stores, and no publishDir on a passthrough input (the symlink
-// cycle of VEDETTE_FILTER). Entries already present are left alone.
+// cycle of SVENGERS_FILTER). Entries already present are left alone.
 def linkPublishedCall(String sample, src_dir) {
     def dest_dir = file("${params.outdir}/samples/${sample}")
     if (dest_dir.exists() && java.nio.file.Files.isSameFile(dest_dir, src_dir)) {
         return  // --calls_dir is this run's own samples/
     }
     dest_dir.mkdirs()
-    ["${sample}.evidence.zarr", "${sample}.vedette.vcf.gz", "${sample}.vedette.vcf.gz.tbi"].each { fn ->
+    def vcf_name = publishedRawCalls(sample, src_dir).getName()
+    ["${sample}.evidence.zarr", vcf_name, "${vcf_name}.tbi"].each { fn ->
         def src = src_dir.resolve(fn)
         def dest = dest_dir.resolve(fn)
         if (src.exists() && !java.nio.file.Files.exists(dest, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -82,12 +91,12 @@ workflow {
 
     log.info """
     ========================================================================================
-                              Vedette CNV cohort pipeline
+                              SVengers CNV cohort pipeline
     ========================================================================================
     Manifest         : ${params.manifest}
     Pedigree         : ${params.pedigree ?: '(none)'}
     Steps            : ${steps.join(', ')}
-    Vedette config   : ${params.vedette_config}
+    SVengers config  : ${params.svengers_config}
     PoN              : ${params.pon ?: '(none)'}
     Filter model     : ${params.model_dir ?: '(tier-1 only)'}
     Output directory : ${params.outdir}
@@ -110,13 +119,13 @@ workflow {
 
     def calls = Channel.empty()
     if ('call' in steps) {
-        VEDETTE_CALL(samples)
-        calls = VEDETTE_CALL.out.calls
+        SVENGERS_CALL(samples)
+        calls = SVENGERS_CALL.out.calls
     } else {
         // re-filter mode: pick up published calls for the manifest's samples
         calls = samples.map { sample, cram, dbg, vbg ->
             def d = file("${params.calls_dir}/${sample}")
-            def vcf = file("${d}/${sample}.vedette.vcf.gz")
+            def vcf = publishedRawCalls(sample, d)
             def store = file("${d}/${sample}.evidence.zarr")
             if (!vcf.exists() || !store.exists()) {
                 error "ERROR: published call missing for ${sample} under ${params.calls_dir}"
@@ -131,40 +140,40 @@ workflow {
     def genotype_tables = Channel.empty()
 
     if ('filter' in steps) {
-        VEDETTE_FILTER(calls)
-        filtered = VEDETTE_FILTER.out.filtered
+        SVENGERS_FILTER(calls)
+        filtered = SVENGERS_FILTER.out.filtered
     }
 
     if ('merge' in steps) {
-        VEDETTE_MERGE(filtered.map { sample, vcf, tbi, store -> vcf }.collect())
-        sites = VEDETTE_MERGE.out.sites
+        SVENGERS_MERGE(filtered.map { sample, vcf, tbi, store -> vcf }.collect())
+        sites = SVENGERS_MERGE.out.sites
     }
 
     if ('genotype' in steps) {
-        VEDETTE_GENOTYPE(
+        SVENGERS_GENOTYPE(
             filtered.map { sample, vcf, tbi, store -> [sample, store] },
             sites,
         )
-        genotype_tables = VEDETTE_GENOTYPE.out.table
+        genotype_tables = SVENGERS_GENOTYPE.out.table
     }
 
     if ('cohort' in steps) {
-        VEDETTE_COHORT_FILTER(
+        SVENGERS_COHORT_FILTER(
             sites,
             genotype_tables.map { sample, tsv -> tsv }.collect(),
         )
     }
 
     if ('ped' in steps) {
-        VEDETTE_PED(VEDETTE_COHORT_FILTER.out.cohort_vcf, VEDETTE_COHORT_FILTER.out.cohort_index)
+        SVENGERS_PED(SVENGERS_COHORT_FILTER.out.cohort_vcf, SVENGERS_COHORT_FILTER.out.cohort_index)
     }
 
     // chromosomal-scale mosaics, per sample from its store; the report stages
     // the TSVs (an input, not the published copies, so it never races them)
     def mosaic_tsvs = Channel.value([])
     if ('report' in steps && params.mosaic.toString().toLowerCase() in ["true", "1", "yes"]) {
-        VEDETTE_MOSAIC(calls.map { sample, vcf, tbi, store -> [sample, store] })
-        mosaic_tsvs = VEDETTE_MOSAIC.out.tsv.collect().ifEmpty([])
+        SVENGERS_MOSAIC(calls.map { sample, vcf, tbi, store -> [sample, store] })
+        mosaic_tsvs = SVENGERS_MOSAIC.out.tsv.collect().ifEmpty([])
     }
 
     // translocation / inversion junctions and the mechanism of terminal losses,
@@ -172,21 +181,21 @@ workflow {
     def bnd_files = Channel.value([])
     if ('report' in steps && 'filter' in steps
             && params.bnd.toString().toLowerCase() in ["true", "1", "yes"]) {
-        VEDETTE_BND(
+        SVENGERS_BND(
             filtered.map { sample, vcf, tbi, store -> [vcf, tbi] }.flatten().collect(),
             filtered.map { sample, vcf, tbi, store -> store }.collect(),
             mosaic_tsvs,
         )
-        bnd_files = VEDETTE_BND.out.files.collect().ifEmpty([])
+        bnd_files = SVENGERS_BND.out.files.collect().ifEmpty([])
     }
 
     if ('report' in steps) {
-        VEDETTE_REPORT(
-            VEDETTE_COHORT_FILTER.out.cohort_vcf,
-            VEDETTE_COHORT_FILTER.out.cohort_index,
-            VEDETTE_PED.out.report,
-            VEDETTE_PED.out.summary,
-            VEDETTE_PED.out.sweep,
+        SVENGERS_REPORT(
+            SVENGERS_COHORT_FILTER.out.cohort_vcf,
+            SVENGERS_COHORT_FILTER.out.cohort_index,
+            SVENGERS_PED.out.report,
+            SVENGERS_PED.out.summary,
+            SVENGERS_PED.out.sweep,
             mosaic_tsvs,
             bnd_files,
         )

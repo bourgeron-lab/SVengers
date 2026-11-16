@@ -12,12 +12,14 @@ GIAB=$ROOT/resources/giab
 REF=/pasteur/helix/projects/ghfc_wgs/references/GRCh38/chr/GRCh38.fasta
 TRUTH=$GIAB/HG002_GRCh38_v5.0q_stvar.vcf.gz
 BED=$GIAB/HG002_GRCh38_v5.0q_stvar.benchmark.bed
+# raw calls of a run: <S>.svengers.vcf.gz, or <S>.vedette.vcf.gz before v2.0
+raw_calls() { if [ -e "$1/$2.svengers.vcf.gz" ]; then echo "$1/$2.svengers.vcf.gz"; else echo "$1/$2.vedette.vcf.gz"; fi; }
 
 echo "== 1. backfill wave_score dans les stores GIAB =="
 $PY - <<'PYEOF'
 import zarr
-from vedette.extract.store import EvidenceStore
-from vedette.qc import sample_wave_score
+from svengers.extract.store import EvidenceStore
+from svengers.qc import sample_wave_score
 
 for run, s in (("hg002_run","HG002"), ("hg003_run","HG003"), ("hg004_run","HG004")):
     path = f"resources/giab/{run}/{s}.evidence.zarr"
@@ -39,7 +41,7 @@ PYEOF
 echo "== 2. features (schéma 30 avec wave_score) =="
 for S in HG002 HG003 HG004; do
   run=$GIAB/$(echo $S | tr 'A-Z' 'a-z')_run
-  $V filter "$run/$S.vedette.vcf.gz" \
+  $V filter "$(raw_calls "$run" "$S")" \
       --store "$run/$S.evidence.zarr" \
       --out "$run/$S.tier1_v4.vcf.gz" \
       --config configs/giab.toml \
@@ -49,7 +51,7 @@ wait
 
 echo "== 3. labels: HG002 truvari =="
 $V label "$GIAB/hg002_run/HG002.features_v4.tsv" \
-    --calls-vcf "$GIAB/hg002_run/HG002.vedette.vcf.gz" \
+    --calls-vcf "$(raw_calls "$GIAB/hg002_run" HG002)" \
     --truth-vcf "$TRUTH" --truth-bed "$BED" --fasta "$REF" \
     --truvari-dir "$GIAB/hg002_run/truvari_label_v4" \
     --out "$GIAB/hg002_run/HG002.labeled_v4.tsv"
@@ -58,7 +60,7 @@ echo "== 4. labels: HG003/HG004 semi-supervision par transmission =="
 for S in HG003 HG004; do
   run=$GIAB/$(echo $S | tr 'A-Z' 'a-z')_run
   $V label "$run/$S.features_v4.tsv" \
-      --calls-vcf "$run/$S.vedette.vcf.gz" \
+      --calls-vcf "$(raw_calls "$run" "$S")" \
       --truth-vcf "$TRUTH" --truth-bed "$BED" --fasta "$REF" \
       --truvari-dir "$run/truvari_label_v4" \
       --parent-mode \
@@ -75,7 +77,7 @@ $V train \
     --training-data "HG002 (self-labeled) + HG003/HG004 (transmission semi-supervised), 40x NovaSeq GHFC-style, truth GIAB v5.0q stvar, 30-feature schema incl. wave_score"
 
 echo "== 6. re-filter HG002 avec v4 + sous-ensembles PASS / SQ>=7 =="
-$V filter "$GIAB/hg002_run/HG002.vedette.vcf.gz" \
+$V filter "$(raw_calls "$GIAB/hg002_run" HG002)" \
     --store "$GIAB/hg002_run/HG002.evidence.zarr" \
     --out "$GIAB/hg002_run/HG002.filtered_v4.vcf.gz" \
     --config configs/giab.toml \

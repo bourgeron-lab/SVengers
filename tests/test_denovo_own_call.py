@@ -5,8 +5,8 @@ import csv
 
 import pysam
 
-from vedette.cohort.mendel import OwnCalls, run_ped_annotate
-from vedette.ped import parse_ped
+from svengers.cohort.mendel import OwnCalls, run_ped_annotate
+from svengers.ped import parse_ped
 
 SAMPLES = ("C", "F", "M", "U")   # U: unrelated, carrier where the site says so
 
@@ -153,7 +153,7 @@ def test_clingen_locus_lifts_the_carrier_limit(tmp_path):
     """A recurrent pathogenic de novo (PMS: terminal 22q13.3 over SHANK3 in half
     the children): carriers outside the family are allowed at a ClinGen locus of
     score 3 for the CNV's type; the call and parental-call rules still apply."""
-    from vedette.clingen import ClinGen, Region
+    from svengers.clingen import ClinGen, Region
 
     ped = _setup(tmp_path)
     _cohort(tmp_path / "cohort.vcf.gz", SITES, unrelated={"own_pass", "own_lowsq"})

@@ -1,6 +1,6 @@
 # Wave QC — validation du score (2026-09-14)
 
-`vedette.qc.sample_wave_score` mesure la fraction d'énergie spectrale basse
+`svengers.qc.sample_wave_score` mesure la fraction d'énergie spectrale basse
 fréquence (périodes >= 200 kb, fenêtres de 10 Mb, détrend linéaire) du ratio de
 couverture **corrigé GC** — le signal qui alimente réellement le HMM. Vérité
 externe : classifications du pipeline GHFC `Wave_hg38_remapping_slurm_nextflow`
@@ -33,7 +33,7 @@ Seuils candidats (sur cet échantillon, enrichi à 29 % de waves) :
 La dynamique est compressée par rapport aux scores du détecteur GHFC (calculés
 sur la couverture brute) : la correction GC absorbe une partie de l'artefact.
 Le lien opérationnel avec le runtime est documenté dans la même analyse :
-les échantillons WAVES ont une durée de `vedette call` médiane 5× supérieure
+les échantillons WAVES ont une durée de `svengers call` médiane 5× supérieure
 (8,5 h vs 1,7 h, odds ratio 8,8 pour le décile le plus lent), d'où le budget
 `breakpoint.resolve_max_alignments` introduit en même temps que ce score.
 

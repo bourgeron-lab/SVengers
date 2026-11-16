@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from vedette.cohort.merge import MemberCall, SiteCluster, _compatible, cluster_calls
-from vedette.cohort.metrics import hwe_exact
-from vedette.vcfout import add_coords_line, span, sv_record
+from svengers.cohort.merge import MemberCall, SiteCluster, _compatible, cluster_calls
+from svengers.cohort.metrics import hwe_exact
+from svengers.vcfout import add_coords_line, span, sv_record
 
 
 def _mc(sample, start, end, precise=True, gq=99):
@@ -125,8 +125,8 @@ def _write_filtered_vcf(path, sample, records, contigs=(("chr22", 50_818_468),))
 def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     import pysam
 
-    from vedette.cohort.merge import run_merge
-    from vedette.reference import Contig
+    from svengers.cohort.merge import run_merge
+    from svengers.reference import Contig
 
     # 5 carriers of the same LowSQ 30 kb DEL (the SHANK3 family case),
     # 1 singleton LowSQ elsewhere (must NOT be rescued),
@@ -167,8 +167,8 @@ def test_merge_clamps_site_end_to_contig(tmp_path):
     contig by up to one depth bin; the cohort site must still end on it."""
     import pysam
 
-    from vedette.cohort.merge import run_merge
-    from vedette.reference import Contig
+    from svengers.cohort.merge import run_merge
+    from svengers.reference import Contig
 
     # the published dataset_paper per-sample VCFs: END one 1 kb bin past chr12
     chr12_len = 133_275_309
@@ -250,8 +250,8 @@ def test_gtr_discordance_is_directional(tmp_path):
 
     import pysam
 
-    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
-    from vedette.cohort.metrics import run_cohort_filter
+    from svengers.cohort.genotyper import GENOTYPE_COLUMNS
+    from svengers.cohort.metrics import run_cohort_filter
 
     # UP: 3 nominators, 6 of 8 samples carry after re-genotyping (sensitivity)
     # DOWN: 8 nominators, only 1 carrier reproduced (irreproducible calls)
@@ -289,8 +289,8 @@ def test_cohort_filter_post_processing_flags(tmp_path):
 
     import pysam
 
-    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
-    from vedette.cohort.metrics import run_cohort_filter
+    from svengers.cohort.genotyper import GENOTYPE_COLUMNS
+    from svengers.cohort.metrics import run_cohort_filter
 
     # A: DEL carried 1/1 by all 6 samples (reference artifact, HWE-blind)
     # B: DUP carried by 4/6, every carrier at CN=1 (type/depth discordant)
@@ -357,8 +357,8 @@ def test_cohort_filter_sex_chromosomes(tmp_path):
 
     import pysam
 
-    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
-    from vedette.cohort.metrics import run_cohort_filter
+    from svengers.cohort.genotyper import GENOTYPE_COLUMNS
+    from svengers.cohort.metrics import run_cohort_filter
 
     men, women = [f"M{k}" for k in range(6)], [f"F{k}" for k in range(6)]
     # X1: junction artifact, every woman 0/1 at CN 2 and half the men: 0.75 pooled
@@ -409,8 +409,8 @@ def test_cohort_filter_chry_no_depth(tmp_path):
 
     import pysam
 
-    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
-    from vedette.cohort.metrics import run_cohort_filter
+    from svengers.cohort.genotyper import GENOTYPE_COLUMNS
+    from svengers.cohort.metrics import run_cohort_filter
 
     men, women = [f"M{k}" for k in range(6)], [f"F{k}" for k in range(6)]
     # Y1: small DUP of four men at CN 1; Y2: DEL of two men at CN 0;
@@ -474,13 +474,13 @@ def test_cohort_filter_chry_no_depth(tmp_path):
     ((1, 1), (0, 0), (0, 1), "auto", True, ("maternal", True)),
 ])
 def test_classify_trio_sex_chromosomes(child, father, mother, mode, male, expected):
-    from vedette.cohort.mendel import classify_trio
+    from svengers.cohort.mendel import classify_trio
 
     assert classify_trio(child, father, mother, mode, male) == expected
 
 
 def test_site_mode():
-    from vedette.cohort.mendel import site_mode
+    from svengers.cohort.mendel import site_mode
 
     assert site_mode("chr7", 0, 10) == "auto"
     assert site_mode("chrX", 1_000_000, 1_001_000) == "par"
@@ -496,7 +496,7 @@ def test_cohort_filter_takes_the_reference_artifact_verdict(tmp_path):
     a rare site keeps its own verdict."""
     import pysam
 
-    from vedette.cohort.metrics import run_cohort_filter
+    from svengers.cohort.metrics import run_cohort_filter
 
     test_cohort_filter_post_processing_flags(tmp_path)    # C: AF 1/12, reference CohortArtifact
     out = {r.id: r for r in pysam.VariantFile(str(tmp_path / "cohort.vcf.gz"))}
@@ -515,9 +515,9 @@ def test_cohort_filter_trio_flags(tmp_path):
 
     import pysam
 
-    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
-    from vedette.cohort.metrics import run_cohort_filter
-    from vedette.ped import parse_ped
+    from svengers.cohort.genotyper import GENOTYPE_COLUMNS
+    from svengers.cohort.metrics import run_cohort_filter
+    from svengers.ped import parse_ped
 
     # 10 trios (P = father, M = mother, C = child)
     # G: fathers 0/1, half of the children carry      -> transmitted, PASS
@@ -577,7 +577,7 @@ def test_cohort_filter_trio_flags(tmp_path):
     assert counts["low_transmission"] == 1 and counts["denovo_excess"] == 1
     # FORMAT/FT: a carrier with no pair and RD 1.05 has no support of its own
     # (read as missing by the trio tools); RD 1.5 does; the site flags use every genotype
-    from vedette.cohort.mendel import _gt_of
+    from svengers.cohort.mendel import _gt_of
     assert out["N"].samples["C0"]["FT"] == "WeakSupport"
     assert _gt_of(out["N"], "C0") == (None, 0)
     assert out["G"].samples["C0"].get("FT") is None     # no weak genotype: no FT on the record
@@ -606,7 +606,7 @@ def test_weak_genotype():
     RD ~0.6); a deletion from 10 kb needs RD <= 0.62; below 1 kb never."""
     import numpy as np
 
-    from vedette.cohort.metrics import weak_genotype
+    from svengers.cohort.metrics import weak_genotype
 
     pe = np.array([0, 0, 3, 0, 0])
     rd = np.array([0.9, 0.55, 0.9, np.nan, 0.7])

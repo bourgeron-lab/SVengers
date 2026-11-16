@@ -1,13 +1,15 @@
 # Family export format
 
-`vedette report --family-events` writes, next to each `families/<FID>/events.html`:
+`svengers report --family-events` writes, next to each `families/<FID>/events.html`
+(before v2.0, when SVengers was Vedette: `<FID>.vedette.*`, with `vedette_version` and
+the Parquet key `vedette`; `svengers.export.read_family_meta` reads both):
 
 | file | content |
 |---|---|
-| `<FID>.vedette.tsv` | one row per row of the events page |
-| `<FID>.vedette.qc.tsv` | one row per family member: the per-sample QC behind the row alerts |
-| `<FID>.vedette.json` | `schema_version`, `vedette_version`, `model_version`, cohort, panel of normals (`pon`), member order, options |
-| `<FID>.vedette.parquet` | from v1.9.0, when pyarrow is installed: the rows of the TSV in long form, one line per row × member, typed (see below) |
+| `<FID>.svengers.tsv` | one row per row of the events page |
+| `<FID>.svengers.qc.tsv` | one row per family member: the per-sample QC behind the row alerts |
+| `<FID>.svengers.json` | `schema_version`, `svengers_version`, `model_version`, cohort, panel of normals (`pon`), member order, options |
+| `<FID>.svengers.parquet` | from v1.9.0, when pyarrow is installed: the rows of the TSV in long form, one line per row × member, typed (see below) |
 
 **`schema_version`** (currently **1**, in the JSON) changes whenever a column is
 renamed, removed or changes meaning. Adding a column does not change it: read
@@ -21,7 +23,8 @@ columns by name.
   (what IGV and UCSC show). `size = end - start + 1`.
 - `vcf_pos = start - 1`: the VCF `POS`, the padding base before the event.
 
-In the VCFs (from v1.4.0, header line `##vedette_coords=padded`), records follow
+In the VCFs (from v1.4.0, header line `##svengers_coords=padded`, `##vedette_coords=padded`
+before v2.0), records follow
 the VCF 4.3 rule for symbolic alleles: `POS` is the base before the event,
 `END` its last base, `SVLEN = ±(END - POS)`. A deletion whose clipped reads
 show the last retained base at 1,000 and the first base after the gap at
@@ -29,10 +32,10 @@ show the last retained base at 1,000 and the first base after the gap at
 
 Vedette VCFs written before v1.4.0 (no `##vedette_coords` line) had
 `POS = start` and `END = end + 1` in the terms above, one base to the right on
-both sides. Vedette reads both. Breakpoints curated against the old files are
+both sides. SVengers reads both. Breakpoints curated against the old files are
 off by one at the start and at the end.
 
-## `<FID>.vedette.tsv`
+## `<FID>.svengers.tsv`
 
 Rows are the rows of the events page. Cohort sites carried by the same members
 are collapsed into one event (`site_ids` lists them), and their bounds are the
@@ -49,7 +52,7 @@ sub-threshold, mosaic or chromosomal row already covers is not repeated.
 
 | column | type | values |
 |---|---|---|
-| `row_id` | string | first cohort site id (`vedette_site_N`), or `sub_<S>_<chr>_<pos>`, `mosaic_…`, `chrom_…` |
+| `row_id` | string | first cohort site id (`svengers_site_N`, `vedette_site_N` before v2.0), or `sub_<S>_<chr>_<pos>`, `mosaic_…`, `chrom_…` |
 | `kind` | code | `site`, `subthreshold`, `mosaic`, `chromosomal` |
 | `site_ids` | list | cohort site ids behind a `site` row; empty otherwise |
 | `site_key` | string | from v1.9.0: `chr:start-end:del\|dup` of the cohort site `row_id`, its own bounds (1-based inclusive), not the row's; see Site keys |
@@ -97,7 +100,7 @@ Then, for each member in the JSON's `members` order:
 The other fields of the own call (id, FILTER, bounds, CIPOS/CIEND, GQ, PE, SR,
 CG, RD, CNQ, model version) are in the Parquet file.
 
-## `<FID>.vedette.qc.tsv`
+## `<FID>.svengers.qc.tsv`
 
 | column | type | values |
 |---|---|---|
@@ -110,11 +113,11 @@ CG, RD, CNQ, model version) are in the Parquet file.
 | `flags` | list | `carrier_load` (≥ 5× the cohort median), `denovo_outlier` (de novo candidates above the cohort cutoff: left out of the report's tables), `karyotype` (atypical), `wavy`, `big_cnv` (≥ 3 PASS events ≥ 1 Mb), `mosaic` (mosaic segments), `subthreshold_masked` (too many sub-threshold rows: masked) |
 | `flags_text` | text | the same as shown on the page (French) |
 
-## `<FID>.vedette.parquet`
+## `<FID>.svengers.parquet`
 
-From v1.9.0, when pyarrow is installed (`pip install vedette[parquet]`; the
+From v1.9.0, when pyarrow is installed (`pip install svengers[parquet]`; the
 `.json` gives the file name in `parquet`, null when it was not written). The
-rows of `<FID>.vedette.tsv` in long form: **one line per row × family
+rows of `<FID>.svengers.tsv` in long form: **one line per row × family
 member**, non-carriers included, sorted by `contig`, `start`. Row-level
 columns repeat on each member's line, with the TSV's names and meanings, typed
 (int64, float64, string, bool; nulls are real nulls) and with lists as list
@@ -145,15 +148,15 @@ Member columns:
 | `rd`, `cnq` | float | mean copy ratio over the call, copy-number posterior |
 | `own_model_version` | string | filter model that scored the call (`MODEL_VER`) |
 
-File metadata (Parquet key/value): `vedette` (the `.json`'s content, JSON),
-and `schema_version`, `vedette_version`, `model_version`, `cohort`, `pon`,
+File metadata (Parquet key/value): `svengers` (the `.json`'s content, JSON),
+and `schema_version`, `svengers_version`, `model_version`, `cohort`, `pon`,
 `family_id`, `generated` as strings.
 
 ## Site keys and re-merges
 
-A cohort site id (`vedette_site_N`) is renumbered at every merge, and the
+A cohort site id (`svengers_site_N`) is renumbered at every merge, and the
 merge moves a site's bounds when it sees other breakpoints. `site_key` is
-stable while the site keeps its bounds; across a re-merge, `vedette
+stable while the site keeps its bounds; across a re-merge, `svengers
 site-map OLD.vcf.gz NEW.vcf.gz --out map.tsv` gives the correspondence:
 
 | column | values |

@@ -25,7 +25,7 @@ def _pedigree(path):
             fh.write(f"FAM{f}\tF{f}P\t0\t0\t1\t1\n")
             fh.write(f"FAM{f}\tF{f}M\t0\t0\t2\t1\n")
             fh.write(f"FAM{f}\tF{f}C\tF{f}P\tF{f}M\t1\t2\n")
-    from vedette.ped import parse_ped
+    from svengers.ped import parse_ped
 
     return parse_ped(path)
 
@@ -82,9 +82,9 @@ def _text(path):
 
 @pytest.fixture
 def cohort(tmp_path, monkeypatch):
-    import vedette.parallel
+    import svengers.parallel
 
-    monkeypatch.setattr(vedette.parallel, "REGION_SIZE", 1_000_000)
+    monkeypatch.setattr(svengers.parallel, "REGION_SIZE", 1_000_000)
     rng = random.Random(7)
     samples = _samples()
     paths = []
@@ -98,7 +98,7 @@ def cohort(tmp_path, monkeypatch):
 
 
 def _genotype_tables(sites_vcf, samples, out_dir, rng):
-    from vedette.cohort.genotyper import GENOTYPE_COLUMNS
+    from svengers.cohort.genotyper import GENOTYPE_COLUMNS
 
     sites = [(r.id, r.contig, r.start, r.stop, r.info["SVTYPE"])
              for r in pysam.VariantFile(str(sites_vcf))]
@@ -121,12 +121,12 @@ def _genotype_tables(sites_vcf, samples, out_dir, rng):
 
 
 def test_cohort_stages_parallel_equal_serial(cohort):
-    from vedette.bench.trios import sweep
-    from vedette.cohort.mendel import run_ped_annotate
-    from vedette.cohort.merge import run_merge
-    from vedette.cohort.metrics import run_cohort_filter
-    from vedette.reference import Contig
-    from vedette.report import _read_cohort_vcf, subthreshold_candidates
+    from svengers.bench.trios import sweep
+    from svengers.cohort.mendel import run_ped_annotate
+    from svengers.cohort.merge import run_merge
+    from svengers.cohort.metrics import run_cohort_filter
+    from svengers.reference import Contig
+    from svengers.report import _read_cohort_vcf, subthreshold_candidates
 
     tmp, samples, paths, ped = cohort
     contigs = [Contig(n, length, "autosome") for n, length in CONTIGS]
@@ -177,7 +177,7 @@ def test_cohort_stages_parallel_equal_serial(cohort):
 
 
 def test_regions_follow_file_order_and_cover_each_record_once(cohort):
-    from vedette.parallel import fetch_region, vcf_regions
+    from svengers.parallel import fetch_region, vcf_regions
 
     _tmp, _samples, paths, _ped = cohort
     path = paths[0]

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Launcher for the Vedette Nextflow pipeline on maestro/helix.
+# Launcher for the SVengers Nextflow pipeline on maestro/helix.
 #   ./run_pipeline.sh -params-file params.yml [extra nextflow args]
 # Add -resume to continue an interrupted run.
 

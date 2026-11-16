@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-title: "Vedette: a multi-evidence germline CNV caller with calibrated post-calling filtering"
-message: "If you use Vedette, please cite it using this metadata."
+title: "SVengers: a multi-evidence germline CNV caller with calibrated post-calling filtering"
+message: "If you use SVengers, please cite it using this metadata."
 type: software
 authors:
   - family-names: Mathieu
@@ -8,7 +8,7 @@ authors:
     affiliation: "Institut Pasteur, GHFC lab"
     email: alexandre.mathieu@pasteur.fr
 license: MIT
-repository-code: "https://github.com/darkxander/vedette"
+repository-code: "https://github.com/bourgeron-lab/SVengers"
 keywords:
   - CNV
   - structural variants

@@ -2,7 +2,7 @@ import numpy as np
 import pysam
 import pytest
 
-from vedette.bench.dupspace import is_tandem_ins
+from svengers.bench.dupspace import is_tandem_ins
 
 
 @pytest.fixture(scope="module")

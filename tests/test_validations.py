@@ -2,8 +2,8 @@
 
 import csv
 
-from vedette.filter.schema import FEATURES
-from vedette.train.validations import (
+from svengers.filter.schema import FEATURES
+from svengers.train.validations import (
     breakpoint_offsets,
     label_features,
     read_genetics_viz,
@@ -27,20 +27,20 @@ def test_genetics_viz_validations_become_labels(tmp_path):
     Ignore wins; present/absent are 1/0, uncertain and different are kept but
     are no training label; Variant and curated bounds are 1-based inclusive."""
     p = tmp_path / "vedette.tsv"
-    v = "vedette-cohort-1.7.0"
+    v = "svengers-cohort-1.7.0"
     _validations(p, [
         ["F1", "chr1:10001-20000:del", "kid", "u1", "de novo", "uncertain", "", "", "", "0",
-         "2026-11-01T10:00:00", "vedette_site_1", v, "v5n"],
+         "2026-11-01T10:00:00", "svengers_site_1", v, "v5n"],
         ["F1", "chr1:10001-20000:del", "kid", "u1", "de novo", "present", "10051", "19950", "SR", "0",
-         "2026-11-02T10:00:00", "vedette_site_1", v, "v5n"],
+         "2026-11-02T10:00:00", "svengers_site_1", v, "v5n"],
         ["F1", "chr1:50001-60000:dup", "kid", "u1", "", "absent", "", "", "", "0",
-         "2026-11-02T11:00:00", "vedette_site_2", v, "v5n"],
+         "2026-11-02T11:00:00", "svengers_site_2", v, "v5n"],
         ["F1", "chr1:50001-60000:dup", "kid", "u2", "", "present", "", "", "mistake", "1",
-         "2026-11-03T09:00:00", "vedette_site_2", v, "v5n"],          # ignored
+         "2026-11-03T09:00:00", "svengers_site_2", v, "v5n"],          # ignored
         ["F1", "chr2:1001-9000:dup", "kid", "u1", "", "different", "", "", "DEL", "0",
-         "2026-11-02T12:00:00", "vedette_site_3", v, "v5n"],
+         "2026-11-02T12:00:00", "svengers_site_3", v, "v5n"],
         ["F1", "chr3:5001-8000:del", "dad", "u1", "", "present", "", "", "", "0",
-         "2026-11-02T12:00:00", "vedette_site_4", v, "v11"],
+         "2026-11-02T12:00:00", "svengers_site_4", v, "v11"],
         ["F1", "nonsense", "kid", "u1", "", "present", "", "", "", "0", "", "", v, "v5n"],
     ])
     vals, counts = read_genetics_viz(p)

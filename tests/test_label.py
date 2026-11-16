@@ -1,6 +1,6 @@
 """Integration test of the Truvari labeling path with tiny synthetic VCFs.
 
-Exercises the riskiest interface: Truvari accepting Vedette's symbolic
+Exercises the riskiest interface: Truvari accepting SVengers's symbolic
 <DEL>/<DUP> records and --dup-to-ins matching.
 """
 
@@ -11,8 +11,8 @@ from pathlib import Path
 import pysam
 import pytest
 
-from vedette.filter.schema import FEATURES
-from vedette.train.label import label_features, run_truvari_bench
+from svengers.filter.schema import FEATURES
+from svengers.train.label import label_features, run_truvari_bench
 
 truvari_missing = (
     shutil.which("truvari") is None
@@ -134,7 +134,7 @@ def test_parent_mode_labeling(tmp_path):
 def test_label_by_transmission(tmp_path):
     import csv
 
-    from vedette.train.label_trio import label_by_transmission
+    from svengers.train.label_trio import label_by_transmission
 
     def write_gt(path, rows):
         with open(path, "w", newline="") as fh:
@@ -217,7 +217,7 @@ def test_label_by_transmission_needs_parent_own_calls(tmp_path):
 
     import pysam
 
-    from vedette.train.label_trio import label_by_transmission
+    from svengers.train.label_trio import label_by_transmission
 
     for name, rows in (
         ("father", [("A", 10_000, 20_000, "0/1", 99), ("B", 50_000, 60_000, "0/0", 80),

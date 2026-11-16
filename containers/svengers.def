@@ -1,0 +1,37 @@
+Bootstrap: docker
+From: mambaorg/micromamba:1.5.8
+
+# Apptainer definition for SVengers.
+# Build FROM THE REPOSITORY ROOT:
+#   apptainer build --fakeroot containers/svengers.sif containers/svengers.def
+
+%files
+    pyproject.toml /opt/svengers/pyproject.toml
+    README.md /opt/svengers/README.md
+    LICENSE /opt/svengers/LICENSE
+    src /opt/svengers/src
+    containers/environment.yml /opt/environment.yml
+
+%post
+    micromamba install -y -n base -f /opt/environment.yml
+    micromamba clean -a -y
+    micromamba run -n base pip install --no-cache-dir /opt/svengers
+
+%environment
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH=/opt/conda/bin:$PATH
+
+%runscript
+    exec micromamba run -n base svengers "$@"
+
+%test
+    micromamba run -n base svengers --version
+
+%labels
+    Author Alexandre Mathieu (Institut Pasteur, GHFC)
+    Software SVengers
+    License MIT
+
+%help
+    SVengers: multi-evidence germline CNV caller (DEL/DUP) for short-read WGS.
+    Usage: apptainer run svengers.sif call --help

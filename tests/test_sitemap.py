@@ -4,15 +4,15 @@ import csv
 
 import pysam
 
-from vedette.cohort.sitemap import map_sites, write_map
+from svengers.cohort.sitemap import map_sites, write_map
 
 
 def _cohort_vcf(path, sites, spec=True):
     """(id, contig, start0, end, svtype) sites; spec or legacy (pre-1.4.0) coordinates."""
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette")
+    hdr.add_line("##source=svengers")
     if spec:
-        hdr.add_line("##vedette_coords=padded")
+        hdr.add_line("##svengers_coords=padded")
     hdr.contigs.add("chr1", length=10_000_000)
     for k, d in (("DEL", "Deletion"), ("DUP", "Duplication")):
         hdr.add_line(f'##ALT=<ID={k},Description="{d}">')

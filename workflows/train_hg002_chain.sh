@@ -21,7 +21,7 @@ $V call --sample HG002 --out-dir "$OUT" --config configs/giab.toml \
     --cram "$GIAB/hg002/HG002.GRCh38_GIABv3.cram"
 
 echo "== 2. filter (features only, no model) =="
-$V filter "$OUT/HG002.vedette.vcf.gz" \
+$V filter "$OUT/HG002.svengers.vcf.gz" \
     --store "$OUT/HG002.evidence.zarr" \
     --out "$OUT/HG002.tier1.vcf.gz" \
     --config configs/giab.toml \
@@ -29,7 +29,7 @@ $V filter "$OUT/HG002.vedette.vcf.gz" \
 
 echo "== 3. label vs GIAB v5.0q stvar =="
 $V label "$OUT/HG002.features.tsv" \
-    --calls-vcf "$OUT/HG002.vedette.vcf.gz" \
+    --calls-vcf "$OUT/HG002.svengers.vcf.gz" \
     --truth-vcf "$TRUTH" --truth-bed "$BED" --fasta "$REF" \
     --truvari-dir "$OUT/truvari_label" \
     --out "$OUT/HG002.labeled.tsv"
@@ -39,7 +39,7 @@ $V train "$OUT/HG002.labeled.tsv" --out models/v2 --model-version v2 \
     --training-data "HG002 40x NovaSeq PCR-free (brain-genomics-public), GHFC-style alignment, truth GIAB v5.0q stvar"
 
 echo "== 5. re-filter with the trained model =="
-$V filter "$OUT/HG002.vedette.vcf.gz" \
+$V filter "$OUT/HG002.svengers.vcf.gz" \
     --store "$OUT/HG002.evidence.zarr" \
     --out "$OUT/HG002.filtered_v2.vcf.gz" \
     --config configs/giab.toml \

@@ -1,6 +1,6 @@
 import pytest
 
-from vedette.ped import parse_ped
+from svengers.ped import parse_ped
 
 HEADERLESS = """\
 FAM1\tCHILD1\tDAD1\tMOM1\t1\t2
@@ -68,7 +68,7 @@ def test_too_few_columns(tmp_path):
 
 
 def test_sex_written_as_float(tmp_path):
-    from vedette.ped import parse_ped
+    from svengers.ped import parse_ped
 
     p = tmp_path / "ped.tsv"
     p.write_text("F1\tA\t0\t0\t1.0\t1\nF1\tB\t0\t0\t2.0\t1\nF1\tC\tA\tB\t-9\t2\n")

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from vedette.qc import WAVE_MAX_K, contig_wave_score, sample_wave_score
+from svengers.qc import WAVE_MAX_K, contig_wave_score, sample_wave_score
 
 BIN = 1000
 N = 60_000  # 60 Mb contig at 1 kb bins
@@ -82,7 +82,7 @@ def test_impact_labels_parse_as_scores(tmp_path):
     # by that prefix; a bare label crashed the cohort report)
     import pysam
 
-    from vedette.report import _GeneIndex, _impact_points
+    from svengers.report import _GeneIndex, _impact_points
 
     gff = tmp_path / "genes.gff"
     lines = [
@@ -133,7 +133,7 @@ def _genetrek_fixture(tmp_path):
 def test_impact_score_follows_the_clingen_grid(tmp_path):
     """The old 0-4 score put half the coding genome on one level; the new one
     separates DEL from DUP and reads dosage and inheritance from GeneTrek."""
-    from vedette.report import _GeneIndex
+    from svengers.report import _GeneIndex
 
     gff, tsv = _genetrek_fixture(tmp_path)
     idx = _GeneIndex(gff, tsv)
@@ -179,7 +179,7 @@ def _clingen_fixture(tmp_path):
 def test_clingen_dosage_locus(tmp_path):
     """ped-annotate's privacy exemption: a gene of score 3 for the CNV's type
     (any overlap) or a region of score 3 covered >= 20 % or containing it."""
-    from vedette.clingen import ClinGen
+    from svengers.clingen import ClinGen
 
     cg = ClinGen.load(*_clingen_fixture(tmp_path))
     assert cg.dosage_locus("chr22", 510_000, 515_000, dup=False) == "PLAIN"
@@ -195,9 +195,9 @@ def test_clingen_dosage_locus(tmp_path):
 def test_impact_score_reads_the_clingen_dosage_map(tmp_path):
     """A recurrent region and ClinGen gene scores: the v5 review found a de
     novo 15q11.2q13 duplication (TS 3 region) scored +0.15."""
-    from vedette.clingen import ClinGen
-    from vedette.export import impact_fields
-    from vedette.report import _GeneIndex
+    from svengers.clingen import ClinGen
+    from svengers.export import impact_fields
+    from svengers.report import _GeneIndex
 
     gff, tsv = _genetrek_fixture(tmp_path)
     cg = ClinGen.load(*_clingen_fixture(tmp_path))
@@ -225,7 +225,7 @@ def test_impact_score_reads_the_clingen_dosage_map(tmp_path):
 
 
 def test_denovo_outlier_guard():
-    from vedette.report import denovo_outliers
+    from svengers.report import denovo_outliers
 
     def dn_rows(child, n, contig="chr1", step=1_000_000):
         return [{"child": child, "contig": contig, "svtype": "DEL",
@@ -244,7 +244,7 @@ def test_denovo_outlier_guard():
 def test_denovo_guard_counts_events_not_sites():
     """A de novo 22q13 deletion spans 50-80 cohort sites; counted as sites it
     made 77 PMS probands look like technical outliers."""
-    from vedette.report import denovo_event_count, denovo_outliers
+    from svengers.report import denovo_event_count, denovo_outliers
 
     # 60 nested/overlapping sites of one 5 Mb terminal deletion
     big = [{"child": "kid", "contig": "chr22", "svtype": "DEL",
@@ -259,7 +259,7 @@ def test_denovo_guard_counts_events_not_sites():
 def test_drop_karyotype_denovo():
     """An XXY boy's extra X reads as dozens of de novo chrX gains: they leave
     the de novo candidates, his autosomal ones stay; XYY drops chrY only."""
-    from vedette.report import denovo_outliers, drop_karyotype_denovo
+    from svengers.report import denovo_outliers, drop_karyotype_denovo
 
     def dn_rows(child, n, contig, step=1_000_000):
         return [{"child": child, "contig": contig, "svtype": "DUP",
@@ -280,7 +280,7 @@ def test_drop_karyotype_denovo():
 
 
 def test_family_events_page(tmp_path):
-    from vedette.report import _write_events_page
+    from svengers.report import _write_events_page
 
     members = ["C000EZH", "C000EZI", "C000EZJ"]
     ev = {
@@ -327,7 +327,7 @@ def test_carrier_excess_guard():
     flagged 2670/2670 samples."""
     import numpy as np
 
-    from vedette.report import carrier_excess
+    from svengers.report import carrier_excess
 
     n_carrier = np.array([300, 310, 305, 1830, 295])   # one sample at 6x
     exc = carrier_excess(n_carrier)
@@ -343,7 +343,7 @@ def test_carrier_excess_guard():
 def test_low_gq_carrier_fraction():
     import numpy as np
 
-    from vedette.report import pass_carrier_stats
+    from svengers.report import pass_carrier_stats
 
     # 4 sites x 3 samples; site 2 is non-PASS (must be excluded from the calc)
     nalt = np.array([
@@ -381,7 +381,7 @@ def test_collapse_overlapping_events_per_carrier_set():
     patients have different breakpoints (PMS 22q13). Merge them — but only
     when the carrier set is identical, so an inherited event never absorbs a
     de novo one it overlaps."""
-    from vedette.report import collapse_events
+    from svengers.report import collapse_events
 
     def ev(pos, end, carriers, sid, **kw):
         return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
@@ -413,7 +413,7 @@ def test_own_call_status():
     """A cohort site is a breakpoint cluster; re-genotyping then genotypes
     every sample, backed by an own call or not. On PMS 80% of a family's PASS
     events have no own call and blind IGV review scored those 0/33."""
-    from vedette.report import own_call_status
+    from svengers.report import own_call_status
 
     idx = {
         ("chr22", "DEL"): [(50_000, 60_000, False), (80_000, 90_000, True)],
@@ -432,7 +432,7 @@ def test_own_span_takes_the_carriers_breakpoints():
     """A cohort site carries its cluster representative's coordinates. PMS
     pools 22q13 deletions of every size, so FAM-10's own call
     (45,146,001; IGV 45,145,667) was shown at its site's 44,116,001."""
-    from vedette.report import own_span
+    from svengers.report import own_span
 
     idx = {("chr22", "DEL"): [
         (44_200_000, 48_900_000, True, "mum"),    # not a carrier of the row
@@ -453,7 +453,7 @@ def test_own_span_chains_a_fragmented_own_call():
     """FAM-09 (IGV 43,784,666): the proband's deletion comes back as
     nine own PASS calls from 43,785,001, each overlapping the 43,570,001 site
     by less than half — chained, they match it."""
-    from vedette.report import own_span
+    from svengers.report import own_span
 
     idx = {("chr22", "DEL"): [
         (43_153_340, 43_153_667, True, "kid"),    # unrelated, before the site
@@ -469,7 +469,7 @@ def test_own_span_grows_to_the_carriers_breakpoint_but_keeps_scale():
     inside it: the row must reach the carrier's own breakpoint, or the event
     splits in two. But a small site inside a large own call — here a
     polymorphism the mother carries too — keeps its own bounds."""
-    from vedette.report import own_span
+    from svengers.report import own_span
 
     idx = {("chr22", "DUP"): [(43_835_001, 46_859_001, True, "kid")]}
     assert own_span(idx, "chr22", 43_975_501, 46_732_502, "DUP", {"kid"}) == (43_835_001, 46_859_001)
@@ -480,7 +480,7 @@ def test_own_span_links_through_filtered_pieces_but_not_past_the_edge():
     """FAM-08: the middle 138 kb of the deletion is a LowSQ own call;
     it links the two PASS pieces but never sets an end. And a subtelomeric
     PASS call sharing 1 bp with the site must not push the row past chr22."""
-    from vedette.report import own_span
+    from svengers.report import own_span
 
     idx = {("chr22", "DEL"): [
         (46_069_001, 47_611_001, True, "kid"),
@@ -500,7 +500,7 @@ def test_own_span_ignores_own_calls_of_failed_cohort_sites():
     """FAM-14: a 23 kb own PASS call in the subtelomere belongs to the
     site every PMS sample carries (non-PASS at cohort level); it must not set
     the row's end past the end of chr22."""
-    from vedette.report import _cohort_site_pass, _site_index, own_span
+    from svengers.report import _cohort_site_pass, _site_index, own_span
 
     sites = [
         {"contig": "chr22", "svtype": "DEL", "start": 50_346_000, "end": 50_800_002, "filter": "PASS"},
@@ -521,7 +521,7 @@ def test_own_span_ignores_own_calls_of_failed_cohort_sites():
 def test_own_span_nested_calls_do_not_set_ends():
     """FAM-06: small PASS calls nested in a large LowSQ duplication
     must not become the row's breakpoints (the 5.6 Mb duplication split)."""
-    from vedette.report import own_span
+    from svengers.report import own_span
 
     idx = {("chr8", "DUP"): [
         (140_623_001, 141_335_001, False, "kid", None),
@@ -538,12 +538,12 @@ def test_own_call_index_clamps_ends_to_the_contig(tmp_path):
     rows take own-call ends directly, so the index must bound them."""
     import pysam
 
-    from vedette.report import own_call_index
+    from svengers.report import own_call_index
 
     d = tmp_path / "samples" / "kid"
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    hdr.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chrX", length=156_040_895)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "type")
@@ -566,11 +566,11 @@ def test_read_cohort_vcf_clamps_site_ends_to_the_contig(tmp_path):
     row without an own span keeps the site's ends, so the reader bounds them."""
     import pysam
 
-    from vedette.report import _read_cohort_vcf
+    from svengers.report import _read_cohort_vcf
 
     chr12 = 133_275_309
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    hdr.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr12", length=chr12)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "type")
@@ -603,7 +603,7 @@ def test_sample_qc_flags_and_family_row_alert(tmp_path):
     row must carry its carriers' QC alerts, filterable on the page."""
     import numpy as np
 
-    from vedette.report import _FamilySpill, _write_all_family_events, sample_qc_flags
+    from svengers.report import _FamilySpill, _write_all_family_events, sample_qc_flags
 
     flags = sample_qc_flags({"kid": 12.3}, {"kid": 478})
     assert flags == {"kid": ["charge 12.3×", "de novo 478"]}
@@ -634,8 +634,8 @@ def test_sample_qc_flags_and_family_row_alert(tmp_path):
 def test_row_wave_score_leaves_out_the_rows_contig():
     """PMS: a >= 1 Mb chr22 deletion alone pushed 26 of 48 carriers over the
     wave threshold; without chr22 in the mean, 5 remain."""
-    from vedette.qc import WAVE_WARN
-    from vedette.report import row_wave_score
+    from svengers.qc import WAVE_WARN
+    from svengers.report import row_wave_score
 
     flat = {f"chr{i}": 0.03 for i in range(1, 22)}
     proband = flat | {"chr22": 0.49, "chr17": 0.58, "chr16": 0.37}   # deletion + GC-rich
@@ -652,13 +652,13 @@ def test_family_page_uses_the_carriers_own_breakpoints(tmp_path):
     import numpy as np
     import pysam
 
-    from vedette.report import _FamilySpill, _write_all_family_events
+    from svengers.report import _FamilySpill, _write_all_family_events
 
     samples = ["kid", "dad", "mum"]
     d = tmp_path / "samples" / "kid"
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    hdr.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr22", length=50_818_468)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "type")
@@ -698,7 +698,7 @@ def test_carrier_requires_sufficient_gq():
     low-GQ alternative genotype must not make the sample a carrier."""
     import numpy as np
 
-    from vedette.report import _FamilySpill, _write_all_family_events
+    from svengers.report import _FamilySpill, _write_all_family_events
 
     samples = ["kid", "dad", "mum"]
     sites = [{"id": "s1", "contig": "chr1", "start": 999, "end": 2000, "svtype": "DEL",
@@ -736,7 +736,7 @@ def test_large_deletion_keeps_pass_when_chromosome_depth_agrees(tmp_path):
     flanks fall inside its neighbour, so dhffc ~ 1 and the model sees nothing.
     fc_chrom still does, so it keeps the call."""
 
-    from vedette.config import load_config
+    from svengers.config import load_config
 
     cfg = load_config(None)
     f = cfg.filter
@@ -760,7 +760,7 @@ def test_collapse_bridges_small_gaps_but_not_distant_events():
     22q13 deletion arrived as four pieces split by 3, 15 and 55 kb). The
     tolerated gap scales with the larger neighbour and is capped, so small
     events stay apart."""
-    from vedette.report import GAP_ABS, GAP_FRAC, GAP_MAX, collapse_events
+    from svengers.report import GAP_ABS, GAP_FRAC, GAP_MAX, collapse_events
 
     def ev(pos, end, sid):
         return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
@@ -793,7 +793,7 @@ def test_collapse_bridges_small_gaps_but_not_distant_events():
 def test_merged_row_shows_majority_inheritance():
     """A terminal deletion picks up a few sites a parent also carries;
     concatenating every label buried the fact that the event is de novo."""
-    from vedette.report import collapse_events
+    from svengers.report import collapse_events
 
     def ev(pos, end, sid, inherit):
         return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
@@ -821,8 +821,8 @@ def test_merged_denovo_row_shows_the_strongest_denovo():
     """A terminal 22q13.3 deletion cut into five sub-sites, two confirmed de
     novo on the child's own call and three only genotyped: the majority vote
     showed it as genotype-only in 16 children."""
-    from vedette.export import _inheritance, majority_inheritance
-    from vedette.report import _INHERIT_FR, collapse_events
+    from svengers.export import _inheritance, majority_inheritance
+    from svengers.report import _INHERIT_FR, collapse_events
 
     def ev(pos, end, sid, code):
         return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
@@ -874,7 +874,7 @@ def test_merged_denovo_row_shows_the_strongest_denovo():
 def test_denovo_cutoff_is_cohort_relative():
     """An absolute 20 flagged 664 of 665 dataset_paper children; 5x the
     cohort median flags the tail only, with the floor for family runs."""
-    from vedette.report import denovo_cutoff
+    from svengers.report import denovo_cutoff
 
     cohort = {f"k{i}": 100 for i in range(76)} | {"noisy": 576}
     assert denovo_cutoff(cohort, 20) == 500.0
@@ -888,7 +888,7 @@ def test_big_cnv_alert_on_family_rows(tmp_path):
     flags the carrier on every row it carries."""
     import numpy as np
 
-    from vedette.report import BIG_CNV_WARN, _FamilySpill, _write_all_family_events, big_cnv_counts
+    from svengers.report import BIG_CNV_WARN, _FamilySpill, _write_all_family_events, big_cnv_counts
 
     def ev(pos, size, own="PASS", flt="PASS", car=("dad",)):
         return dict(contig="chr10", pos=pos, end=pos + size, filter=flt, own=own,
@@ -912,7 +912,7 @@ def test_big_cnv_alert_on_family_rows(tmp_path):
     d = tmp_path / "samples" / "dad"
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    hdr.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr10", length=133_797_422)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     hdr.info.add("SVTYPE", "1", "String", "t")
@@ -939,7 +939,7 @@ def _sub_vcf(run_dir, sample, calls):
     d = run_dir / "samples" / sample
     d.mkdir(parents=True)
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    hdr.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr22", length=50_818_468)
     for t in ("DEL", "DUP"):
         hdr.add_line(f'##ALT=<ID={t},Description="{t}">')
@@ -970,7 +970,7 @@ def test_subthreshold_ndd_call_is_a_row_of_its_family_page(tmp_path):
     family page as a sub-threshold row; the same call in an unrelated genome
     (an artefact), a call with another filter, a CN-2 call and a call in no
     NDD gene must not."""
-    from vedette.report import _FamilySpill, _write_all_family_events, subthreshold_candidates
+    from svengers.report import _FamilySpill, _write_all_family_events, subthreshold_candidates
 
     shank3 = (50_731_000, 50_740_001, "DEL", ["LowSQ"], 1, 99, 0.38)
     _sub_vcf(tmp_path, "kid", [
@@ -1018,7 +1018,7 @@ def test_subthreshold_rows_of_a_noisy_genome_are_masked():
     """dataset_paper: 71 sub-threshold NDD rows in one genome, 53 in another —
     noise, not events. Past SUB_MAX_PER_SAMPLE a genome's rows are masked and
     counted for its QC alert; a genome with one row keeps it."""
-    from vedette.report import SUB_MAX_PER_SAMPLE, SubCalls, subthreshold_events
+    from svengers.report import SUB_MAX_PER_SAMPLE, SubCalls, subthreshold_events
 
     sc = SubCalls()
     n = SUB_MAX_PER_SAMPLE + 1
@@ -1041,7 +1041,7 @@ def test_large_subthreshold_dup_pieces_are_joined_into_a_row():
     whatever its genes. A common CNV it runs through does not make it shared;
     a large DUP found outside the family, a short one with no NDD gene and the
     X of an XXY boy are not rows."""
-    from vedette.report import SubCalls, join_dup_pieces, subthreshold_events
+    from svengers.report import SubCalls, join_dup_pieces, subthreshold_events
 
     pieces = [("chr15", "DUP", 22_606_000, 23_124_001, 4, 99, 0.02),   # BP1-BP2, common
               ("chr15", "DUP", 23_360_000, 24_427_001, 4, 99, 0.06),
@@ -1079,7 +1079,7 @@ def test_large_subthreshold_dup_pieces_are_joined_into_a_row():
 def test_inherited_subthreshold_dup_is_one_row():
     """PMS v1.6.0: a parent and child carrying the same large sub-threshold
     duplication came out as two rows; it is one row with both carriers."""
-    from vedette.report import SubCalls, subthreshold_events
+    from svengers.report import SubCalls, subthreshold_events
 
     sc = SubCalls()
     sc.add("kid", [("chr4", "DUP", 77_824_000, 78_061_001, 3, 99, 0.1)])
@@ -1102,7 +1102,7 @@ def test_family_export_holds_rare_non_pass_sites(tmp_path):
 
     import numpy as np
 
-    from vedette.report import _FamilySpill, _write_all_family_events
+    from svengers.report import _FamilySpill, _write_all_family_events
 
     samples = ["kid", "dad", "mum"]
 
@@ -1121,7 +1121,7 @@ def test_family_export_holds_rare_non_pass_sites(tmp_path):
         _write_all_family_events(tmp_path, {"F1": samples}, samples, sites, nalt, gq, cn,
                                  lambda *a: "", lambda *a: (0, ""), _FamilySpill(tmp_path / "inh"),
                                  pass_only=True, **kw)
-        with open(tmp_path / "families" / "F1" / "F1.vedette.tsv") as fh:
+        with open(tmp_path / "families" / "F1" / "F1.svengers.tsv") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t"))
         page = (tmp_path / "families" / "F1" / "events.html").read_text()
         return [(r["row_id"], r["filter"], r["kind"]) for r in rows], page
@@ -1136,7 +1136,7 @@ def test_family_export_holds_rare_non_pass_sites(tmp_path):
 def test_large_family_gets_no_dead_events_link():
     """A 38-member dataset_paper pedigree had a link to an events page that
     is never written (pages stop at _EVENTS_MAX_MEMBERS members)."""
-    from vedette.report import _EVENTS_MAX_MEMBERS, _events_link
+    from svengers.report import _EVENTS_MAX_MEMBERS, _events_link
 
     assert 'href="families/F1/events.html"' in _events_link("F1", 3)
     big = _events_link("F2", _EVENTS_MAX_MEMBERS + 18)
@@ -1147,8 +1147,8 @@ def test_wave_backfill_on_a_store_without_score(tmp_path):
     """Stores called before schema 0.4 carry no wave_score (2,517 of 2,670 on
     dataset_paper): the backfill recomputes it from the stored depth, equal to
     what the call computes, and leaves an existing score alone."""
-    from vedette.extract.store import EvidenceStore, EvidenceStoreWriter
-    from vedette.qc import backfill_wave, sample_wave_score
+    from svengers.extract.store import EvidenceStore, EvidenceStoreWriter
+    from svengers.qc import backfill_wave, sample_wave_score
 
     rng = np.random.default_rng(0)
     path = tmp_path / "S.evidence.zarr"
@@ -1172,7 +1172,7 @@ def test_denovo_alerts_split_the_reviewed_false_from_the_true():
     """IGV review (2026-10-13): the 7 false high-impact de novo rows were
     177 bp - 3.1 kb, one 3.1 kb site in 3 families; true ones >= 10.5 kb,
     including 22q13 deletions shared by up to 40 PMS families."""
-    from vedette.report import denovo_alerts
+    from svengers.report import denovo_alerts
 
     for size, n_fam in ((177, 2), (250, 1), (313, 4), (447, 2), (3131, 3)):
         assert denovo_alerts(size, n_fam)
@@ -1184,7 +1184,7 @@ def test_denovo_alerts_split_the_reviewed_false_from_the_true():
 def test_no_subthreshold_rows_for_low_quality_or_wavy_genomes():
     """Sub-threshold rows were true 1/10 on old IP genomes and 1/13 on wavy
     ones (IGV review 2026-10-13): their candidates are skipped."""
-    from vedette.report import SubCalls, subthreshold_events
+    from svengers.report import SubCalls, subthreshold_events
 
     sc = SubCalls()
     for s in ("old_genome", "wavy", "good"):
@@ -1203,7 +1203,7 @@ def test_nested_de_novo_sites_of_one_child_are_one_event():
     """A PMS proband's 8.2 Mb terminal deletion was carried at 61 nested
     cohort sites (one per breakpoint cluster of other probands), each listed
     as a de novo row; the child's own calls chain them into one event."""
-    from vedette.report import collapse_denovo
+    from svengers.report import collapse_denovo
 
     def row(site, start, end, child="kid"):
         return {"site_id": site, "contig": "chr22", "start": str(start), "end": str(end),
@@ -1226,7 +1226,7 @@ def test_nested_de_novo_sites_of_one_child_are_one_event():
 
 def _cn_store(run_dir, sample, segments, n_bins=3_000, masked=(), depth=40.0, seed=0):
     """Store with chr22 at CN 2 except `segments` [(start_bin, end_bin, cn)]."""
-    from vedette.extract.store import EvidenceStoreWriter
+    from svengers.extract.store import EvidenceStoreWriter
 
     rng = np.random.default_rng(seed)
     cn = np.full(n_bins, 2.0)
@@ -1247,7 +1247,7 @@ def test_row_bounds_follow_the_carriers_depth(tmp_path):
     """IGV review (2026-10-13): row starts off by 0.3-1.4 Mb — a cohort site
     from another proband's breakpoints, a chain cut at one piece. The child's
     deletion runs 1,000-2,800 kb here, crossing a masked stretch."""
-    from vedette.report import _DepthCache, refine_bounds
+    from svengers.report import _DepthCache, refine_bounds
 
     _cn_store(tmp_path, "kid", [(1_000, 2_800, 1.0)], masked=[(1_500, 1_560)])
     _cn_store(tmp_path, "dad", [], seed=1)
@@ -1264,7 +1264,7 @@ def test_row_bounds_follow_the_carriers_depth(tmp_path):
 def test_row_bounds_do_not_swallow_an_event_the_parent_carries(tmp_path):
     """The child's de novo deletion (1,500-2,000 kb) abuts a deletion it
     inherited with the mother (1,000-1,500 kb): the de novo row stays put."""
-    from vedette.report import _DepthCache, refine_bounds
+    from svengers.report import _DepthCache, refine_bounds
 
     _cn_store(tmp_path, "kid", [(1_000, 2_000, 1.0)])
     _cn_store(tmp_path, "mum", [(1_000, 1_500, 1.0)], seed=1)
@@ -1277,7 +1277,7 @@ def test_no_bound_refinement_for_duplications_or_very_wavy_carriers(tmp_path):
     """Second IGV review (2026-10-14): both refined DUPs were wrong (a wave
     read as a gain, 112 kb -> 23 Mb) and refinement was a coin toss on
     carriers with wave >= 0.2."""
-    from vedette.report import REFINE_MAX_WAVE, _DepthCache, refine_bounds
+    from svengers.report import REFINE_MAX_WAVE, _DepthCache, refine_bounds
 
     _cn_store(tmp_path, "kid", [(1_000, 2_800, 3.0)])
     _cn_store(tmp_path, "dad", [], seed=1)
@@ -1299,7 +1299,7 @@ def test_mosaic_fragments_fold_into_the_mosaic_row(tmp_path):
     CN 1 fragment rows beside the mosaic row. Fragments of the sample alone at
     the mosaic's level fold in; a deeper deletion inside the mosaic, and an
     event the parent also carries, stay rows of their own."""
-    from vedette.report import _DepthCache, fold_mosaic_fragments
+    from svengers.report import _DepthCache, fold_mosaic_fragments
 
     _cn_store(tmp_path, "kid", [(1_000, 2_500, 1.33), (1_800, 1_900, 1.0)])
     mosaic = {"own": "mosaïque", "carriers": ["kid"], "contig": "chr22", "svtype": "DEL",
@@ -1325,8 +1325,8 @@ def test_large_duplication_keeps_pass_when_the_allelic_balance_shows_a_gain():
     depth-only gain. Their heterozygous sites sit at 1/3-2/3 (mean |VAF - 0.5|
     ~0.14); a coverage wave leaves them at 0.5, and segmental duplications
     fake the imbalance, so those stay rejected."""
-    from vedette.config import load_config
-    from vedette.filter.pipeline import sq_override
+    from svengers.config import load_config
+    from svengers.filter.pipeline import sq_override
 
     f = load_config(None).filter
     gain = {"cn": 3, "baf_n": 260, "baf_dev": 0.142, "segdup_ovl": 0.0, "maskfrac": 0.0,
@@ -1348,8 +1348,8 @@ def test_terminal_deletion_keeps_its_pass():
     does not."""
     import numpy as np
 
-    from vedette.config import load_config
-    from vedette.filter.pipeline import reaches_contig_end, sq_override
+    from svengers.config import load_config
+    from svengers.filter.pipeline import reaches_contig_end, sq_override
 
     f = load_config(None).filter
     loss = {"cn": 1, "dhffc": 0.478, "frac_consistent": 0.99, "maskfrac": 0.185,
@@ -1394,7 +1394,7 @@ def test_constitutional_segments_are_rows_unless_calls_cover_them():
     """A trisomy 21 came back as LowSQ pieces and was on no family page: the
     scan's whole-copy segment becomes a row. A PMS terminal deletion already
     shown by PASS rows keeps those rows (finer bounds than 1 Mb windows)."""
-    from vedette.report import constitutional_events
+    from svengers.report import constitutional_events
 
     seg = {"contig": "chr21", "start": 15_000_000, "end": 46_000_000, "svtype": "DUP",
            "cn": 3.07, "fraction": 1.0, "mosaic": False}
@@ -1419,24 +1419,24 @@ def test_missing_evidence_stores_warn_then_fail(tmp_path, caplog):
 
     import pysam
 
-    from vedette.report import check_evidence_stores, generate_report
+    from svengers.report import check_evidence_stores, generate_report
 
     samples = ["a", "b", "c"]
     (tmp_path / "samples" / "a" / "a.evidence.zarr").mkdir(parents=True)
-    with caplog.at_level(logging.WARNING, logger="vedette.report"):
+    with caplog.at_level(logging.WARNING, logger="svengers.report"):
         assert check_evidence_stores(tmp_path, samples) == ["b", "c"]
     msg = caplog.text
     assert "2/3" in msg and "Chromosomes sexuels" in msg and "vague" in msg and "b, c" in msg
 
     caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="vedette.report"):
+    with caplog.at_level(logging.WARNING, logger="svengers.report"):
         assert check_evidence_stores(tmp_path, ["a"]) == []
     assert not caplog.records
 
     with pytest.raises(FileNotFoundError, match="aucun store"):
         check_evidence_stores(tmp_path, ["b", "c"])
     caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="vedette.report"):
+    with caplog.at_level(logging.WARNING, logger="svengers.report"):
         assert check_evidence_stores(tmp_path, ["b", "c"], require=False) == ["b", "c"]
     assert "2/2" in caplog.text
 
@@ -1444,7 +1444,7 @@ def test_missing_evidence_stores_warn_then_fail(tmp_path, caplog):
     run = tmp_path / "run"
     (run / "cohort").mkdir(parents=True)
     hdr = pysam.VariantHeader()
-    hdr.add_line("##source=vedette-1.3.3")  # legacy: POS = start + 1, END = end + 1
+    hdr.add_line("##source=svengers-1.3.3")  # legacy: POS = start + 1, END = end + 1
     hdr.contigs.add("chr1", length=1_000_000)
     hdr.add_sample("kid")
     with pysam.VariantFile(str(run / "cohort" / "cohort.vcf.gz"), "wz", header=hdr):
@@ -1454,7 +1454,7 @@ def test_missing_evidence_stores_warn_then_fail(tmp_path, caplog):
 
 
 def test_inherit_label_karyotype():
-    from vedette.report import _inherit_fr
+    from svengers.report import _inherit_fr
 
     assert _inherit_fr("denovo") == "de novo"
     assert _inherit_fr("karyotype_XXY") == "caryotype XXY"
@@ -1462,7 +1462,7 @@ def test_inherit_label_karyotype():
 
 
 def test_child_quality_names_what_weakens_a_genome():
-    from vedette.report import WAVE_WARN, child_quality
+    from svengers.report import WAVE_WARN, child_quality
 
     waves = {"A": WAVE_WARN + 0.01, "B": 0.001, "IP00X": None}
     assert child_quality("A", waves) == f"wavy {WAVE_WARN + 0.01:.3f}"
@@ -1474,8 +1474,8 @@ def test_unique_depth_deletion_keeps_its_pass():
     """A clean depth-only copy loss >= 10 kb outside repeats, in a genome
     without coverage waves, keeps its PASS (parents' calls of this class at
     SQ < 5: transmitted 0.45 vs 0.07 in unrelated genomes of other flowcells)."""
-    from vedette.config import load_config
-    from vedette.filter.pipeline import sq_override
+    from svengers.config import load_config
+    from svengers.filter.pipeline import sq_override
 
     f = load_config(None).filter
     loss = {"cn": 1, "dhffc": 0.52, "frac_consistent": 0.97, "maskfrac": 0.05,
@@ -1499,8 +1499,8 @@ def test_unique_depth_rule_off_in_a_noisy_genome():
     """A burst of UNIQUE_DEL_DEPTH candidates (genome-wide noise the wave
     score misses: up to 894 in one genome, against 1-11 elsewhere) turns the
     rule off for that genome only; its other overrides stay."""
-    from vedette.config import load_config
-    from vedette.filter.pipeline import genome_overrides
+    from svengers.config import load_config
+    from svengers.filter.pipeline import genome_overrides
 
     f = load_config(None).filter
     loss = {"cn": 1, "dhffc": 0.52, "frac_consistent": 0.97, "maskfrac": 0.05,

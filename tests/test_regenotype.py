@@ -3,8 +3,8 @@
 import numpy as np
 import pysam
 
-from vedette.extract.store import EvidenceStoreWriter
-from vedette.genotype.regenotype import regenotype_calls
+from svengers.extract.store import EvidenceStoreWriter
+from svengers.genotype.regenotype import regenotype_calls
 
 
 def _store(path, vaf):
@@ -19,7 +19,7 @@ def _store(path, vaf):
 
 def _calls(path):
     hdr = pysam.VariantHeader()
-    hdr.add_line("##vedette_coords=padded")
+    hdr.add_line("##svengers_coords=padded")
     hdr.contigs.add("chr1", length=2_000_000)
     hdr.add_line('##ALT=<ID=DEL,Description="Deletion">')
     for k, n, t in (("SVTYPE", "1", "String"), ("END", "1", "Integer"), ("SOURCE", "1", "String")):
@@ -31,7 +31,7 @@ def _calls(path):
     hdr.add_sample("S1")
     with pysam.VariantFile(str(path), "wz", header=hdr) as vf:
         rec = vf.new_record(contig="chr1", start=499_999, stop=600_000, alleles=("N", "<DEL>"),
-                            id="vedette_DEL_1")
+                            id="svengers_DEL_1")
         rec.info["SVTYPE"], rec.info["SOURCE"] = "DEL", "DEPTH"
         s = rec.samples["S1"]
         s["GT"], s["GQ"], s["PE"], s["SR"], s["CG"] = (0, 1), 7, 0, 0, 0
@@ -46,7 +46,7 @@ def test_regenotype_takes_the_rewritten_baf(tmp_path):
     store = tmp_path / "S1.evidence.zarr"
     # hets outside the deletion, hom-alt inside (loss of heterozygosity)
     _store(store, lambda pos: np.where((pos >= 500_000) & (pos < 600_000), 1.0, 0.5))
-    vcf, out = tmp_path / "S1.vedette.vcf.gz", tmp_path / "S1.regeno.vcf.gz"
+    vcf, out = tmp_path / "S1.svengers.vcf.gz", tmp_path / "S1.regeno.vcf.gz"
     _calls(vcf)
     c = regenotype_calls(vcf, store, out)
     assert (c["calls"], c["regenotyped"], c["unchanged"]) == (1, 1, 0)
@@ -55,11 +55,11 @@ def test_regenotype_takes_the_rewritten_baf(tmp_path):
     assert s["BAFN"] == 0 and s.get("BAFDEV") is None
     assert s["CN"] == 1 and tuple(s["GT"]) == (0, 1) and s["GQ"] > 7
     assert abs(s["RD"] - 0.5) < 0.01 and s["PE"] == 0
-    assert "##vedette_regenotyped=" in str(pysam.VariantFile(str(out)).header)
+    assert "##svengers_regenotyped=" in str(pysam.VariantFile(str(out)).header)
 
 
 def test_cohort_genotype_reads_the_original_baf(tmp_path):
-    """`vedette baf` keeps the store's original BAF as baf_track. The cohort
+    """`svengers baf` keeps the store's original BAF as baf_track. The cohort
     genotyper reads it unless genotype.rewritten_baf is set (the rewritten
     BAF has spurious hets in paralogous loci, each one a mismap penalty under
     a deletion); regenotype reads the rewritten one, its purpose."""
@@ -67,9 +67,9 @@ def test_cohort_genotype_reads_the_original_baf(tmp_path):
 
     import zarr
 
-    from vedette.cohort.genotyper import StoreGenotyper
-    from vedette.config import Config
-    from vedette.extract.store import EvidenceStore, write_baf_group
+    from svengers.cohort.genotyper import StoreGenotyper
+    from svengers.config import Config
+    from svengers.extract.store import EvidenceStore, write_baf_group
 
     path = tmp_path / "S1.evidence.zarr"
     _store(path, lambda pos: np.where((pos >= 500_000) & (pos < 600_000), 1.0, 0.5))

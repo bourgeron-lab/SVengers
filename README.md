@@ -1,7 +1,9 @@
-# Vedette
+# SVengers
 
-**Vedette** is a germline copy-number variant caller (deletions and duplications) for
+**SVengers** is a germline copy-number variant caller (deletions and duplications) for
 short-read whole-genome sequencing, built for **specificity** at cohort scale.
+
+SVengers was called Vedette up to v1.16; the `vedette` command remains as an alias.
 
 It combines read depth, discordant pairs, split reads (including "hidden" splits recovered
 from soft clips), insert-size shifts and B-allele frequency per sample, filters the calls
@@ -33,16 +35,16 @@ Bioconda; install from source (below).
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
   - [Pipeline overview](#pipeline-overview)
-  - [1. Calling (`vedette call`)](#1-calling-vedette-call)
-  - [2. Filtering (`vedette filter`)](#2-filtering-vedette-filter)
-  - [3. Merging (`vedette merge`)](#3-merging-vedette-merge)
-  - [4. Re-genotyping (`vedette genotype`)](#4-re-genotyping-vedette-genotype)
-  - [5. Cohort metrics (`vedette cohort-filter`)](#5-cohort-metrics-vedette-cohort-filter)
-  - [6. Pedigree annotation (`vedette ped-annotate`)](#6-pedigree-annotation-vedette-ped-annotate)
-  - [7. Chromosomal mosaics (`vedette mosaic`)](#7-chromosomal-mosaics-vedette-mosaic)
-  - [8. Translocations, inversions and terminal losses (`vedette bnd`)](#8-translocations-inversions-and-terminal-losses-vedette-bnd)
+  - [1. Calling (`svengers call`)](#1-calling-svengers-call)
+  - [2. Filtering (`svengers filter`)](#2-filtering-svengers-filter)
+  - [3. Merging (`svengers merge`)](#3-merging-svengers-merge)
+  - [4. Re-genotyping (`svengers genotype`)](#4-re-genotyping-svengers-genotype)
+  - [5. Cohort metrics (`svengers cohort-filter`)](#5-cohort-metrics-svengers-cohort-filter)
+  - [6. Pedigree annotation (`svengers ped-annotate`)](#6-pedigree-annotation-svengers-ped-annotate)
+  - [7. Chromosomal mosaics (`svengers mosaic`)](#7-chromosomal-mosaics-svengers-mosaic)
+  - [8. Translocations, inversions and terminal losses (`svengers bnd`)](#8-translocations-inversions-and-terminal-losses-svengers-bnd)
   - [9. Sex-chromosome karyotype](#9-sex-chromosome-karyotype)
-  - [10. Report and family pages (`vedette report`)](#10-report-and-family-pages-vedette-report)
+  - [10. Report and family pages (`svengers report`)](#10-report-and-family-pages-svengers-report)
 - [Building your own panel of normals](#building-your-own-panel-of-normals)
 - [Filter models](#filter-models)
 - [Benchmark](#benchmark)
@@ -56,7 +58,7 @@ Bioconda; install from source (below).
 
 ## Installation
 
-Vedette is a Python package (src layout, CLI `vedette` built with
+SVengers is a Python package (src layout, CLI `svengers` built with
 [typer](https://typer.tiangolo.com)). It runs on Python 3.12 (`pyproject.toml` accepts
 ≥ 3.11) with pysam, numpy, scipy, numba, zarr, scikit-learn, typer and intervaltree;
 pyBigWig is needed to read the population-coverage track, matplotlib for the report and
@@ -64,18 +66,18 @@ benchmark figures. The conda/micromamba environment in `containers/environment.y
 all of them:
 
 ```bash
-git clone https://github.com/darkxander/vedette.git
-cd vedette
-micromamba create -n vedette -f containers/environment.yml
-micromamba run -n vedette pip install -e .            # or -e ".[bigwig,dev]"
-micromamba run -n vedette vedette --help
+git clone https://github.com/bourgeron-lab/SVengers.git
+cd SVengers
+micromamba create -n svengers -f containers/environment.yml
+micromamba run -n svengers pip install -e .            # or -e ".[bigwig,dev]"
+micromamba run -n svengers svengers --help
 ```
 
 A dedicated environment is recommended: the CLI and the Nextflow wrapper call the
-`vedette` executable of that environment (`params.vedette_bin`).
+`svengers` executable of that environment (`params.svengers_bin`).
 
 Containers are provided: `containers/Dockerfile` (Docker,
-`docker build -f containers/Dockerfile -t vedette:latest .`) and `containers/vedette.def`
+`docker build -f containers/Dockerfile -t svengers:latest .`) and `containers/svengers.def`
 (Apptainer/Singularity).
 
 Training and benchmarking (not needed to call) additionally use
@@ -83,7 +85,7 @@ Training and benchmarking (not needed to call) additionally use
 
 ### Reference data
 
-Vedette is set up for **GRCh38** with `chr`-prefixed contigs (calling covers chr1-22, chrX,
+SVengers is set up for **GRCh38** with `chr`-prefixed contigs (calling covers chr1-22, chrX,
 chrY by default; the pseudo-autosomal coordinates used for inheritance are GRCh38's). You
 need:
 
@@ -107,21 +109,21 @@ directory.
 
 ```bash
 # 1. call: CRAM -> raw calls (VCF) + evidence store
-vedette call --sample S1 --cram S1.cram --snv-vcf S1.snv.vcf.gz \
-    --config my_site.toml --resources vedette_resources/ \
+svengers call --sample S1 --cram S1.cram --snv-vcf S1.snv.vcf.gz \
+    --config my_site.toml --resources svengers_resources/ \
     --pon my_pon.zarr --out-dir out/S1
 
 # 2. filter: hard filters + calibrated SQ score
-vedette filter out/S1/S1.vedette.vcf.gz --store out/S1/S1.evidence.zarr \
+svengers filter out/S1/S1.svengers.vcf.gz --store out/S1/S1.evidence.zarr \
     --model-dir models/v12b --config my_site.toml --out out/S1/S1.filtered.vcf.gz
 
 # 3. optional: chromosomal-scale mosaic segments, from the store alone
-vedette mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
+svengers mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
 ```
 
-On a run (`samples/<S>/` directories), `vedette bnd --run-dir out --fasta ref.fa` adds the
+On a run (`samples/<S>/` directories), `svengers bnd --run-dir out --fasta ref.fa` adds the
 translocation and inversion junctions and the mechanism of terminal losses
-([section 8](#8-translocations-inversions-and-terminal-losses-vedette-bnd)); the Nextflow
+([section 8](#8-translocations-inversions-and-terminal-losses-svengers-bnd)); the Nextflow
 workflow runs it before the report (`--bnd false` to skip; it needs the `filter` step in
 the same run).
 
@@ -147,23 +149,23 @@ tabix-indexed bedgraph `chrom  pos0  pos0+1  vaf`.
 The `QUAL ≥ 30` of that track is a mistake for BAF: DeepVariant 1.9 gives many true
 heterozygotes a lower QUAL. On chr20, an ordinary 39× genome keeps 44k of its 56k PASS
 heterozygotes, and old or deep genomes (≥ 60×) as few as 1.6k of 32k; the ones dropped have a
-median VAF of 0.50. `vedette baf` rewrites the BAF of existing stores from the DeepVariant VCF
+median VAF of 0.50. `svengers baf` rewrites the BAF of existing stores from the DeepVariant VCF
 (PASS biallelic SNVs, `DP ≥ 10`, no QUAL threshold) in about a minute per genome, without the
 CRAM; the previous arrays stay as `<contig>/baf_track/`:
 
 ```bash
-vedette baf runs/C1/samples/S1/S1.evidence.zarr --vcf S1.deepvariant.vcf.gz
-vedette baf --manifest stores_vcfs.tsv --jobs 8     # store<TAB>vcf per line
+svengers baf runs/C1/samples/S1/S1.evidence.zarr --vcf S1.deepvariant.vcf.gz
+svengers baf --manifest stores_vcfs.tsv --jobs 8     # store<TAB>vcf per line
 ```
 
 Only the stores change. The BAF features of the per-sample calls (`BAFN`, `BAFDEV`, used by
 the filter model) were computed at calling time and stay as they are; the karyotype, mosaic
-scan and tensors read the new BAF. Cohort genotyping (`vedette genotype`) keeps reading the
+scan and tensors read the new BAF. Cohort genotyping (`svengers genotype`) keeps reading the
 original one (`baf_track`) unless `[genotype] rewritten_baf = true`: its likelihood counts every
 het inside a deletion as a mismap, and in paralogous loci the rewritten BAF has ~20 hets per kb,
 which turned carriers of common deletions into 0/0 and made de novo calls (chr12 of
-dataset_paper: 3,025 de novo with the original BAF in production, 3,653 with the rewritten one). `vedette regenotype
-S1.vedette.vcf.gz --store S1.evidence.zarr --out S1.regeno.vcf.gz` recomputes the store-derived
+dataset_paper: 3,025 de novo with the original BAF in production, 3,653 with the rewritten one). `svengers regenotype
+S1.svengers.vcf.gz --store S1.evidence.zarr --out S1.regeno.vcf.gz` recomputes the store-derived
 fields of the calls (GT, GQ, CN, CNQ, RD, BAFN, BAFDEV; junction support and source kept) for
 the filter to be re-run; on stores whose BAF was not rewritten it reproduces the calling-time
 values (GT, CN, BAFN identical on 44,895 calls of two genomes, GQ on all but 2).
@@ -175,14 +177,15 @@ manifest and a 6-column pedigree.
 
 1. **Manifest.** A TSV with header
    `sample_id  cram  batch  sex  depth_bedgraph  vaf_bedgraph` (the last two may be empty).
-   `vedette manifest discover` builds one by walking a samples directory, but only knows
+   `svengers manifest discover` builds one by walking a samples directory, but only knows
    the GHFC layout (`--layout ghfc`); elsewhere write it yourself and check it with
-   `vedette manifest validate`.
+   `svengers manifest validate`.
 2. **Pedigree.** `family_id  sample_id  father_id  mother_id  sex  phenotype`, header
    optional, missing parents as `0`, `-9`, `NA`, `.` or empty, sex `1`/`2`/`0` (`1.0`/`2.0`
    are accepted).
 3. **Site parameters.** Edit `workflows/nextflow/nextflow.config` (or pass `--param value`
-   or `-params-file`): `vedette_bin`, `vedette_config`, `resources_dir`, `fasta`, `pon`,
+   or `-params-file`): `svengers_bin`, `svengers_config` (`vedette_bin`, `vedette_config`
+   before v2.0, still accepted), `resources_dir`, `fasta`, `pon`,
    `model_dir`, and for the report `genes_gff`, `ndd_tsv`, `clingen_genes`, `clingen_regions`, `segdup_bed`, `lcr_bed`,
    `low_quality_prefixes`. The values in the repository point to the GHFC cluster and must
    be replaced; the SLURM profiles (`slurm`, `slurm_common`) name GHFC partitions.
@@ -203,7 +206,8 @@ A `local` profile runs everything on one machine for smoke tests (`--contigs chr
 
 `--steps` must be a prefix of `call → filter → merge → genotype → cohort → ped → report`
 (default: `call,filter`), or start at `filter` with `--calls_dir` pointing at published
-calls (`<dir>/<S>/<S>.vedette.vcf.gz` + `<S>.evidence.zarr`): the re-filter path after a
+calls (`<dir>/<S>/<S>.svengers.vcf.gz`, or `<S>.vedette.vcf.gz` for calls made before
+v2.0, + `<S>.evidence.zarr`): the re-filter path after a
 model update; those are symlinked into `<outdir>/samples/<S>/`, where the report reads
 the stores. `ped` requires `--pedigree`; `report` runs after `ped`. Other parameters:
 `--known_sites` (reference cohort VCF for `CommonRef`), `--artifact_bed`,
@@ -253,7 +257,7 @@ Architecture rules that hold throughout:
 - **calling is permissive** (depth-only calls are kept), and specificity is the job of the
   filter stage: hard filters, then the calibrated score, then cohort metrics.
 
-### 1. Calling (`vedette call`)
+### 1. Calling (`svengers call`)
 
 **Evidence extraction.** With a CRAM, one coordinate-sorted pass per contig (contigs in
 parallel worker processes) collects, from primary non-duplicate reads:
@@ -297,7 +301,7 @@ are written to the store, where re-genotyping, the panel of normals and the coho
 find them.
 
 **Wave QC.** Some libraries carry megabase-scale coverage oscillations that survive GC
-correction. Vedette measures them per genome: the copy ratio is cut into 10 Mb windows
+correction. SVengers measures them per genome: the copy ratio is cut into 10 Mb windows
 (half-overlapping), each window is linearly detrended, and the score is the fraction of its
 spectral energy at periods ≥ 200 kb; median over windows per contig, mean over contigs.
 The warning threshold, **0.128**, was calibrated on 592 genomes against an independent
@@ -382,7 +386,7 @@ deletion that size CN 2.
 <contig>/depth_corr        float32[n_bins]   GC- (and PoN-) corrected depth
 <contig>/mask              bool[n_bins]      bins excluded from depth modelling
 <contig>/baf/{pos,vaf,dp}                    per-site B-allele fraction (attr baf_source)
-<contig>/baf_track/{pos,vaf,dp}              the BAF before `vedette baf` rewrote it
+<contig>/baf_track/{pos,vaf,dp}              the BAF before `svengers baf` rewrote it
 <contig>/pe/{pos1,pos2,mate_tid,orient,mapq} discordant pairs
 <contig>/sr/{pos,side,mapq,cliplen,seq_*}    soft clips and their sequences
 <contig>/cig/{pos,svlen}                     large CIGAR deletions
@@ -391,10 +395,10 @@ deletion that size CN 2.
 
 Size: 80-120 MB per 35× genome at 100 bp bins, about 1 TB for 10,000 genomes.
 
-### 2. Filtering (`vedette filter`)
+### 2. Filtering (`svengers filter`)
 
 For each raw call, `filter` computes 30 features from the VCF record and the evidence
-store (`src/vedette/filter/schema.py`): size, type, precision and source; depth
+store (`src/svengers/filter/schema.py`): size, type, precision and source; depth
 (call/flank and call/chromosome depth ratios, residual against the called CN, coefficient
 of variation, fraction of consistent bins, flank asymmetry); junction support (PE, SR,
 CIGAR, insert-shift z and pairs, support relative to coverage, micro-homology); BAF
@@ -454,7 +458,7 @@ Four rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
 
 `--features-out` also writes the feature matrix (TSV), the input of model training.
 
-### 3. Merging (`vedette merge`)
+### 3. Merging (`svengers merge`)
 
 Filtered calls of all samples are clustered into cohort sites, DEL and DUP separately,
 contig by contig. A call joins a cluster only if it is compatible with the cluster's
@@ -473,7 +477,7 @@ best SQ ≥ 8 (`--rescue-total-sq`). A familial CNV in a hard region that scores
 every carrier would otherwise disappear. The output is a sites-only VCF with `NMEMBERS`,
 `NSAMPLES`, `SPREAD`, `PRECISE_FRAC`, `SQMAX`, `SQMEAN`.
 
-### 4. Re-genotyping (`vedette genotype`)
+### 4. Re-genotyping (`svengers genotype`)
 
 Every site is genotyped in every sample from its evidence store alone, with the same
 likelihood as at calling: copy ratio over the site, discordant pairs and split reads
@@ -482,7 +486,7 @@ supporting that adjacency (split reads within 100 bp of the breakpoints, pairs w
 without reading any CRAM; chrY is skipped in women. One job per sample, I/O-light
 (~100 MB per store), so it parallelizes widely.
 
-### 5. Cohort metrics (`vedette cohort-filter`)
+### 5. Cohort metrics (`svengers cohort-filter`)
 
 The per-sample tables are assembled into a multi-sample VCF (`GT:GQ:CN:RD:PE:SR`, and `FT`,
 below) with `AC`, `AN`, `AF`, `NS`, `NCARRIER`, `CARRIER_FRAC`, `HWE_P`, `GTR_DISC`, `CN_DISC`, and
@@ -539,11 +543,11 @@ this takes the median de novo per child from 19 to 15 (103 to 65 at wave ≥ 0.2
 recurrent de novo sites from 1,401 to 1,012, for 2-8 % of the inherited genotypes ≥ 1 kb.
 Below 1 kb split reads are the main evidence and no genotype is flagged.
 
-`vedette pon artifacts` turns a cohort VCF into a recurrent-artefact BED (founder AF ≥ 0.03
+`svengers pon artifacts` turns a cohort VCF into a recurrent-artefact BED (founder AF ≥ 0.03
 with HWE p ≤ 1e-6, or ≥ 3 nominators with discordance ≥ 0.5), which `filter --artifact-bed`
 applies to later runs.
 
-### 6. Pedigree annotation (`vedette ped-annotate`)
+### 6. Pedigree annotation (`svengers ped-annotate`)
 
 For every complete trio of the pedigree present in the cohort VCF, each site is classified
 from the three genotypes: `none`, `paternal`, `maternal`, `biparental`, `denovo` or
@@ -606,10 +610,10 @@ chrX outside the pseudo-autosomal regions (pedigree sex as fallback):
 - transmission opportunities follow the same rules: none from a hemizygous father.
 
 Read as autosomes, every son 1/1 on chrX with a 0/1 mother and a 0/0 father was a
-violation. `vedette bench trios` uses the same classification to sweep the violation and
+violation. `svengers bench trios` uses the same classification to sweep the violation and
 transmission rates against a GQ or SQ threshold (`trio_sweep.tsv`, optional PNG).
 
-### 7. Chromosomal mosaics (`vedette mosaic`)
+### 7. Chromosomal mosaics (`svengers mosaic`)
 
 The HMM has integer states; a loss or gain present in a fraction of the cells makes it
 alternate between neighbouring states (a two-thirds-clonal 50 Mb terminal loss came back
@@ -629,12 +633,12 @@ Segments with f between 0.15 and 0.85 are mosaics; segments at a whole copy numb
 constitutional anomalies (aneuploidies, arm-level or large gains and losses, BAF-confirmed),
 which the report lists separately. `--run-dir` scans every store of a run.
 
-### 8. Translocations, inversions and terminal losses (`vedette bnd`)
+### 8. Translocations, inversions and terminal losses (`svengers bnd`)
 
 A terminal deletion has a single breakpoint, and what lies past it tells how the
 chromosome was rescued: a new telomere added at the break (telomere healing), the end of
 another chromosome (an unbalanced translocation, whose partner end is then gained), or an
-inverted copy of the retained end (inv-dup del). `vedette bnd --run-dir` reads this from
+inverted copy of the retained end (inv-dup del). `svengers bnd --run-dir` reads this from
 the evidence stores of a whole run, without the CRAMs:
 
 1. **Junctions.** Inter-chromosomal pairs are clustered per contig pair, and same-strand
@@ -700,16 +704,16 @@ flagged genomes; a single trisomic autosome does not move the medians. The
 karyotype needs a panel of normals: it is computed for genomes whose store records the
 path of the PoN they were called with, and the PoN must still exist at that path.
 
-### 10. Report and family pages (`vedette report`)
+### 10. Report and family pages (`svengers report`)
 
-`vedette report <run_dir>` reads a run in the Nextflow layout and writes a self-contained
+`svengers report <run_dir>` reads a run in the Nextflow layout and writes a self-contained
 `report.html` (figures inlined; labels are in French): run summary, size and frequency
 spectra of PASS sites, the trio sweep and per-trio table, family sections with de novo
 candidates (children above max(`--max-denovo-per-child`, 5× the cohort median; the
 median rule from 20 children on) are flagged as technical outliers and left out of the
 tables; the others are listed good genomes first, then wavy, old or overloaded ones, then
 by impact), rare sites (≤ 2 carriers) with genes and
-impact, chromosomal mosaics, terminal losses and their mechanism (when `vedette bnd` has
+impact, chromosomal mosaics, terminal losses and their mechanism (when `svengers bnd` has
 run; a parent with the same junction is named as a balanced carrier, and the family rows
 of the loss say it), constitutional chromosome anomalies, sex chromosomes, and a
 per-sample table (carrier load, GQ, wave score). The sex chromosomes, wave scores and
@@ -766,16 +770,16 @@ status and own-call status, sortable, opened from disk. Each row has:
   overlaps, inheritance, carriers, own-call, support and carrier-QC columns, then
   `validation`) and re-imported from any TSV with `site_id` and `validation` columns.
 
-Each page comes with a **machine-readable export** for curation tools: `<FID>.vedette.tsv`
+Each page comes with a **machine-readable export** for curation tools: `<FID>.svengers.tsv`
 (the page's rows with typed, coded columns: `kind`, 1-based inclusive `start`/`end`, the
 impact split into score, level and reason, complete exonic and intronic gene lists with
 Ensembl ids, per-member `GT`/`GQ`/`CN`, each child's inheritance code and DNQ, each
 member's own call behind the row with its source, precision and SQ, the cohort site's key
-and INFO evidence), `<FID>.vedette.qc.tsv` (per-member QC: wave, carrier load, de novo
-count, karyotype, flag codes), `<FID>.vedette.json` (schema and caller versions) and, with
-pyarrow (`pip install vedette[parquet]`), `<FID>.vedette.parquet` (the same rows in long
+and INFO evidence), `<FID>.svengers.qc.tsv` (per-member QC: wave, carrier load, de novo
+count, karyotype, flag codes), `<FID>.svengers.json` (schema and caller versions) and, with
+pyarrow (`pip install svengers[parquet]`), `<FID>.svengers.parquet` (the same rows in long
 form, one line per row × member, typed, with the own call's full evidence: PE, SR, CG, RD,
-CNQ, CIPOS/CIEND). `vedette site-map OLD.vcf.gz NEW.vcf.gz` follows cohort sites across a
+CNQ, CIPOS/CIEND). `svengers site-map OLD.vcf.gz NEW.vcf.gz` follows cohort sites across a
 re-merge (same, moved, split, merged, lost, new), for validations keyed on a site. Format:
 [docs/EXPORT.md](docs/EXPORT.md).
 
@@ -793,7 +797,7 @@ built from genomes sequenced and processed like yours. On the production family 
 re-calling with a 300-founder panel took cohort sites from 104,498 to 75,335, the median
 apparent de novo per child from 67 to 52 and the Mendelian-violation rate from 3.13 % to
 2.61 %, with every reviewed causal deletion kept. The karyotype section of the report
-also needs it. Without a panel, Vedette behaves as v1.1.0 did.
+also needs it. Without a panel, SVengers behaves as v1.1.0 did.
 
 1. **Choose the founders.** At least **20 unrelated individuals** (founders of the
    pedigrees, one per family, no relatives of each other); production uses 300. The
@@ -807,8 +811,8 @@ also needs it. Without a panel, Vedette behaves as v1.1.0 did.
    100 bp for the CRAM path unless `extract.bin_size` is set):
 
    ```bash
-   vedette call --sample F1 --cram F1.cram --snv-vcf F1.snv.vcf.gz \
-       --config my_site.toml --resources vedette_resources/ --out-dir pon_calls/F1
+   svengers call --sample F1 --cram F1.cram --snv-vcf F1.snv.vcf.gz \
+       --config my_site.toml --resources svengers_resources/ --out-dir pon_calls/F1
    ```
 
    With Nextflow: `--steps call` and `--pon ""` on a manifest of the founders.
@@ -817,7 +821,7 @@ also needs it. Without a panel, Vedette behaves as v1.1.0 did.
 
    ```bash
    ls -d pon_calls/*/*.evidence.zarr > founders.txt
-   vedette pon build @founders.txt --out my_pon.zarr
+   svengers pon build @founders.txt --out my_pon.zarr
    ```
 
    `--denoise-k K` adds K SVD components of residual variation (autosomes only, 5-20
@@ -845,8 +849,8 @@ SQ ≥ 5**, the built-in default (`[filter] low_sq_threshold` to change it, e.g.
 of your own).
 
 `v12b` has the labels and recipe of `v5n`, trained on the copy number the genotyper now
-gives (edge bins read with their flanks, see [Calling](#1-calling-vedette-call)). It needs calls
-genotyped by this version: re-run `call`, or `vedette regenotype` the existing calls,
+gives (edge bins read with their flanks, see [Calling](#1-calling-svengers-call)). It needs calls
+genotyped by this version: re-run `call`, or `svengers regenotype` the existing calls,
 before filtering with it. Against `v5n`'s estimators retrained without HG002, on HG002
 out of sample: DEL F1 0.514 vs 0.511 (GIAB v5.0q), 0.582 vs 0.563 (CMRG, recall 0.446
 vs 0.413). On the 665 trios of dataset_paper the cohort gate is quiet in every wave
@@ -862,12 +866,12 @@ A model directory holds `model_del.joblib`, `model_dup.joblib` and `manifest.jso
 (version, feature list and schema hash, neutral features, training provenance, out-of-fold
 metrics and an SQ → kept / FDR / recall table).
 
-### CNN tensors (`vedette tensors`, groundwork for a second opinion)
+### CNN tensors (`svengers tensors`, groundwork for a second opinion)
 
 The model above reads summaries of each call and never its *shape*: a clean deletion (two
 steps down to half depth, flat flanks, no heterozygous site inside) and a GC wave can share
 the same summaries — a 9 kb deletion over SHANK3, obvious in IGV, scores SQ 0.38.
-`vedette tensors` turns every call of a filtered VCF (default: PASS and LowSQ, ≥ 1 kb) into
+`svengers tensors` turns every call of a filtered VCF (default: PASS and LowSQ, ≥ 1 kb) into
 a 13-channel track of 256 points over the call and one call length of flank on each side,
 read from the evidence store only: log2 copy ratio and masked fraction, the panel of
 normals' median and MAD on the same bins (the cohort context: dips and scatter every genome
@@ -879,7 +883,7 @@ contract (`filter/tensor.py`, `TENSOR_VERSION`). No model reads them yet: a 1D C
 on the IGV labels is the next step (`docs/ROADMAP.md`, 1sexdecies).
 
 ```bash
-vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out out/S1/S1.tensors.npz
+svengers tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out out/S1/S1.tensors.npz
 ```
 
 ### Training your own
@@ -889,8 +893,8 @@ vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out 
    CRAM-scanned stores match fast-path cohort stores.
 
    ```bash
-   vedette call --sample HG002 --cram HG002.cram --config giab.toml --out-dir giab/HG002
-   vedette filter giab/HG002/HG002.vedette.vcf.gz --store giab/HG002/HG002.evidence.zarr \
+   svengers call --sample HG002 --cram HG002.cram --config giab.toml --out-dir giab/HG002
+   svengers filter giab/HG002/HG002.svengers.vcf.gz --store giab/HG002/HG002.evidence.zarr \
        --config giab.toml --out giab/HG002/HG002.tier1.vcf.gz \
        --features-out giab/HG002/HG002.features.tsv
    ```
@@ -898,7 +902,7 @@ vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out 
 2. **Truth labels** with Truvari (DUP calls matched against insertion-represented truth):
 
    ```bash
-   vedette label giab/HG002/HG002.features.tsv --calls-vcf giab/HG002/HG002.vedette.vcf.gz \
+   svengers label giab/HG002/HG002.features.tsv --calls-vcf giab/HG002/HG002.svengers.vcf.gz \
        --truth-vcf HG002_GRCh38_v5.0q_stvar.vcf.gz \
        --truth-bed HG002_GRCh38_v5.0q_stvar.benchmark.bed \
        --fasta GRCh38.fa --out HG002.labeled.tsv
@@ -908,10 +912,10 @@ vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out 
    transmission against the truth-bearing child's false positives.
 
 3. **Optional transmission labels** for technically atypical (e.g. wavy) children whose
-   parents are clean: genotype the parents at cohort sites (`vedette genotype`), then
+   parents are clean: genotype the parents at cohort sites (`svengers genotype`), then
 
    ```bash
-   vedette label-trio child.features.tsv --parent-gt father.gt.tsv --parent-gt mother.gt.tsv \
+   svengers label-trio child.features.tsv --parent-gt father.gt.tsv --parent-gt mother.gt.tsv \
        --parent-calls father.filtered.vcf.gz --parent-calls mother.filtered.vcf.gz \
        --known-sites reference_cohort.vcf.gz --out child.labeled.tsv
    ```
@@ -926,7 +930,7 @@ vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out 
    Ignore Timestamp SiteId CallerVersion ModelVersion`, append-only) become labels too:
 
    ```bash
-   vedette labels --from-genetics-viz validations/vedette.tsv --out labels.tsv \
+   svengers labels --from-genetics-viz validations/vedette.tsv --out labels.tsv \
        --model-version v5n --features child.features.tsv --sample CHILD \
        --labeled-out child.curated.labeled.tsv
    ```
@@ -940,7 +944,7 @@ vedette tensors out/S1/S1.filtered.vcf.gz --store out/S1/S1.evidence.zarr --out 
 4. **Train:**
 
    ```bash
-   vedette train HG002.labeled.tsv HG003.labeled.tsv child.labeled.tsv \
+   svengers train HG002.labeled.tsv HG003.labeled.tsv child.labeled.tsv \
        --out models/my_model --model-version my1 --training-data "GIAB + 12 trios" \
        --neutralize wave_score=-1
    ```
@@ -963,11 +967,11 @@ full cohorts (27 → 63 for one of them) and were not retained.
 
 | truth | caller | recall | precision | F1 |
 |---|---|---|---|---|
-| GIAB v5.0q | **Vedette (v5, SQ ≥ 5)** | 0.334 | **0.951** | 0.495 |
+| GIAB v5.0q | **SVengers (v5, SQ ≥ 5)** | 0.334 | **0.951** | 0.495 |
 | GIAB v5.0q | Manta | 0.376 | 0.934 | 0.536 |
 | GIAB v5.0q | dysgu | 0.389 | 0.879 | 0.539 |
 | GIAB v5.0q | DELLY | 0.284 | 0.826 | 0.423 |
-| CMRG v1.00 | **Vedette (v5, SQ ≥ 5)** | 0.370 | 0.944 | 0.531 |
+| CMRG v1.00 | **SVengers (v5, SQ ≥ 5)** | 0.370 | 0.944 | 0.531 |
 | CMRG v1.00 | Manta | 0.489 | 0.978 | 0.652 |
 | CMRG v1.00 | dysgu | 0.457 | 0.840 | 0.592 |
 | CMRG v1.00 | DELLY | 0.261 | 0.857 | 0.400 |
@@ -977,17 +981,17 @@ estimates for retrained models are in `docs/ROADMAP.md`. Per-size and per-contex
 `docs/benchmark_hg002_v1.tsv` to `_v6.tsv`; F1 by size for model v1:
 ![F1 by size, HG002, model v1](docs/benchmark_hg002_v1_f1.png)
 
-Vedette's strength is precision from 300 bp to 100 kb (F1 0.72 at 300 bp-1 kb, 0.84 at
+SVengers's strength is precision from 300 bp to 100 kb (F1 0.72 at 300 bp-1 kb, 0.84 at
 1-10 kb). Its weak spots are small deletions (50-300 bp) and segmental duplications. On
 real cohorts the decisive metrics are trio-based (apparent de novo rate, Mendelian
 violations), which the report shows for every family.
 
-The harness: `vedette bench truth` (stratified Truvari evaluation by size, segdup / LCR /
+The harness: `svengers bench truth` (stratified Truvari evaluation by size, segdup / LCR /
 tandem-repeat context), `bench compare` (several callers, VCF or WisecondorX entries),
 `bench dup-truth` (tandem-duplication subset of an insertion-represented truth, a fair
 denominator for DUP recall), `bench trios` (violation / transmission sweep), `bench cohort`
 (the gate before deploying a model, below) and `bench pregate` (its quick first step). A one-page
-illustrated overview is in `docs/vedette_overview.html`.
+illustrated overview is in `docs/svengers_overview.html`.
 
 **Deploying a new filter model.** A truth-set holdout, the per-genome PASS median of a
 panel and trio checks at the call level ("does the child's call overlap a parent's
@@ -996,7 +1000,7 @@ segdup depth shifts): such calls overlap a parent's call in every family. Re-run
 whole cohort (filter, merge, genotype, cohort-filter, ped) with the candidate model, then
 
 ```bash
-vedette bench cohort prod=runs/COHORT new=runs/COHORT_candidate --out gate.tsv
+svengers bench cohort prod=runs/COHORT new=runs/COHORT_candidate --out gate.tsv
 ```
 
 compares, per child, the de novo calls at PASS sites with GQ >= 20 in the child and both
@@ -1017,7 +1021,7 @@ The cohort run takes hours; its first step, the per-sample filter, takes minutes
 where these floods start. Run it alone (`--steps filter`), then
 
 ```bash
-vedette bench pregate prod=runs/COHORT new=runs/COHORT_candidate --out pregate.tsv
+svengers bench pregate prod=runs/COHORT new=runs/COHORT_candidate --out pregate.tsv
 ```
 
 compares, per genome, the carrier calls the candidate PASSes and the LowSQ-only calls at
@@ -1035,27 +1039,27 @@ needs `bench cohort`.
 
 | command | role |
 |---|---|
-| `vedette call` | per-sample calling: CRAM (and optional tracks) → raw VCF + evidence store |
-| `vedette filter` | hard filters + calibrated `SQ` score → filtered VCF (and feature matrix) |
-| `vedette tensors` | per-call multi-channel tracks from the store (`.npz`), input of the planned CNN second opinion |
-| `vedette mosaic` | chromosomal-scale mosaic and constitutional segments from a store, or a whole run (`--run-dir`) |
-| `vedette bnd` | translocation and inversion junctions of a run, and the mechanism of its terminal losses (`--run-dir`, `--fasta`, `--jobs`) |
-| `vedette wave` | write the wave QC score into stores called before schema 0.4 (`--run-dir`, `--force`, `--jobs`) |
-| `vedette baf` | rewrite the BAF of stores from SNV VCFs, PASS, no QUAL threshold (`STORE --vcf`, `--manifest`, `--min-dp`, `--force`, `--jobs`) |
-| `vedette regenotype` | recompute GT/GQ/CN/CNQ/RD/BAFN/BAFDEV of a sample's calls from its store (after `vedette baf`) |
-| `vedette merge` | cluster filtered calls across samples into cohort sites |
-| `vedette genotype` | re-genotype every cohort site in one sample, from its evidence store |
-| `vedette cohort-filter` | cohort VCF with AF, HWE, artefact and consistency metrics |
-| `vedette ped-annotate` | Mendelian consistency, inheritance, de novo annotation |
-| `vedette ped` | parse and summarise a pedigree |
-| `vedette report` | self-contained HTML cohort report and per-family pages |
-| `vedette manifest discover` / `validate` | build (GHFC layout) or check a cohort sample manifest |
-| `vedette pon build` / `artifacts` | panel of normals from stores; recurrent-artefact BED from a cohort VCF |
-| `vedette label` / `label-trio` | training labels: Truvari against a truth set, or transmission in trios |
-| `vedette labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
-| `vedette site-map` | correspondence of cohort sites between two runs (same, moved, split, merged, lost, new) |
-| `vedette train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
-| `vedette bench truth` / `compare` / `dup-truth` / `trios` / `cohort` / `pregate` | benchmark harness; `cohort` = de novo gate before a model change, `pregate` = its quick first step on filter-only runs |
+| `svengers call` | per-sample calling: CRAM (and optional tracks) → raw VCF + evidence store |
+| `svengers filter` | hard filters + calibrated `SQ` score → filtered VCF (and feature matrix) |
+| `svengers tensors` | per-call multi-channel tracks from the store (`.npz`), input of the planned CNN second opinion |
+| `svengers mosaic` | chromosomal-scale mosaic and constitutional segments from a store, or a whole run (`--run-dir`) |
+| `svengers bnd` | translocation and inversion junctions of a run, and the mechanism of its terminal losses (`--run-dir`, `--fasta`, `--jobs`) |
+| `svengers wave` | write the wave QC score into stores called before schema 0.4 (`--run-dir`, `--force`, `--jobs`) |
+| `svengers baf` | rewrite the BAF of stores from SNV VCFs, PASS, no QUAL threshold (`STORE --vcf`, `--manifest`, `--min-dp`, `--force`, `--jobs`) |
+| `svengers regenotype` | recompute GT/GQ/CN/CNQ/RD/BAFN/BAFDEV of a sample's calls from its store (after `svengers baf`) |
+| `svengers merge` | cluster filtered calls across samples into cohort sites |
+| `svengers genotype` | re-genotype every cohort site in one sample, from its evidence store |
+| `svengers cohort-filter` | cohort VCF with AF, HWE, artefact and consistency metrics |
+| `svengers ped-annotate` | Mendelian consistency, inheritance, de novo annotation |
+| `svengers ped` | parse and summarise a pedigree |
+| `svengers report` | self-contained HTML cohort report and per-family pages |
+| `svengers manifest discover` / `validate` | build (GHFC layout) or check a cohort sample manifest |
+| `svengers pon build` / `artifacts` | panel of normals from stores; recurrent-artefact BED from a cohort VCF |
+| `svengers label` / `label-trio` | training labels: Truvari against a truth set, or transmission in trios |
+| `svengers labels` | curators' genetics-viz validations as labels, with curated breakpoint offsets |
+| `svengers site-map` | correspondence of cohort sites between two runs (same, moved, split, merged, lost, new) |
+| `svengers train` | train the calibrated DEL/DUP models (`--neutralize` pins a feature) |
+| `svengers bench truth` / `compare` / `dup-truth` / `trios` / `cohort` / `pregate` | benchmark harness; `cohort` = de novo gate before a model change, `pregate` = its quick first step on filter-only runs |
 
 Every command has `--help`. Lists of files can be passed as `@filelist` (one path per
 line) to `merge`, `cohort-filter --genotypes` and `pon build`.
@@ -1065,13 +1069,13 @@ line) to `merge`, `cohort-filter --genotypes` and `pon build`.
 A Nextflow run writes, under `--outdir`:
 
 ```
-samples/<S>/<S>.vedette.vcf.gz       raw calls (+ .tbi)
+samples/<S>/<S>.svengers.vcf.gz       raw calls (+ .tbi)
 samples/<S>/<S>.evidence.zarr        evidence store
 samples/<S>/<S>.filtered.vcf.gz      filtered calls: FILTER, SQ (+ .tbi)
 samples/<S>/<S>.features.tsv         per-call feature matrix
 samples/<S>/<S>.mosaic.tsv           mosaic and constitutional segments
-samples/<S>/<S>.bnd.tsv, .bnd.vcf.gz junctions (`vedette bnd`)
-samples/<S>/<S>.terminal.tsv         terminal losses and their mechanism (`vedette bnd`)
+samples/<S>/<S>.bnd.tsv, .bnd.vcf.gz junctions (`svengers bnd`)
+samples/<S>/<S>.terminal.tsv         terminal losses and their mechanism (`svengers bnd`)
 genotypes/<S>.gt.tsv                 re-genotyped cohort sites
 cohort/sites.vcf.gz                  cohort sites (sites-only)
 cohort/cohort.vcf.gz                 re-genotyped cohort VCF with metrics
@@ -1080,7 +1084,7 @@ cohort/mendel_summary.tsv            per-trio violation and transmission rates
 cohort/trio_sweep.tsv / .png         violation / transmission vs GQ threshold
 report.html                          cohort report
 families/<FID>/events.html           interactive family page (--family_events)
-families/<FID>/<FID>.vedette.tsv, .qc.tsv, .json   machine-readable family export (docs/EXPORT.md)
+families/<FID>/<FID>.svengers.tsv, .qc.tsv, .json   machine-readable family export (docs/EXPORT.md)
 families/<FID>/<FID>.vcf.gz, mendel.tsv   family workspace
 reports/timeline.html, report.html, trace.txt   Nextflow execution reports
 ```
@@ -1095,7 +1099,7 @@ ratio), `PE`, `SR`, `CG` (CIGAR reads), `IZ` / `IP` (insert shift), `BAFN`, `BAF
 **Genotype table** (`genotype`): `site_id contig start end svtype sample gt gq cn cnq rd pe
 sr cig baf_n baf_dev`.
 
-**Cohort VCF**: see [Cohort metrics](#5-cohort-metrics-vedette-cohort-filter); sites INFO
+**Cohort VCF**: see [Cohort metrics](#5-cohort-metrics-svengers-cohort-filter); sites INFO
 from `merge` (`NSAMPLES`, `SQMAX`, `RESCUE`, …) is carried over.
 
 **Mendelian report**: `site_id contig start end svtype family_id child child_gt child_gq
@@ -1128,10 +1132,10 @@ end (`chr:pos`), `partner_gain` the sample's gain there (`chr:start-end`).
 Coordinates in the TSV outputs are 0-based half-open, except the family export
 (1-based inclusive, see docs/EXPORT.md). VCFs follow the VCF 4.3 rule for symbolic
 alleles: `POS` is the base before the event, `END` its last base (header line
-`##vedette_coords=padded`; VCFs written before v1.4.0 had both one base to the right, and
-are still read correctly). A sample VCF called with a panel records the karyotype that set
-its chrX/chrY baseline (`##vedette_karyotype=XXY`) and any whole-autosome baseline
-(`##vedette_aneuploidy=chr21:3`).
+`##svengers_coords=padded`, `##vedette_coords=padded` before v2.0; VCFs written before
+v1.4.0 had both one base to the right, and are still read correctly). A sample VCF called with a panel records the karyotype that set
+its chrX/chrY baseline (`##svengers_karyotype=XXY`) and any whole-autosome baseline
+(`##svengers_aneuploidy=chr21:3`).
 
 ## Configuration
 
@@ -1162,7 +1166,7 @@ Main keys (defaults):
 | `[genotype]` | `junction_overdispersion` (0.75), `baf_overdispersion` (50), `het_prior` (1e-4), `hom_prior` (1e-6) |
 | `[filter]` | `min_size` (50), `max_excluded_overlap` (0.30), `lowmap_segdup_frac` (0.70), `low_sq_threshold` (5.0), `large_del_rescue_*`, `large_dup_rescue_*` |
 
-The full list with comments is `src/vedette/config.py`. Reference paths given on the
+The full list with comments is `src/svengers/config.py`. Reference paths given on the
 command line (`--fasta`, `--exclude-bed`, `--segdup-bed`, `--lcr-bed`, `--popcov-bw`)
 override the file. `configs/ghfc.toml` and `configs/giab.toml` are complete examples from
 the GHFC site (their paths are cluster paths, to be replaced); the Nextflow parameters are
@@ -1176,28 +1180,28 @@ The work is split by contig (merge), by block of sites (cohort-filter), by 10 Mb
 (ped-annotate and bench trios, which need the VCF index) or by family (report), and
 stitched back in file order: the outputs are identical to a serial run. On a ~300-genome
 family cohort with 16 cores: merge 7 min → 70 s, cohort-filter 17 min → 86 s,
-ped-annotate 3.5 min → 19 s, report 12 min → 3 min. `vedette wave --jobs` processes stores
+ped-annotate 3.5 min → 19 s, report 12 min → 3 min. `svengers wave --jobs` processes stores
 in parallel (default 1). `call` scans contigs in up to 8 worker processes.
 
 Nextflow resources (`workflows/nextflow/nextflow.config`, scaled with the retry attempt):
 
 | process | cpus | memory | time |
 |---|---|---|---|
-| `VEDETTE_CALL` | 8 | 24 GB, then 72 GB × (attempt − 1) | 12 h × 2^(attempt − 1), 3 retries |
-| `VEDETTE_FILTER` | 2 | 8 GB × attempt | 24 h |
-| `VEDETTE_GENOTYPE` | 2 | 8 GB × attempt | 24 h |
-| `VEDETTE_MERGE` | 16 | 16 GB × attempt | 24 h |
-| `VEDETTE_COHORT_FILTER` | 16 | 32 GB × attempt | 24 h |
-| `VEDETTE_PED` | 16 | 16 GB × attempt | 24 h |
-| `VEDETTE_MOSAIC` | 1 | 4 GB × attempt | 1 h |
-| `VEDETTE_REPORT` | 16 | 48 GB × attempt | 12 h |
+| `SVENGERS_CALL` | 8 | 24 GB, then 72 GB × (attempt − 1) | 12 h × 2^(attempt − 1), 3 retries |
+| `SVENGERS_FILTER` | 2 | 8 GB × attempt | 24 h |
+| `SVENGERS_GENOTYPE` | 2 | 8 GB × attempt | 24 h |
+| `SVENGERS_MERGE` | 16 | 16 GB × attempt | 24 h |
+| `SVENGERS_COHORT_FILTER` | 16 | 32 GB × attempt | 24 h |
+| `SVENGERS_PED` | 16 | 16 GB × attempt | 24 h |
+| `SVENGERS_MOSAIC` | 1 | 4 GB × attempt | 1 h |
+| `SVENGERS_REPORT` | 16 | 48 GB × attempt | 12 h |
 
 24 GB covers 2,664 of 2,670 genomes of the largest cohort (p99 16 GB); noisy genomes peak
 near 48 GB. The SLURM executor submits at most 200 jobs at a time.
 
 ## Known limitations
 
-- **DEL and DUP calls.** Translocations and inversions come as junctions (`vedette bnd`):
+- **DEL and DUP calls.** Translocations and inversions come as junctions (`svengers bnd`):
   inter-chromosomal ones are calibrated as standalone calls (≥ 12 pairs), same-strand ones
   are not, and both are read at terminal losses. Insertions and complex rearrangements
   beyond inv-dup del are out of scope; balanced events are seen only through their
@@ -1223,14 +1227,14 @@ near 48 GB. The SLURM executor submits at most 200 jobs at a time.
 - The stored wave score is inflated by large CNVs; the report corrects it per row only.
 - **Without BAF input** (`--snv-vcf` or `--vaf-bedgraph`) the allelic channel is empty
   everywhere downstream.
-- `vedette manifest discover` only knows the GHFC directory layout.
+- `svengers manifest discover` only knows the GHFC directory layout.
 - The HTML report and family pages are in French.
 
 ## Development
 
 ```bash
-micromamba run -n vedette python -m pytest tests/ -q
-micromamba run -n vedette ruff check src tests
+micromamba run -n svengers python -m pytest tests/ -q
+micromamba run -n svengers ruff check src tests
 ```
 
 Design notes, the decisions behind each component and the open work are in
@@ -1239,8 +1243,8 @@ Design notes, the decisions behind each component and the open work are in
 Invariants worth knowing before contributing:
 - downstream stages never re-read a CRAM: the evidence store is the contract;
 - any change to the store's arrays or attributes bumps its schema version
-  (`SCHEMA_VERSION` in `src/vedette/extract/store.py`);
-- the feature schema (`src/vedette/filter/schema.py`) is append-only: trained models pin
+  (`SCHEMA_VERSION` in `src/svengers/extract/store.py`);
+- the feature schema (`src/svengers/filter/schema.py`) is append-only: trained models pin
   its hash;
 - copy ratio is normalized to the diploid autosomal median (male chrX baseline 0.5) and
   copy-number states are absolute integers;
@@ -1249,6 +1253,6 @@ Invariants worth knowing before contributing:
 
 ## Citation and license
 
-If you use Vedette, please cite it with the metadata in `CITATION.cff`.
+If you use SVengers, please cite it with the metadata in `CITATION.cff`.
 
 MIT License — Alexandre Mathieu, Institut Pasteur (GHFC lab).

@@ -1,5 +1,5 @@
-# Vedette configuration for the GHFC GRCh38 environment (Institut Pasteur, helix)
-# Usage: vedette call --config configs/ghfc.toml ...
+# SVengers configuration for the GHFC GRCh38 environment (Institut Pasteur, helix)
+# Usage: svengers call --config configs/ghfc.toml ...
 
 [reference]
 fasta = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/chr/GRCh38_GIABv3_no_alt_analysis_set_maskedGRC_decoys_MAP2K3_KMT2C_KCNJ18.fasta"

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import zarr
 
-from vedette.extract.store import EvidenceStore, EvidenceStoreWriter, _create_array
-from vedette.karyotype import classify, is_anomaly, sex_chromosome_stats
+from svengers.extract.store import EvidenceStore, EvidenceStoreWriter, _create_array
+from svengers.karyotype import classify, is_anomaly, sex_chromosome_stats
 
 BIN = 10_000
 N = 3_000   # bins per contig (30 Mb)
@@ -102,7 +102,7 @@ def test_pedigree_discordance_contamination_and_mosaic():
     ("XXY", {"X"}), ("XXX", {"X"}), ("X0", {"X"}), ("XYY", {"Y"}), ("XXYY", {"X", "Y"}),
 ])
 def test_aneuploid_sex_chromosomes(kar, expected):
-    from vedette.karyotype import aneuploid_sex_chromosomes
+    from svengers.karyotype import aneuploid_sex_chromosomes
 
     assert aneuploid_sex_chromosomes(kar) == expected
 
@@ -113,7 +113,7 @@ def test_aneuploid_sex_chromosomes(kar, expected):
     ("?", None), ("intermédiaire", None), ("", None),
 ])
 def test_sex_ploidy(kar, expected):
-    from vedette.karyotype import sex_ploidy
+    from svengers.karyotype import sex_ploidy
 
     assert sex_ploidy(kar) == expected
 
@@ -123,7 +123,7 @@ def test_sex_ploidy(kar, expected):
     ("X", 3, ("female", 1.0)), ("Y", 1, ("male", 0.5)), ("Y", 2, ("male", 0.5)), ("Y", 0, ("female", 0.0)),
 ])
 def test_pon_profile_level_is_the_profile_ploidy(kind, ploidy, expected):
-    from vedette.call import pon_profile
+    from svengers.call import pon_profile
 
     assert pon_profile(kind, ploidy) == expected
 
@@ -131,8 +131,8 @@ def test_pon_profile_level_is_the_profile_ploidy(kind, ploidy, expected):
 def test_pon_normalize_keeps_an_aneuploid_on_its_own_baseline():
     """An XXX chrX (ratio 1.5) on the female profile reads 1.5 = ploidy 3 / 2;
     an XYY chrY (ratio 1.0) on the male profile reads 1.0 = ploidy 2 / 2."""
-    from vedette.call import pon_profile
-    from vedette.cohort.pon import PanelOfNormals
+    from svengers.call import pon_profile
+    from svengers.cohort.pon import PanelOfNormals
 
     class P(PanelOfNormals):
         def __init__(self, med):
@@ -150,7 +150,7 @@ def test_pon_normalize_keeps_an_aneuploid_on_its_own_baseline():
 
 
 def test_karyotype_from_call_arrays_matches_the_store(tmp_path):
-    from vedette.karyotype import ArraySource
+    from svengers.karyotype import ArraySource
 
     pon = _pon(tmp_path)
     st = _store(tmp_path, 2, 1)
@@ -168,7 +168,7 @@ def test_karyotype_from_call_arrays_matches_the_store(tmp_path):
 
 
 def test_pon_keeps_sex_aneuploidies_out_of_the_sex_profiles():
-    from vedette.cohort.pon import _sex_of_store
+    from svengers.cohort.pon import _sex_of_store
 
     class S:
         def __init__(self, x, y=None):
@@ -185,12 +185,12 @@ def test_pon_keeps_sex_aneuploidies_out_of_the_sex_profiles():
 def test_vcf_header_carries_the_karyotype(tmp_path):
     import pysam
 
-    from vedette.reference import Contig
-    from vedette.vcfout import write_vcf
+    from svengers.reference import Contig
+    from svengers.vcfout import write_vcf
 
     out = tmp_path / "s.vcf.gz"
     write_vcf([], [Contig("chrX", 1_000_000, "X")], "S", out, karyotype="XXY")
-    assert "##vedette_karyotype=XXY" in str(pysam.VariantFile(str(out)).header)
+    assert "##svengers_karyotype=XXY" in str(pysam.VariantFile(str(out)).header)
 
 
 def _autosomes(levels, baf_dev=None, het=None, n_bins=40_000, seed=0):
@@ -211,7 +211,7 @@ def _autosomes(levels, baf_dev=None, het=None, n_bins=40_000, seed=0):
 
 
 def test_whole_chromosome_trisomy_and_monosomy():
-    from vedette.karyotype import autosomal_aneuploidies
+    from svengers.karyotype import autosomal_aneuploidies
 
     lv = {"chr1": 2, "chr2": 2, "chr12": 3, "chr21": 3, "chr22": 1, "chr7": 2}
     r, m, b = _autosomes(lv, baf_dev={"chr12": 1 / 6, "chr21": 1 / 6}, het={"chr22": 0.003})
@@ -221,7 +221,7 @@ def test_whole_chromosome_trisomy_and_monosomy():
 def test_trisomy_of_a_small_acrocentric_with_unmasked_gaps():
     """chr21 as the call sees it before the PoN: ~37 informative windows, the
     p-arm flank unmasked but uncovered (CN 0) or erratic (0.6, 4.9)."""
-    from vedette.karyotype import autosomal_aneuploidies
+    from svengers.karyotype import autosomal_aneuploidies
 
     lv = {"chr1": 2, "chr2": 2, "chr21": 3}
     r, m, b = _autosomes(lv, baf_dev={"chr21": 1 / 6}, n_bins=37_000)
@@ -234,7 +234,7 @@ def test_trisomy_of_a_small_acrocentric_with_unmasked_gaps():
 def test_depth_alone_is_not_an_aneuploidy():
     """A chromosome read at 3 copies without the BAF of three (a wave, a GC
     bias) or a gain over part of a chromosome keeps the diploid baseline."""
-    from vedette.karyotype import autosomal_aneuploidies
+    from svengers.karyotype import autosomal_aneuploidies
 
     lv = {"chr1": 2, "chr19": 3, "chr18": 2}
     r, m, b = _autosomes(lv)                       # chr19 BAF stays at 0.5
@@ -248,9 +248,9 @@ def test_depth_alone_is_not_an_aneuploidy():
 def test_vcf_header_carries_the_aneuploidies(tmp_path):
     import pysam
 
-    from vedette.reference import Contig
-    from vedette.vcfout import write_vcf
+    from svengers.reference import Contig
+    from svengers.vcfout import write_vcf
 
     out = tmp_path / "s.vcf.gz"
     write_vcf([], [Contig("chr21", 1_000_000, "autosome")], "S", out, aneuploidies={"chr21": 3})
-    assert "##vedette_aneuploidy=chr21:3" in str(pysam.VariantFile(str(out)).header)
+    assert "##svengers_aneuploidy=chr21:3" in str(pysam.VariantFile(str(out)).header)

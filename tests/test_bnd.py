@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from vedette.bnd import (
+from svengers.bnd import (
     BND_PROMISCUOUS_PARTNERS,
     BND_RECURRENT_MIN,
     Bnd,
@@ -12,9 +12,9 @@ from vedette.bnd import (
     telomeric,
     terminal_losses,
 )
-from vedette.breakpoints.cluster import SRBreakpoint, cluster_sr
-from vedette.config import BreakpointConfig
-from vedette.extract.store import (
+from svengers.breakpoints.cluster import SRBreakpoint, cluster_sr
+from svengers.config import BreakpointConfig
+from svengers.extract.store import (
     PE_DEL,
     PE_INTER,
     PE_INV,
@@ -102,7 +102,7 @@ def test_recurrent_same_strand_junction_with_support_is_a_common_inversion():
     """In many genomes, a same-strand junction with 12 pairs or more is a
     common inversion (17q21.31 H2); weaker ones and inter-chromosomal ones
     stay recurrent (artefacts)."""
-    from vedette.vcfout import bnd_filter
+    from svengers.vcfout import bnd_filter
 
     by = {}
     for i in range(BND_RECURRENT_MIN):
@@ -210,7 +210,7 @@ def test_inv_dup_del_is_a_fold_back_next_to_the_loss():
 
 
 def test_a_parent_with_the_junction_carries_the_balanced_translocation():
-    from vedette.bnd import junction_carriers, terminal_label
+    from svengers.bnd import junction_carriers, terminal_label
 
     row = {"contig": "chr22", "start": 47_821_250, "end": 50_818_468, "partner": "chr8:119479750",
            "partner_gain": "chr8:119477000-145138636", "mechanism": "translocation"}
@@ -224,7 +224,7 @@ def test_a_parent_with_the_junction_carries_the_balanced_translocation():
 
 
 def test_a_parent_with_the_same_loss_transmitted_it():
-    from vedette.bnd import loss_carriers, terminal_label
+    from svengers.bnd import loss_carriers, terminal_label
 
     row = {"contig": "chr5", "start": 0, "end": 141_001, "partner": "", "partner_gain": "",
            "mechanism": "telomere"}
@@ -236,7 +236,7 @@ def test_a_parent_with_the_same_loss_transmitted_it():
 
 
 def test_terminal_flag_on_the_family_row_of_the_loss():
-    from vedette.report import terminal_flags
+    from svengers.report import terminal_flags
 
     losses = [{"contig": "chr22", "start": 43_000_000, "end": 50_818_468,
                "label": "télomère néoformé"}]
@@ -287,8 +287,8 @@ def test_breakend_vcf(tmp_path):
     right) joined to chr8 right of its own (clipped on the left)."""
     import pysam
 
-    from vedette.reference import Contig
-    from vedette.vcfout import write_bnd_vcf
+    from svengers.reference import Contig
+    from svengers.vcfout import write_bnd_vcf
 
     fa = tmp_path / "ref.fa"
     fa.write_text(">chr8\n" + "ACGT" * 500 + "\n>chr22\n" + "TTGCA" * 400 + "\n")
@@ -302,21 +302,21 @@ def test_breakend_vcf(tmp_path):
     assert write_bnd_vcf(bnds, contigs, "S", out, fa) == 2
     with pysam.VariantFile(str(out)) as v:
         recs = {r.id: r for r in v}
-    a, b = recs["vedette_BND_1_1"], recs["vedette_BND_1_2"]
+    a, b = recs["svengers_BND_1_1"], recs["svengers_BND_1_2"]
     # chr8 left clip at 1,750 (0-based first aligned base): breakend base 1,751
     assert (a.chrom, a.pos, a.ref) == ("chr8", 1_751, "ACGT"[1_750 % 4])
-    assert a.alts == (f"]chr22:1250]{a.ref}",) and a.info["MATEID"] == ("vedette_BND_1_2",)
+    assert a.alts == (f"]chr22:1250]{a.ref}",) and a.info["MATEID"] == ("svengers_BND_1_2",)
     # chr22 right clip at 1,250 (first clipped base): last kept base 1,250
     assert (b.chrom, b.pos, b.ref) == ("chr22", 1_250, "TTGCA"[1_249 % 5])
     assert b.alts == (f"{b.ref}[chr8:1751[",) and b.samples["S"]["SR"] == 6
     assert list(a.filter) == ["PASS"]   # 16 pairs
-    fold = recs["vedette_BND_2_1"]
+    fold = recs["svengers_BND_2_1"]
     assert fold.alts == (f"{fold.ref}]chr22:1000]",) and fold.info["KIND"] == "FOLD"
     assert list(fold.filter) == ["Subtelomeric"]
 
 
 def test_same_strand_junction_pass_unless_the_genome_is_noisy():
-    from vedette.vcfout import BND_NOISY_SAME_STRAND, bnd_filter, noisy_genome
+    from svengers.vcfout import BND_NOISY_SAME_STRAND, bnd_filter, noisy_genome
 
     inv = Bnd("S", "chr5", 1_000_000, "R", "chr5", 1_200_000, "R", 14, 4, 3, 60.0, kind="INV")
     weak = Bnd("S", "chr5", 3_000_000, "L", "chr5", 3_010_000, "L", 6, 2, 2, 60.0, kind="FOLD")
