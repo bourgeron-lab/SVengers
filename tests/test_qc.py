@@ -1439,3 +1439,25 @@ def test_unique_depth_deletion_keeps_its_pass():
     assert sq_override("DEL", 25_000, dict(loss, cn=2), f) is None
     assert sq_override("DEL", 25_000, dict(loss, frac_consistent=0.8), f) is None
     assert sq_override("DEL", 25_000, dict(loss, maskfrac=0.6), f) is None
+
+
+def test_unique_depth_rule_off_in_a_noisy_genome():
+    """A burst of UNIQUE_DEL_DEPTH candidates (genome-wide noise the wave
+    score misses: up to 894 in one genome, against 1-11 elsewhere) turns the
+    rule off for that genome only; its other overrides stay."""
+    from vedette.config import load_config
+    from vedette.filter.pipeline import genome_overrides
+
+    f = load_config(None).filter
+    loss = {"cn": 1, "dhffc": 0.52, "frac_consistent": 0.97, "maskfrac": 0.05,
+            "fc_chrom": 1.0, "src_both": 0, "src_junction": 0, "segdup_ovl": 0.0,
+            "lcr_ovl": 0.05, "wave_score": 0.11}
+
+    def run(n, sq=1.0):   # n unique-sequence losses + one terminal loss
+        return genome_overrides(["DEL"] * (n + 1), [(0, 25_000)] * n + [(0, 134_467)],
+                                [loss] * (n + 1), [sq] * (n + 1), [False] * n + [True], f)
+
+    cap = f.unique_del_rescue_max_per_genome
+    assert run(cap) == ["UNIQUE_DEL_DEPTH"] * cap + ["TERMINAL_DEL_DEPTH"]
+    assert run(cap + 1) == [None] * (cap + 1) + ["TERMINAL_DEL_DEPTH"]
+    assert run(cap + 1, sq=9.0) == [None] * (cap + 2)   # a high SQ needs no override

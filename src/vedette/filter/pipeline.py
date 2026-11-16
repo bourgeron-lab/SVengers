@@ -89,6 +89,22 @@ def sq_override(svtype: str, size: int, feats: dict, cf, terminal: bool = False)
     return None
 
 
+def genome_overrides(svtypes, spans, feats_all, sq_all, terminal, cf) -> list[str | None]:
+    """`sq_override` of every low-SQ call of one genome. UNIQUE_DEL_DEPTH is
+    dropped for the whole genome when it would fire more than
+    `unique_del_rescue_max_per_genome` times: a burst is genome-wide noise."""
+    out = [
+        sq_override(t, e - s, f, cf, term) if sq < cf.low_sq_threshold else None
+        for t, (s, e), f, sq, term in zip(svtypes, spans, feats_all, sq_all, terminal, strict=True)
+    ]
+    n = out.count("UNIQUE_DEL_DEPTH")
+    if n > cf.unique_del_rescue_max_per_genome:
+        logger.info("filter: %d UNIQUE_DEL_DEPTH candidates > %d, rule off for this genome",
+                    n, cf.unique_del_rescue_max_per_genome)
+        out = [None if o == "UNIQUE_DEL_DEPTH" else o for o in out]
+    return out
+
+
 def run_filter(
     vcf_in: str | Path,
     store_path: str | Path,
@@ -172,6 +188,8 @@ def run_filter(
             )
 
     sq_all = model.score_batch(feats_all, svtypes) if model is not None else None
+    overrides = (genome_overrides(svtypes, spans, feats_all, sq_all, terminal, cf)
+                 if sq_all is not None else [None] * len(feats_all))
 
     # pass 2: re-read the input and write the annotated records in order
     with pysam.VariantFile(str(vcf_in)) as vcf:
@@ -201,8 +219,7 @@ def run_filter(
                     sq = float(sq_all[i])
                     new_rec.samples[sample]["SQ"] = round(sq, 2)
                     new_rec.info["MODEL_VER"] = model.version
-                    override = sq_override(svtypes[i], spans[i][1] - spans[i][0], feats, cf,
-                                           terminal[i])
+                    override = overrides[i]
                     if sq < cf.low_sq_threshold and not override:
                         all_tags.append("LowSQ")
                         counts["low_sq"] += 1

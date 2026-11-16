@@ -198,6 +198,11 @@ class FilterConfig:
     unique_del_rescue_max_repeat: float = 0.2     # segdup_ovl and lcr_ovl
     unique_del_rescue_max_mask: float = 0.5
     unique_del_rescue_max_wave: float = 0.20
+    # A genome-wide noise the wave score misses (GC/batch: hundreds of such
+    # losses, chr4-heavy) shows as a burst of candidates: 2,989 genomes give a
+    # continuous 1-11 per genome, then 15, 32, 57 ... 894. Beyond this count
+    # the rule is off for the genome.
+    unique_del_rescue_max_per_genome: int = 20
 
 
 @dataclass(frozen=True)
