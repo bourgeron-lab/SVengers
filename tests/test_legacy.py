@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import sys
 import tomllib
 from pathlib import Path
 
@@ -126,6 +127,21 @@ def test_model_manifest_with_vedette_version(tmp_path):
     manifest["svengers_version"] = manifest.pop("vedette_version")
     (copy / "manifest.json").write_text(json.dumps(manifest))
     assert FilterModel.load(copy).caller_version == model.caller_version
+
+
+def test_pre_2_model_loads_without_a_vedette_module(monkeypatch):
+    # the pickles of models trained before 2.0 name vedette.filter.model.CalibratedModel;
+    # a fresh install has no vedette package (as in CI)
+    for name in [n for n in sys.modules if n == "vedette" or n.startswith("vedette.")]:
+        monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "vedette", None)  # import vedette -> ModuleNotFoundError
+    with pytest.raises(ModuleNotFoundError):
+        import vedette.filter.model  # noqa: F401
+    model = FilterModel.load(ROOT / "models" / "v12b")
+    assert type(model.model_del).__module__ == "svengers.filter.model"
+    assert type(model.model_dup).__module__ == "svengers.filter.model"
+    # the aliases do not outlive the load
+    assert sys.modules["vedette"] is None and "vedette.filter.model" not in sys.modules
 
 
 def test_both_console_scripts_declared():

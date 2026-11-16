@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.1 — 2026-11-16
+
+- **Models trained before 2.0 load on a fresh install** — their pickles name
+  `vedette.filter.model.CalibratedModel`; v2.0.0 found that class only where
+  the old `vedette` package was still importable, so `filter` with the
+  production model (`models/v12b`) failed on a new install. While a model
+  loads, `vedette.*` now resolves to the matching `svengers.*` module. Scores
+  are unchanged (same class).
+
 ## v2.0.0 — 2026-11-16
 
 Vedette is now **SVengers**, developed at https://github.com/bourgeron-lab/SVengers.

@@ -8,7 +8,9 @@ tool name: nothing to translate there.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import sys
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 NAME = "svengers"
@@ -46,3 +48,27 @@ def caller_version(meta: Mapping) -> str | None:
             return str(meta[key])
     return None
 
+
+
+@contextmanager
+def legacy_modules() -> Iterator[None]:
+    """While unpickling, ``vedette.<module>`` is the imported ``svengers.<module>``.
+
+    The filter models trained before 2.0 are pickles that name their classes
+    ``vedette.filter.model.CalibratedModel``; the aliases are removed (and any
+    previous ``vedette.*`` entry restored) on exit."""
+    absent = object()
+    saved: dict[str, object] = {}
+    for name, module in list(sys.modules.items()):
+        if name == NAME or name.startswith(NAME + "."):
+            old = LEGACY_NAME + name[len(NAME):]
+            saved[old] = sys.modules.get(old, absent)
+            sys.modules[old] = module
+    try:
+        yield
+    finally:
+        for old, module in saved.items():
+            if module is absent:
+                sys.modules.pop(old, None)
+            else:
+                sys.modules[old] = module

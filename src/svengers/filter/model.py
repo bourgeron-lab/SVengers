@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..legacy import caller_version
+from ..legacy import caller_version, legacy_modules
 from .schema import FEATURES, schema_hash
 
 logger = logging.getLogger(__name__)
@@ -88,11 +88,12 @@ class FilterModel:
                     f"{manifest['schema_hash']}, this build has {schema_hash()}: "
                     "retrain or use a matching svengers version"
                 )
-        return cls(
-            joblib.load(model_dir / "model_del.joblib"),
-            joblib.load(model_dir / "model_dup.joblib"),
-            manifest,
-        )
+        with legacy_modules():  # models pickled before 2.0 name vedette.filter.model
+            return cls(
+                joblib.load(model_dir / "model_del.joblib"),
+                joblib.load(model_dir / "model_dup.joblib"),
+                manifest,
+            )
 
     def score(self, features: dict[str, float], svtype: str) -> float:
         """Phred-scaled calibrated P(true call)."""
