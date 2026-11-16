@@ -817,6 +817,36 @@ def test_merged_row_shows_majority_inheritance():
     assert clean[0]["inherit"] == "maternel"
 
 
+def test_merged_denovo_row_shows_the_strongest_denovo():
+    """A terminal 22q13.3 deletion cut into five sub-sites, two confirmed de
+    novo on the child's own call and three only genotyped: the majority vote
+    showed it as genotype-only in 13 children."""
+    from vedette.export import _inheritance, majority_inheritance
+    from vedette.report import _INHERIT_FR, collapse_events
+
+    def ev(pos, end, sid, code):
+        return dict(id=sid, contig="chr22", pos=pos, end=end, svtype="DEL",
+                    size=end - pos, filter="PASS", rescue="", genes="", impact="",
+                    inherit=_INHERIT_FR[code], sqmax="", cfrac="", refcf="", lcr="",
+                    segdup="", carriers=["SMP-08"], gt=[],
+                    _inh_by={"SMP-08": [(code, "99" if code == "denovo" else "")]})
+
+    codes = ["denovo_genotype_only", "denovo", "denovo_genotype_only", "denovo",
+             "denovo_genotype_only"]
+    out = collapse_events([ev(50_643_786 + i * 1000, 50_818_467, f"s{i}", c)
+                           for i, c in enumerate(codes)])
+    assert len(out) == 1
+    assert out[0]["inherit"] == "de novo"
+    assert _inheritance(out[0]["_inh_by"]["SMP-08"]) == ("denovo", "99")
+
+    # a non-de novo majority is left alone; a de novo minority does not take over
+    assert majority_inheritance(["maternal", "maternal", "denovo"]) == ("maternal", 2)
+    assert majority_inheritance(["denovo_lowconf", "denovo_weak", "paternal"])[0] == "denovo_weak"
+    assert majority_inheritance(["denovo_genotype_only"] * 3 + ["denovo_lowconf"]) == (
+        "denovo_genotype_only", 4)
+    assert majority_inheritance([]) == ("", 0)
+
+
 def test_denovo_cutoff_is_cohort_relative():
     """An absolute 20 flagged 664 of 665 dataset_paper children; 5x the
     cohort median flags the tail only, with the floor for family runs."""

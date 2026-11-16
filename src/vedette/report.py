@@ -32,7 +32,7 @@ import pysam
 
 from . import __version__
 from .clingen import ClinGen, region_points
-from .export import qc_row, write_family_export
+from .export import DENOVO_RANK, majority_inheritance, qc_row, write_family_export
 from .karyotype import aneuploid_sex_chromosomes, is_anomaly
 from .ped import Pedigree
 from .qc import WAVE_WARN
@@ -241,6 +241,7 @@ _INHERIT_FR = {
     "biparental": "biparental",
     "none": "aucun parent",
 }
+_DENOVO_FR = tuple(_INHERIT_FR[k] for k in DENOVO_RANK)
 
 
 
@@ -836,11 +837,11 @@ def collapse_events(events: list[dict], genes_fn=None, impact_fn=None,
         # inheritance of a merged row: the label most of its sites agree on,
         # not the concatenation of every variant seen. A terminal deletion
         # picks up a handful of sites a parent also carries, and listing them
-        # all buried the fact that the event is de novo.
+        # all buried the fact that the event is de novo. A de novo majority
+        # shows the strongest de novo label of the sites (majority_inheritance).
         labels = [x for x in e.pop("_inh", []) if x]
         if labels:
-            counts = Counter(labels)
-            top, n = counts.most_common(1)[0]
+            top, n = majority_inheritance(labels, _DENOVO_FR)
             e["inherit"] = top if n == len(labels) else f"{top} ({n}/{len(labels)})"
         e["n_sites"] = len(e["_ids"])
         e["size"] = e["end"] - e["pos"]

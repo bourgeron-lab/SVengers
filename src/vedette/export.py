@@ -73,12 +73,33 @@ def row_kind(e: dict) -> str:
     return {"mosaïque": "mosaic", "chromosomique": "chromosomal"}.get(e.get("own") or "", "site")
 
 
+# de novo labels of `ped-annotate`, strongest first
+DENOVO_RANK = ("denovo", "denovo_weak", "denovo_genotype_only", "denovo_lowconf")
+
+
+def majority_inheritance(labels: list[str], rank=DENOVO_RANK) -> tuple[str, int]:
+    """(label, n of labels it stands for) over the sites of a merged row: the
+    label most of them agree on, except that when it is a de novo one, the
+    row takes the strongest de novo label of its sites, standing for all of
+    them. A terminal deletion is cut into sub-sites, the confirmed de novo on
+    the child's own call and the others only genotyped; a majority vote showed
+    the 22q13.3 deletion of 13 children as genotype-only."""
+    counts = Counter(x for x in labels if x)
+    if not counts:
+        return "", 0
+    top, n = counts.most_common(1)[0]
+    if top in rank:
+        top = next(x for x in rank if x in counts)
+        n = sum(counts[x] for x in rank)
+    return top, n
+
+
 def _inheritance(labels: list[tuple[str, str]]) -> tuple[str, str]:
-    """(code, dnq) of one child over the sites of a row: the label most of
-    them agree on; the best DNQ of its de novo sites."""
+    """(code, dnq) of one child over the sites of a row (`majority_inheritance`);
+    the best DNQ of its de novo sites."""
     if not labels:
         return "", ""
-    top = Counter(inh for inh, _ in labels).most_common(1)[0][0]
+    top, _ = majority_inheritance([inh for inh, _ in labels])
     dnq = [int(d) for inh, d in labels if inh == "denovo" and d]
     return top, (str(max(dnq)) if dnq else "")
 
