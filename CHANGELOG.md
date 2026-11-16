@@ -1,5 +1,31 @@
 # Changelog
 
+## v2.0.0 — 2026-11-16
+
+Vedette is now **SVengers**, developed at https://github.com/bourgeron-lab/SVengers.
+Results are unchanged: on a Phelan-McDermid cohort (319 genomes) re-filtered
+from its v1.16.1 calls, every filtered VCF, the cohort VCF, the Mendelian
+report and the family tables are identical but for the names.
+
+- **New name everywhere it is written** — Python package and command
+  `svengers`; per-sample raw calls `<S>.svengers.vcf.gz`; family exports
+  `<FID>.svengers.{tsv,json,parquet,qc.tsv}`; cohort site ids
+  `svengers_site_N`; VCF headers `##source=svengers-*` and
+  `##svengers_coords`; export and model metadata `svengers_version`;
+  Nextflow processes `SVENGERS_*` and parameters `--svengers_bin`,
+  `--svengers_config`; container recipe `containers/svengers.def`.
+- **What Vedette wrote stays readable** — the `vedette` command remains as an
+  alias; raw calls named `<S>.vedette.vcf.gz` are found by `filter`,
+  `regenotype`, `label` and the Nextflow `--calls_dir`; `##vedette_coords`
+  and `source=vedette` headers keep their coordinate convention;
+  `vedette_version` metadata, `<FID>.vedette.*` exports and the models
+  trained so far load as before; `--vedette_bin` and `--vedette_config` are
+  accepted; validations saved in the family pages under the old keys are
+  still read. Evidence stores and the feature schema (hash
+  f89b9e8890da996f) are untouched: no genome needs to be called again.
+- **Nextflow** — `SVENGERS_BND` starts at 128 GB: at 64 GB it ran out of its
+  6 h on 2,670 genomes, then took 44 min at 128 GB.
+
 ## v1.16.1 — 2026-11-16
 
 The family tables and pages showed the wrong inheritance on merged rows.
