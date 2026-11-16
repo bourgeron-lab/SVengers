@@ -79,19 +79,20 @@ DENOVO_RANK = ("denovo", "denovo_weak", "denovo_genotype_only", "denovo_lowconf"
 
 def majority_inheritance(labels: list[str], rank=DENOVO_RANK) -> tuple[str, int]:
     """(label, n of labels it stands for) over the sites of a merged row: the
-    label most of them agree on, except that when it is a de novo one, the
-    row takes the strongest de novo label of its sites, standing for all of
-    them. A terminal deletion is cut into sub-sites, the confirmed de novo on
-    the child's own call and the others only genotyped; a majority vote showed
-    the 22q13.3 deletion of 13 children as genotype-only."""
+    label most of them agree on, the de novo labels voting as one; when they
+    win, the row takes the strongest de novo label of its sites. A terminal
+    deletion is cut into sub-sites, the confirmed de novo on the child's own
+    call and the others only genotyped, and picks up small inherited
+    polymorphisms: a plain majority vote showed the 22q13.3 deletion of 16
+    children as genotype-only, and a 10q26.3 one as biparental."""
     counts = Counter(x for x in labels if x)
     if not counts:
         return "", 0
-    top, n = counts.most_common(1)[0]
-    if top in rank:
-        top = next(x for x in rank if x in counts)
-        n = sum(counts[x] for x in rank)
-    return top, n
+    n_dn = sum(counts[x] for x in rank)
+    other = [(x, k) for x, k in counts.most_common() if x not in rank]
+    if n_dn and (not other or n_dn >= other[0][1]):
+        return next(x for x in rank if x in counts), n_dn
+    return other[0]
 
 
 def _inheritance(labels: list[tuple[str, str]]) -> tuple[str, str]:

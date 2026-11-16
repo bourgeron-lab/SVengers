@@ -820,7 +820,7 @@ def test_merged_row_shows_majority_inheritance():
 def test_merged_denovo_row_shows_the_strongest_denovo():
     """A terminal 22q13.3 deletion cut into five sub-sites, two confirmed de
     novo on the child's own call and three only genotyped: the majority vote
-    showed it as genotype-only in 13 children."""
+    showed it as genotype-only in 16 children."""
     from vedette.export import _inheritance, majority_inheritance
     from vedette.report import _INHERIT_FR, collapse_events
 
@@ -839,9 +839,13 @@ def test_merged_denovo_row_shows_the_strongest_denovo():
     assert out[0]["inherit"] == "de novo"
     assert _inheritance(out[0]["_inh_by"]["SMP-08"]) == ("denovo", "99")
 
-    # a non-de novo majority is left alone; a de novo minority does not take over
+    # the de novo labels vote as one: a 10q26.3 deletion with two small
+    # biparental polymorphisms glued in stays de novo
+    assert majority_inheritance(["denovo", "denovo_weak", "biparental", "biparental",
+                                 "denovo_genotype_only"]) == ("denovo", 3)
+    # a non-de novo majority is left alone
     assert majority_inheritance(["maternal", "maternal", "denovo"]) == ("maternal", 2)
-    assert majority_inheritance(["denovo_lowconf", "denovo_weak", "paternal"])[0] == "denovo_weak"
+    assert majority_inheritance(["denovo_lowconf", "denovo_weak", "paternal"]) == ("denovo_weak", 2)
     assert majority_inheritance(["denovo_genotype_only"] * 3 + ["denovo_lowconf"]) == (
         "denovo_genotype_only", 4)
     assert majority_inheritance([]) == ("", 0)
