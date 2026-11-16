@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.2 — 2026-11-16
+
+- **scikit-learn pinned to 1.7** (`>=1.7,<1.8`, package and container
+  environment) — the shipped filter models (`models/v12b` in production) are
+  scikit-learn 1.7 pickles; a fresh install picked scikit-learn 1.9, which
+  cannot read them (`No module named '_loss'`). Models trained with another
+  scikit-learn version will need this pin moved with them.
+
 ## v2.0.1 — 2026-11-16
 
 - **Models trained before 2.0 load on a fresh install** — their pickles name
