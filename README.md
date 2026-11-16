@@ -23,7 +23,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v1.15.1**, in production
+Status: **v1.16.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -421,7 +421,7 @@ P(true) is isotonic-calibrated: SQ 5 is P ≈ 0.68, SQ 13 is P ≈ 0.95. Calls b
 does not match the build (a model trained on a prefix of the current schema is accepted).
 
 **Overrides.** The model has almost never seen very large events, and scores them badly.
-Three rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
+Four rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
 
 - `LARGE_DEL_DEPTH`: deletion ≥ 200 kb whose depth relative to its chromosome is < 0.75,
   with < 50 % masked bins. Without it, half of the 1-10 Mb deletions of a family cohort
@@ -439,6 +439,18 @@ Three rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
   read, and the model, which weighs junction evidence above all, scored the 134 kb 22q13.3
   deletion (SHANK3) of eleven children at SQ ≈ 1. On the two production cohorts it touches
   14 calls per 2,670 genomes and leaves the de novo gate unchanged.
+- `UNIQUE_DEL_DEPTH`: depth-only deletion ≥ 10 kb (no junction evidence) outside repeats
+  (segmental duplication and low-complexity overlap < 0.2), at CN ≤ 1, depth ratio ≤ 0.65,
+  ≥ 90 % consistent bins, < 50 % masked bins, in a genome of wave score < 0.20. The model
+  scores such a loss like a coverage dip, yet in trios whose parent and child sit on
+  different flowcells (so that no batch artefact can pass for transmission), the parents'
+  calls of this class at SQ < 5 are transmitted at 0.45, against 0.07 in unrelated genomes
+  of other flowcells: ~85 % real, no worse than those already PASS. In repeats the same
+  class is ~60 % real at any SQ, which no threshold can sort, and it is left to the model.
+  A genome where the rule would fire more than 20 times
+  (`unique_del_rescue_max_per_genome`) has a genome-wide noise the wave score misses
+  (one gave 894 such losses, chr4-heavy, against 1-11 elsewhere): there the rule is off.
+  It adds 1-2 PASS deletions per genome in median.
 
 `--features-out` also writes the feature matrix (TSV), the input of model training.
 
@@ -472,8 +484,8 @@ without reading any CRAM; chrY is skipped in women. One job per sample, I/O-ligh
 
 ### 5. Cohort metrics (`vedette cohort-filter`)
 
-The per-sample tables are assembled into a multi-sample VCF (`GT:GQ:CN:RD:PE:SR`) with
-`AC`, `AN`, `AF`, `NS`, `NCARRIER`, `CARRIER_FRAC`, `HWE_P`, `GTR_DISC`, `CN_DISC`, and
+The per-sample tables are assembled into a multi-sample VCF (`GT:GQ:CN:RD:PE:SR`, and `FT`,
+below) with `AC`, `AN`, `AF`, `NS`, `NCARRIER`, `CARRIER_FRAC`, `HWE_P`, `GTR_DISC`, `CN_DISC`, and
 five site filters, plus two from the trios with a `--pedigree`:
 
 | FILTER | rule (defaults) |
@@ -514,6 +526,19 @@ in the parents is rarely transmitted. On dataset_paper (665 trios) they remove 8
 and 581 DUP sites that were otherwise PASS, and the median raw de novo burden per child
 falls from 27 to 19 (197 to 103 in the children at wave ≥ 0.20).
 
+**Weakly supported genotypes (`FORMAT/FT`).** Most of the de novo left in batch-affected
+or wavy children are not depth artefacts but genotypes held by split reads alone: no
+discordant pair and a copy ratio that hardly departs from 1 (DEL 1-10 kb de novo: PE 0,
+RD ~0.75; inherited: PE ~10, RD ~0.6), up to thousands per child on one flowcell. A
+carrier genotype ≥ 1 kb with no discordant pair and a copy ratio that does not support
+its type (DEL RD > 0.75, > 0.62 from 10 kb; DUP RD < 1.25) gets `FT=WeakSupport`; at such
+a record the other samples get `FT=PASS` (or `.` when not genotyped). `GT` is unchanged and
+the site filters above use it, so the PASS site set is the same; `ped-annotate`, the trio
+benchmarks and `bench cohort` read a `WeakSupport` genotype as missing. On dataset_paper
+this takes the median de novo per child from 19 to 15 (103 to 65 at wave ≥ 0.20) and the
+recurrent de novo sites from 1,401 to 1,012, for 2-8 % of the inherited genotypes ≥ 1 kb.
+Below 1 kb split reads are the main evidence and no genotype is flagged.
+
 `vedette pon artifacts` turns a cohort VCF into a recurrent-artefact BED (founder AF ≥ 0.03
 with HWE p ≤ 1e-6, or ≥ 3 nominators with discordance ≥ 0.5), which `filter --artifact-bed`
 applies to later runs.
@@ -552,8 +577,9 @@ of the same type at the site (any FILTER: a LowSQ parental call is the evidence 
 0/0 missed; report column `parent_call`); and at most max(`--max-other-carriers` 2,
 `--max-other-carrier-frac` 0.005 × pedigree samples) samples outside the family carry the
 site (`other_carriers`). The other GQ-confident de novo with a call of the child are
-`denovo_weak` (`n_denovo_weak`). On dataset_paper this leaves 202 confirmed de novo
-(DEL 173, DUP 29) in 665 children.
+`denovo_weak` (`n_denovo_weak`). On dataset_paper this leaves 180 confirmed de novo
+(DEL 151, DUP 29) in 665 children (202 before the `WeakSupport` genotype flag, which removed
+26 split-read-only deletions of wavy children and GC-rich regions).
 
 At an established **ClinGen dosage-sensitive locus** (`--clingen-genes`,
 `--clingen-regions`: a gene of haploinsufficiency score 3 for a deletion,

@@ -1,5 +1,51 @@
 # Changelog
 
+## v1.16.0 — 2026-11-16
+
+Depth-only deletions outside repeats keep their PASS, and the cohort VCF flags
+the genotypes held by split reads alone, which the trio tools now read as
+missing. Model, store schema and feature schema unchanged; no retraining.
+
+Batch is now measurable: each genome's flowcell, read from its read names,
+gives trios whose parent and child sit on different flowcells, where a batch
+artefact cannot pass for transmission (352 of 665 in dataset_paper).
+
+- **`UNIQUE_DEL_DEPTH` override** — a depth-only deletion >= 10 kb (no
+  junction evidence) outside repeats (segmental duplication and low-complexity
+  overlap < 0.2), at CN <= 1, depth ratio <= 0.65, >= 90 % consistent bins,
+  < 50 % masked bins, in a genome of wave score < 0.20, is PASS whatever its
+  SQ (`INFO/SQ_OVERRIDE=UNIQUE_DEL_DEPTH`). In parent/child pairs on different
+  flowcells, the parents' calls of this class at SQ < 5 are transmitted at 0.45
+  against 0.07 in unrelated genomes of other flowcells (~85 % real, no worse
+  than those already PASS). In repeats the class is ~60 % real at any SQ, which
+  no threshold and no retraining on these features can sort: left to the
+  model. The rule is off in a genome where it would fire more than 20 times
+  (`unique_del_rescue_max_per_genome`): such a burst (up to 894 in one genome,
+  chr4-heavy, against 1-11 elsewhere) is a genome-wide noise the wave score
+  misses, and two such genomes carried nearly all the confirmed de novo a first
+  version added. On the two production cohorts (2,989 genomes) it adds 1-2
+  PASS deletions per genome in median (PASS DEL >= 10 kb +1.3 to +1.8 per
+  genome in every wave stratum); on HG002 it adds 4, two of them true
+  deletions of the GIAB v5.0q benchmark and two outside it. New `filter`
+  settings `unique_del_rescue_size`, `_max_ratio`, `_min_consistent`,
+  `_max_repeat`, `_max_mask`, `_max_wave`, `_max_per_genome`.
+- **`FORMAT/FT=WeakSupport` in the cohort VCF** — a carrier genotype >= 1 kb
+  with no discordant pair and a copy ratio that does not support its type (DEL
+  RD > 0.75, > 0.62 from 10 kb; DUP RD < 1.25). The de novo left in wavy or
+  batch-affected children are such genotypes (DEL 1-10 kb de novo: PE 0, RD
+  ~0.75; inherited: PE ~10, RD ~0.6), up to thousands per child on one
+  flowcell. `GT` is unchanged and the site filters still use it (the PASS site
+  set is the same); `ped-annotate`, `bench cohort` and the trio benchmarks read
+  a `WeakSupport` genotype as missing. On dataset_paper (665 trios) the median
+  de novo per child goes from 19 to 15 (103 to 65 at wave >= 0.20), recurrent
+  de novo sites from 1,401 to 1,012, for 2-8 % of the inherited genotypes
+  >= 1 kb; the confirmed de novo go from 202 to 180 (26 split-read-only
+  deletions of wavy children and GC-rich regions removed, 4 added). In the
+  Phelan-McDermid cohort (94 trios) every child with the 22q13.3 deletion
+  stays confirmed (135 to 129: redundant sites carrying another child's
+  breakpoint). Mendelian violation and transmission rates unchanged. Thresholds
+  in `cohort.metrics.TRIO_DEFAULTS` (`weak_*`).
+
 ## v1.15.1 — 2026-11-15
 
 A clean terminal deletion keeps its PASS. Model, store schema and feature
