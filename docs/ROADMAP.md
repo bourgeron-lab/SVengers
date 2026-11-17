@@ -150,7 +150,15 @@ access agreements. Only remaining 100% public route: public wavy trios
    p = 0.001); DEL >= 10 kb or DUP >= 100 kb 9.5% vs 2.4% (OR 4.2,
    p = 0.0009); DEL 1-10 kb 5.8% vs 4.4% (n.s.). Wave >= 0.20 (27
    children): two genomes carry 46 confirmed DEL >= 100 kb between them,
-   artifacts; confirmed de novo DUP exist only >= 100 kb.
+   artifacts; confirmed de novo DUP exist only >= 100 kb. Recurrent
+   confirmed de novo sites (>= 2 families, `runs/_cmp/denovo_recurrent.py`):
+   13, all >= 100 kb; 8 only in wave >= 0.20 children (artifacts), the
+   others 16p11.2, 22q13/SHANK3, the IGL locus (somatic, blood DNA) and an
+   Xq28 PAR2 DUP (suspect). At ClinGen dosage-sensitive loci
+   (`runs/_cmp/denovo_clingen.py`): 23 sites in 22 children (SHANK3,
+   SHANK2, 16p11.2, MBD5, 3q29, 7q11.23 DUP, MYT1L, SATB2, FOXP2…);
+   children with wave < 0.20: 17/431 affected vs 1/205 unaffected (OR 8.4,
+   p = 0.01).
 
 **Outside the freeze** (after the paper, or in parallel without touching
 production): fragmented calls of large deletions and complex events (`bnd`,
