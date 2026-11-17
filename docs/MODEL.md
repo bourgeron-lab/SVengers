@@ -13,7 +13,7 @@ regression on out-of-fold probabilities.
 
 | Source | Access | DEL TP / FP | DUP TP / FP | Labels |
 |---|---|---|---|---|
-| GIAB HG002, HG003, HG004 (30x Illumina) | public | 11,047 / 14,104 | 3,862 / 18,017 | Truvari against the GIAB truth sets |
+| GIAB HG002, HG003, HG004 (NovaSeq PCR-free, about 40x) | public | 11,047 / 14,104 | 3,862 / 18,017 | HG002: Truvari against GIAB v5.0q; HG003/HG004 (its parents): by transmission against the HG002 truth set and HG002 false-positive loci (`svengers label --parent-mode`) |
 | 16 children of GHFC family trios, chosen for wavy depth | controlled | 68,024 / 2,832 | 39,628 / 3,145 | transmission from both parents (`svengers label-trio`) |
 
 - The weights are public (`models/v12b`); the 16 GHFC genomes are not. They
@@ -40,6 +40,11 @@ different labels.
 Retrained with the same recipe without HG002 (`v12b_noHG002`), on HG002:
 DEL F1 0.515 against GIAB v5.0q (0.836 for 1-10 kb, precision 0.872) and
 0.582 against CMRG.
+
+Caveat: `v12b_noHG002` keeps the HG003/HG004 labels, which were defined from
+the HG002 truth set and HG002 false-positive loci. The evaluation is out of
+sample for the genome, not fully for the loci; a locus-disjoint evaluation
+(training and testing on different chromosomes) is planned.
 
 ## Ablation: public data only (v14p)
 
