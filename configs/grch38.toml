@@ -1,0 +1,22 @@
+# SVengers configuration for GRCh38, any site.
+#
+# Build the resource directory with
+#     workflows/build_grch38_resources.sh /path/to/svengers-grch38 /path/to/clinsv/refdata-b38
+# (sources, licences and checksums: docs/RESOURCES.md), then replace
+# /path/to/svengers-grch38 below with that directory. Relative paths are read from the
+# working directory. These are the files the paper's results were produced with; the
+# filter model (models/v12b) was trained on them.
+
+[reference]
+fasta = "/path/to/svengers-grch38/GRCh38_GIABv3_no_alt_analysis_set_maskedGRC_decoys_MAP2K3_KMT2C_KCNJ18.fasta"
+exclude_bed = "/path/to/svengers-grch38/exclude.cnvnator_100bp.GRCh38.20170403.bed"
+segdup_bed = "/path/to/svengers-grch38/GRCh38GenomicSuperDup.bed.gz"
+lcr_bed = "/path/to/svengers-grch38/selfchain-LCR.hg38.bed"
+# Population coverage SD (ClinSV reference data, research use). Optional for the code,
+# not for the model: without it the filter scores differ from the published ones
+# (docs/RESOURCES.md).
+pop_cov_stdev_bw = "/path/to/svengers-grch38/popCovStdev.bw"
+
+# Operating point of models/v12b (also the built-in default).
+[filter]
+low_sq_threshold = 5.0

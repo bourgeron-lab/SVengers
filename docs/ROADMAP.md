@@ -118,7 +118,15 @@ access agreements. Only remaining 100% public route: public wavy trios
      DUP +26%. A substitute track is not an option during the freeze.
    - Still to check: the segmental-duplication and exclusion BEDs are
      copies from ClinSV refdata; their public origins (UCSC
-     genomicSuperDups, speedseq) are not yet verified byte-identical.
+     genomicSuperDups, speedseq) are not yet verified byte-identical
+     (the speedseq exclusion list has the same size, 166,763 bytes).
+   - Done 2026-11-17: `configs/grch38.toml` (generic config),
+     `docs/RESOURCES.md` (sources, recipes, md5, licences, cost of a
+     missing track) and `workflows/build_grch38_resources.sh` (downloads
+     the GIAB FASTA, rebuilds the LCR mask, takes the three ClinSV tracks
+     from the user's ClinSV refdata, checks every md5; tested from the
+     extracted directory and from the archive). Still open: public
+     container on ghcr.io, Zenodo DOI.
 5. **Writing**: application note or full paper, to be decided (sets the
    scope of 2 and 3). All de novo numbers are to be recomputed on the
    frozen version at the "confirmed de novo" level (PASS call of the child,

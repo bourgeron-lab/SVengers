@@ -99,9 +99,12 @@ need:
 | Ensembl GFF (bgzip + tabix) | report (gene column) | optional |
 | GeneTrek NDD gene table (TSV) | report (impact score) | optional, not distributed here |
 
-None of these files, and no panel of normals, ship with the repository. GC content and N
-fraction per bin are computed from the FASTA on first use and cached in the `--resources`
-directory.
+None of these files, and no panel of normals, ship with the repository. The exact files the
+published results were produced with (sources, recipes, checksums, licences, and what a
+missing track costs) are listed in [docs/RESOURCES.md](docs/RESOURCES.md);
+`workflows/build_grch38_resources.sh` rebuilds them and `configs/grch38.toml` points at
+them. GC content and N fraction per bin are computed from the FASTA on first use and
+cached in the `--resources` directory.
 
 ## Quick start
 
@@ -1173,8 +1176,10 @@ Main keys (defaults):
 
 The full list with comments is `src/svengers/config.py`. Reference paths given on the
 command line (`--fasta`, `--exclude-bed`, `--segdup-bed`, `--lcr-bed`, `--popcov-bw`)
-override the file. `configs/ghfc.toml` and `configs/giab.toml` are complete examples from
-the GHFC site (their paths are cluster paths, to be replaced); the Nextflow parameters are
+override the file. `configs/grch38.toml` is the generic GRCh38 file for the resource
+directory of `workflows/build_grch38_resources.sh`; `configs/ghfc.toml` and
+`configs/giab.toml` are complete examples from the GHFC site (their paths are cluster
+paths, to be replaced); the Nextflow parameters are
 in `workflows/nextflow/nextflow.config`.
 
 ## Parallelism and resources
