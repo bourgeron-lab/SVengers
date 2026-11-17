@@ -76,9 +76,19 @@ micromamba run -n svengers svengers --help
 A dedicated environment is recommended: the CLI and the Nextflow wrapper call the
 `svengers` executable of that environment (`params.svengers_bin`).
 
-Containers are provided: `containers/Dockerfile` (Docker,
-`docker build -f containers/Dockerfile -t svengers:latest .`) and `containers/svengers.def`
-(Apptainer/Singularity).
+Containers: every release is published as `ghcr.io/bourgeron-lab/svengers:<version>` (and
+`:latest`), with the filter model in `/opt/svengers/models/v12b` and the generic GRCh38
+config in `/opt/svengers/configs/grch38.toml`; mount the resource directory built by
+`workflows/build_grch38_resources.sh` ([docs/RESOURCES.md](docs/RESOURCES.md)).
+
+```bash
+docker pull ghcr.io/bourgeron-lab/svengers:latest
+apptainer pull svengers.sif docker://ghcr.io/bourgeron-lab/svengers:latest
+```
+
+The recipes are `containers/Dockerfile` (`docker build -f containers/Dockerfile -t
+svengers:latest .`) and `containers/svengers.def` (Apptainer/Singularity), both built from
+the repository root.
 
 Training and benchmarking (not needed to call) additionally use
 [Truvari](https://github.com/ACEnglish/truvari): `pip install truvari`.

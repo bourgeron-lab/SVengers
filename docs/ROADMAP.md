@@ -127,8 +127,10 @@ access agreements. Only remaining 100% public route: public wavy trios
      from the user's ClinSV refdata, checks every md5; tested from the
      extracted directory and from the archive, and end to end from an
      empty directory with every download: 13 min, all six files
-     identical to the paper's). Still open: public container on ghcr.io,
-     Zenodo DOI.
+     identical to the paper's). Container: the release workflow publishes
+     `ghcr.io/bourgeron-lab/svengers:<version>` and `:latest` from the next
+     tag on (model v12b and `configs/grch38.toml` inside the image). Still
+     open: Zenodo DOI.
 5. **Writing**: application note or full paper, to be decided (sets the
    scope of 2 and 3). All de novo numbers are to be recomputed on the
    frozen version at the "confirmed de novo" level (PASS call of the child,
