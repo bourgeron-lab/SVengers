@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.1.3 — 2026-11-17
+
+Documentation only; calls and scores are those of v2.1.0.
+
+- **Locus-disjoint HG002 evaluation** (`docs/MODEL.md`) — the out-of-sample
+  model trained without HG002 kept the HG003/HG004 labels, which are defined
+  from HG002's truth set and false-positive loci. Two models trained without
+  HG002 on half of the chromosomes each, HG002 scored on the chromosomes each
+  never saw: deletion F1 0.515 against GIAB v5.0q (precision 0.817 instead of
+  0.872), 0.843 at 1-10 kb, 0.717 at 10-100 kb, 0.552 against CMRG.
+- **Model card corrected** — the GIAB genomes are NovaSeq PCR-free at about
+  40x (not 30x), and the labels of HG003/HG004 are transmission labels
+  against HG002 (`svengers label --parent-mode`), not their own truth sets.
+- **Zenodo DOI** in the README and `CITATION.cff` (10.5281/zenodo.24308195,
+  all versions).
+
 ## v2.1.2 — 2026-11-17
 
 Citation metadata only; calls and scores are those of v2.1.0.
