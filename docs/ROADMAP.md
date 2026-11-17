@@ -49,12 +49,51 @@ haute couverture, NYGC), ~1 To à télécharger, hors gel.
    PMS connues par une autre technique (puce, ACPA, MLPA), avec leurs
    tailles ; données à fournir par Alexandre. Donne une sensibilité réelle
    par taille et l'exactitude des bornes.
-2. **Comparaisons sans rien relancer** : ClinSV et WisecondorX existent déjà
-   pour dataset_paper → métriques de trio par outil (MVR, transmission,
-   de novo confirmés) ; Manta, DELLY et dysgu sur HG002
-   (`resources/giab/comparison_final`) re-notés contre le modèle gelé. Les
-   callers de profondeur sur HG002 (CNVnator, GATK-gCNV) seulement si
-   l'article complet est retenu.
+2. **Comparaisons sans rien relancer : faites (2026-11-17)**, `runs/_cmp/`.
+   Restent les callers de profondeur sur HG002 (CNVnator, GATK-gCNV),
+   seulement si l'article complet est retenu.
+   - **HG002** (`runs/_cmp/hg002/`, 2026-11-10/12 ; v12b entraîné sans
+     HG002, PASS ; ClinSV lancé sur HG002) — F1 :
+
+     | | SVengers | Manta | dysgu | DELLY | ClinSV |
+     |---|---|---|---|---|---|
+     | DEL toutes tailles (v5.0q) | 0,514 | 0,536 | 0,541 | 0,423 | 0,395 |
+     | DEL 50-300 pb | 0,396 | 0,458 | 0,454 | 0,259 | 0,191 |
+     | DEL 1-10 kb | 0,831 | 0,769 | 0,778 | 0,800 | 0,691 |
+     | DEL 10-100 kb | 0,718 | 0,595 | 0,500 | 0,456 | 0,534 |
+     | DUP en tandem (DUP→INS) | 0,145 | 0,057 | 0,004 | 0,032 | 0,020 |
+     | DEL CMRG | 0,582 | 0,652 | 0,582 | 0,400 | 0,426 |
+
+     SVengers est premier sur les DEL de 1 à 100 kb (précision 0,963 à
+     1-10 kb, 1,000 à 10-100 kb) et dernier des callers de jonction sous
+     300 pb.
+   - **Trios dataset_paper** (`runs/_cmp/trios_tools.py` →
+     `trios_tools.tsv`, 665 enfants, appels individuels PASS de chaque
+     outil, autosomes) : par appel PASS de l'enfant, appel du même outil
+     chez un parent (RO ≥ 0,5, tout FILTER ; aussi PASS seul) ;
+     « inexpliqués » = sans appel parental (candidats de novo, presque tous
+     faux) ; transmission des appels PASS propres à un parent (attendu
+     ~0,5).
+
+     | DEL | par enfant | avec parent | inexpliqués/enfant | transmission |
+     |---|---|---|---|---|
+     | SVengers 1-10 kb | 276 | 99,3 % | 2 | 0,55 |
+     | ClinSV 1-10 kb | 878 | 95,3 % | 40 | 0,53 |
+     | SVengers 10-100 kb | 18 | 98,4 % | 0,3 (moy.) | 0,51 |
+     | ClinSV 10-100 kb | 564 | 78,9 % | 122 (moy.) | 0,40 |
+     | WisecondorX 10-100 kb | 5 | 59,7 % | 3,5 (moy.) | 0,41 |
+     | SVengers ≥ 100 kb | 1 | 80 % | 0,2 (moy.) | 0,35 |
+     | WisecondorX ≥ 100 kb | 1 | 24 % | 15,7 (moy.) | 0,13 |
+
+     Génomes wave ≥ 0,20 (27 enfants) : SVengers DEL 1-10 kb inexpliquées
+     3 par enfant (2 ailleurs) ; ClinSV DEL 10-100 kb 331 en moyenne ;
+     WisecondorX DEL ≥ 100 kb 249.
+   - **À présenter tels quels** : DEL < 1 kb, SVengers 392 inexpliquées par
+     enfant contre 178 pour ClinSV ; DUP ≥ 1 kb, presque aucune PASS au
+     niveau individuel (appels présents, SQ sous le seuil ; l'étape cohorte
+     les récupère par récurrence), ClinSV en sort des centaines par enfant ;
+     parent en PASS seul, SVengers DEL 1-10 kb 87,7 % avec parent contre
+     92,1 % pour ClinSV (l'appel parental de SVengers est souvent LowSQ).
 3. **Hors échantillon** : HG002 avec un modèle entraîné sans HG002 ;
    Platinum Pedigree (plan dans « Harness de benchmark » ; téléchargement
    avec l'accord d'Alexandre, tailles annoncées avant).
