@@ -97,7 +97,26 @@ access agreements. Only remaining 100% public route: public wavy trios
    Alexandre's approval, sizes announced beforehand).
 4. **Reproducibility**: generic config, GRCh38 resource bundle, public
    container (already built in CI), Zenodo DOI; PyPI and bioconda only
-   with Alexandre's approval.
+   with Alexandre's approval. Reference tracks (2026-11-17, `runs/_repro/`):
+   - `selfchain-LCR.hg38.bed` rebuilt byte-identical (md5
+     b4406771c8fe431d114430280b39bb60) with the slivar wiki recipe
+     ("finding deletions in parent-child duos", hg38): UCSC hg38
+     `chainSelf` (2020-06-21) with `normScore > 90`, target side and raw
+     query coordinates (no minus-strand conversion, so ~41 Mb of the mask
+     sit at mirrored positions; kept as is, v12b learned on it) + lh3
+     `LCR-hs38`, `chr` stripped, `bedtools merge`
+     (`runs/_repro/lcr_slivar.sbatch`). Public sources: ship the recipe and
+     the expected md5, or the file itself with its citations.
+   - `popCovStdev.bw` comes from ClinSV refdata-b38, whose licence forbids
+     redistribution: document the download (39 GB archive, research use).
+   - Cost of a missing track (v12b without HG002 on HG002; 186-genome
+     panel): without popCovStdev, DEL 1-10 kb F1 0.836 -> 0.801, PASS DEL
+     +12% (noise < 1 kb), DUP -27%, ~80 real 1-10 kb deletions lost per
+     child; without the LCR mask, DEL F1 0.515 -> 0.503, PASS DEL -12%,
+     DUP +26%. A substitute track is not an option during the freeze.
+   - Still to check: the segmental-duplication and exclusion BEDs are
+     copies from ClinSV refdata; their public origins (UCSC
+     genomicSuperDups, speedseq) are not yet verified byte-identical.
 5. **Writing**: application note or full paper, to be decided (sets the
    scope of 2 and 3). All de novo numbers are to be recomputed on the
    frozen version at the "confirmed de novo" level (PASS call of the child,
@@ -107,7 +126,20 @@ access agreements. Only remaining 100% public route: public wavy trios
 production): fragmented calls of large deletions and complex events (`bnd`,
 points 3 and 5 below); DUP weaker than DEL (to present as is in the
 paper); recurrence rescue of 1-10 kb DUP; CNN second opinion
-(1sexdecies); SVD on the panel of normals.
+(1sexdecies); SVD on the panel of normals; **modern, redistributable
+reference tracks for the next model**: replace `selfchain-LCR.hg38.bed`
+(2016-era slivar recipe, built for `duo-del`, ~12% of the mask at
+mirrored positions) by the GIAB GRCh38 stratifications v3.x (tandem
+repeats and homopolymers, low mappability, segmental duplications,
+all difficult regions; public domain, versioned, the same regions the
+benchmarks stratify on), consider an SV-oriented LCR mask (e.g. the
+2025 GRCh38 set of 111,067 regions, 35.4 Mb, from "Challenges in
+structural variant calling in low-complexity regions") and the ENCODE
+blacklist v2, and replace `popCovStdev.bw` by an open population-depth
+track (e.g. built from public high-coverage genomes). Then retrain and
+run the full deployment protocol (HG002/CMRG, panel, trios, pre-gate,
+cohort gate by wave stratum); the goal is a model with no
+non-redistributable resource.
 
 ### State as of 2026-11-10 (v1.15, unreleased) and priorities
 
