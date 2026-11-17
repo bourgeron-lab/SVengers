@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.1.2 — 2026-11-17
+
+Citation metadata only; calls and scores are those of v2.1.0.
+
+- **Archived on Zenodo** — releases are now archived with a DOI; the
+  citation metadata (`CITATION.cff`) gains the author's ORCID and an
+  abstract, which the archive uses as its description.
+
 ## v2.1.1 — 2026-11-17
 
 Reproducibility outside GHFC; calls and scores are those of v2.1.0.

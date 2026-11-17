@@ -7,12 +7,20 @@ authors:
     given-names: Alexandre
     affiliation: "Institut Pasteur, GHFC lab"
     email: alexandre.mathieu@pasteur.fr
+    orcid: "https://orcid.org/0000-0002-3418-9425"
 license: MIT
 repository-code: "https://github.com/bourgeron-lab/SVengers"
+abstract: >-
+  SVengers calls germline deletions and duplications from short-read whole-genome
+  sequencing by combining read depth, discordant pairs, split reads and B-allele
+  frequency, scores every call with a calibrated gradient-boosting model trained
+  partly on genomes with coverage waves, and joins family and cohort samples with
+  forced genotyping, cohort filters and pedigree annotation (inheritance, confirmed
+  de novo calls). Version 2.1 is the method frozen for its publication.
 keywords:
   - CNV
   - structural variants
   - WGS
   - bioinformatics
-version: 2.1.1
+version: 2.1.2
 date-released: 2026-11-17
