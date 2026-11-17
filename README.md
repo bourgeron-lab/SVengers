@@ -25,7 +25,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.0.2**, in production
+Status: **v2.1.0**, frozen for the paper (bug fixes only), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -847,6 +847,11 @@ coverage (transmission labels from clean parents), with the per-genome `wave_sco
 feature pinned to −1 at scoring (`neutral_features` in its manifest). **Operating point:
 SQ ≥ 5**, the built-in default (`[filter] low_sq_threshold` to change it, e.g. for a model
 of your own).
+
+Training data, access and the public-data ablation: [docs/MODEL.md](docs/MODEL.md). The
+weights ship with the code; the 16 children's genomes are under controlled access. A model
+retrained on GIAB alone matches `v12b` on HG002 but no longer rejects coverage-wave
+artefacts in wavy genomes, so `v12b` stays the model of record.
 
 `v12b` has the labels and recipe of `v5n`, trained on the copy number the genotyper now
 gives (edge bins read with their flanks, see [Calling](#1-calling-svengers-call)). It needs calls

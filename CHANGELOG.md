@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.1.0 — 2026-11-17
+
+**Method frozen for the paper.** From this version on, bug fixes only: no
+change of model, filter or feature schema, so the paper's numbers hold.
+Calls and scores are those of v2.0.2.
+
+- **The filter model stays `models/v12b`, documented in `docs/MODEL.md`** —
+  its training data (GIAB HG002/HG003/HG004, public; 16 children of family
+  trios with wavy coverage, under controlled access), its labels and
+  out-of-fold metrics. The same recipe trained on GIAB alone was evaluated
+  as a fully public alternative: on HG002 out of sample it matches `v12b`
+  (DEL F1 0.513 vs 0.515 against GIAB v5.0q; CMRG 0.536 vs 0.582), but on
+  2,670 cohort genomes the wavy ones (wave score >= 0.20) get 3.3 times more
+  deletions >= 10 kb just below PASS (3.2 to 10.4 per genome), the wave
+  artefacts that cohort recurrence would rescue, and children lose about
+  520 deletions of 1-10 kb that a parent carries. It is not shipped; the
+  model card reports it as an ablation.
+
 ## v2.0.2 — 2026-11-16
 
 - **scikit-learn pinned to 1.7** (`>=1.7,<1.8`, package and container

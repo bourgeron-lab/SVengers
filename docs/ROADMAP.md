@@ -6,7 +6,7 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
-### État au 2026-11-17 (v2.0.2) : gel pour l'article, puis validation
+### État au 2026-11-17 (v2.1.0) : méthode gelée pour l'article, puis validation
 
 Vedette s'appelle **SVengers** depuis v2.0.0 (dépôt bourgeron-lab/SVengers ;
 `vedette` reste un alias de la commande ; ce que Vedette a écrit reste
@@ -20,18 +20,29 @@ où elle se déclencherait plus de 20 fois ; FORMAT/FT `WeakSupport`), v1.16.1
 (modèles picklés avant 2.0 lisibles sur une installation neuve, scikit-learn
 épinglé en 1.7).
 
-**Décision : geler la méthode pour l'article (v2.1.0).** Après le gel :
+**Méthode gelée pour l'article : v2.1.0 (2026-11-17).** Depuis le gel :
 corrections de bugs seulement ; aucun changement de modèle, de filtre ni de
-schéma de features, sinon les chiffres de l'article bougent. Une décision
-reste à prendre avant le gel.
+schéma de features, sinon les chiffres de l'article bougent.
 
-**0. Modèle de l'article (bloque le gel).** v12b est entraîné en partie sur
-16 enfants GHFC privés : non reproductible hors GHFC.
-- (a) recommandé : la recette v12b réentraînée sur données publiques seules,
-  puis le protocole de déploiement complet (point 3 de l'état du
-  2026-11-10). S'il tient, c'est le modèle publié et celui de production ;
-- (b) garder v12b et déclarer un accès contrôlé aux données d'entraînement
-  (risque éditeur).
+**0. Modèle de l'article : v12b (décidé le 2026-11-17).** v12b est
+entraîné en partie sur 16 enfants GHFC (71 % des labels, tous les génomes
+wavy). Ses poids sont publiés avec le code, les données d'entraînement sont
+déclarées en accès contrôlé (`docs/MODEL.md`). Le réentraînement sur données
+publiques seules (**v14p**, GIAB HG002/3/4, même recette, mêmes features et
+labels ; `runs/_v14p/`) a été évalué et n'est pas retenu :
+- HG002 hors échantillon : DEL F1 0,513 contre 0,515 (GIAB v5.0q), 1-10 kb
+  0,843 contre 0,836, CMRG 0,536 contre 0,582 ;
+- panel de 186 génomes : PASS par génome DEL −2,8 %, DUP −25 % (surtout
+  < 1 kb) ; dans les trios, les enfants perdent ~520 DEL de 1-10 kb, 97,9 %
+  portées par un parent ;
+- **pré-porte dataset_paper en ALARME** : strate wave ≥ 0,20 (62 génomes),
+  DEL ≥ 10 kb sauvables 3,16 → 10,44 par génome ; porte de cohorte non
+  lancée.
+Sans génomes wavy à l'entraînement, le modèle ne rejette plus les vagues.
+v14p devient l'ablation de l'article. Reste à confirmer côté gouvernance que
+la diffusion des poids est compatible avec les accords d'accès des cohortes.
+Seule voie 100 % publique restante : des trios wavy publics (1000 Genomes
+haute couverture, NYGC), ~1 To à télécharger, hors gel.
 
 **Validation sur la version gelée, par rapport coût/valeur.**
 1. **Sensibilité orthogonale** : les délétions 22q13 (SHANK3) des patients
