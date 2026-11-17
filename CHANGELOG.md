@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.1.1 — 2026-11-17
+
+Reproducibility outside GHFC; calls and scores are those of v2.1.0.
+
+- **Container on ghcr.io** — every release is now published as
+  `ghcr.io/bourgeron-lab/svengers:<version>` (and `:latest`), with the filter
+  model (`/opt/svengers/models/v12b`) and the generic GRCh38 config
+  (`/opt/svengers/configs/grch38.toml`) inside the image; the Docker and
+  Apptainer recipes carry both.
+- **The paper's reference files, rebuilt anywhere** — `configs/grch38.toml`
+  points at the directory built by `workflows/build_grch38_resources.sh`,
+  which downloads the GIAB GRCh38 FASTA, rebuilds the LCR mask
+  (`selfchain-LCR.hg38.bed`, the slivar recipe: UCSC Self Chain with
+  normScore > 90 plus LCR-hs38), takes the CNVnator exclusion list, the
+  segmental duplications and `popCovStdev.bw` from the ClinSV reference data
+  you download (its licence forbids redistribution), and checks every file
+  against the checksum of the copy the paper used. Tested end to end from an
+  empty directory: all six files identical. `docs/RESOURCES.md` lists
+  sources, recipes, checksums, licences and what a missing track costs
+  (without `popCovStdev.bw`, HG002 DEL F1 at 1-10 kb drops from 0.836 to
+  0.801; without the LCR mask, overall DEL F1 drops from 0.515 to 0.503).
+- **Documentation in English** — `docs/ROADMAP.md` and
+  `docs/wave_qc_validation.md` translated, with the validation results of the
+  frozen version (tool comparisons on HG002 and on 665 trios, confirmed de
+  novo calls by affection status, provenance of the reference tracks);
+  training and benchmark messages in English. The HTML report, family pages
+  and the French text values of the exports are unchanged.
+
 ## v2.1.0 — 2026-11-17
 
 **Method frozen for the paper.** From this version on, bug fixes only: no
