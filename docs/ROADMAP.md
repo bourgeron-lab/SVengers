@@ -51,16 +51,18 @@ access agreements. Only remaining 100% public route: public wavy trios
 2. **Comparisons without re-running anything: done (2026-11-17)**,
    `runs/_cmp/`. Still remaining: the depth callers on HG002 (CNVnator,
    GATK-gCNV), only if the full paper is chosen.
-   - **HG002** (`runs/_cmp/hg002/`, 2026-11-10/12; v12b trained without
-     HG002, PASS; ClinSV run on HG002) — F1:
+   - **HG002** (`runs/_cmp/hg002_v210/`, re-scored 2026-11-17 on one
+     SVengers VCF for every paper table: v12b trained without HG002,
+     v2.1.0 filtering of the CN + BAF calls; PASS; ClinSV run on HG002;
+     first scoring 2026-11-10/12 in `runs/_cmp/hg002/`) — F1:
 
      | | SVengers | Manta | dysgu | DELLY | ClinSV |
      |---|---|---|---|---|---|
-     | DEL all sizes (v5.0q) | 0.514 | 0.536 | 0.541 | 0.423 | 0.395 |
-     | DEL 50-300 bp | 0.396 | 0.458 | 0.454 | 0.259 | 0.191 |
-     | DEL 1-10 kb | 0.831 | 0.769 | 0.778 | 0.800 | 0.691 |
-     | DEL 10-100 kb | 0.718 | 0.595 | 0.500 | 0.456 | 0.534 |
-     | Tandem DUP (DUP→INS) | 0.145 | 0.057 | 0.004 | 0.032 | 0.020 |
+     | DEL all sizes (v5.0q) | 0.515 | 0.536 | 0.541 | 0.423 | 0.395 |
+     | DEL 50-300 bp | 0.397 | 0.458 | 0.454 | 0.259 | 0.191 |
+     | DEL 1-10 kb | 0.836 | 0.769 | 0.778 | 0.800 | 0.691 |
+     | DEL 10-100 kb | 0.743 | 0.595 | 0.500 | 0.456 | 0.534 |
+     | Tandem DUP (DUP→INS) | 0.134 | 0.057 | 0.004 | 0.032 | 0.020 |
      | DEL CMRG | 0.582 | 0.652 | 0.582 | 0.400 | 0.426 |
 
      SVengers ranks first on DEL from 1 to 100 kb (precision 0.963 at
@@ -121,6 +123,15 @@ access agreements. Only remaining 100% public route: public wavy trios
    scope of 2 and 3). All de novo numbers are to be recomputed on the
    frozen version at the "confirmed de novo" level (PASS call of the child,
    no parental call, private site; already measured by `bench cohort`).
+   Done 2026-11-17 (`runs/_cmp/denovo_confirmed.py`, production run,
+   GQ >= 20 in the trio): 180 confirmed de novo in 665 children, 87
+   children with at least one. Children with wave < 0.20, affected vs
+   unaffected (`runs/_cmp/denovo_enrichment.tsv`): any 14.8% vs 6.8%
+   (OR 2.4, Fisher p = 0.004); DEL >= 100 kb 5.3% vs 0.5% (OR 11.5,
+   p = 0.001); DEL >= 10 kb or DUP >= 100 kb 9.5% vs 2.4% (OR 4.2,
+   p = 0.0009); DEL 1-10 kb 5.8% vs 4.4% (n.s.). Wave >= 0.20 (27
+   children): two genomes carry 46 confirmed DEL >= 100 kb between them,
+   artifacts; confirmed de novo DUP exist only >= 100 kb.
 
 **Outside the freeze** (after the paper, or in parallel without touching
 production): fragmented calls of large deletions and complex events (`bnd`,
