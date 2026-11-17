@@ -42,9 +42,15 @@ DEL F1 0.515 against GIAB v5.0q (0.836 for 1-10 kb, precision 0.872) and
 0.582 against CMRG.
 
 Caveat: `v12b_noHG002` keeps the HG003/HG004 labels, which were defined from
-the HG002 truth set and HG002 false-positive loci. The evaluation is out of
-sample for the genome, not fully for the loci; a locus-disjoint evaluation
-(training and testing on different chromosomes) is planned.
+the HG002 truth set and HG002 false-positive loci, so it is out of sample for
+the genome, not fully for the loci. Locus-disjoint check (2026-11-17,
+`runs/_chromsplit/`): two models trained without HG002, each on half of the
+chromosomes (odd autosomes + chrX / even autosomes + chrY), HG002 scored on
+the chromosomes its model never saw. DEL F1 against GIAB v5.0q: 0.515 overall
+(precision 0.817, recall 0.376), 0.843 at 1-10 kb, 0.717 at 10-100 kb, 0.400
+at 50-300 bp; CMRG 0.552; tandem duplications 0.130. The F1 is unchanged
+overall, precision is 5 points lower; each half-model also had half the
+labels, so this is a conservative estimate.
 
 ## Ablation: public data only (v14p)
 

@@ -67,7 +67,12 @@ access agreements. Only remaining 100% public route: public wavy trios
 
      SVengers ranks first on DEL from 1 to 100 kb (precision 0.963 at
      1-10 kb, 1.000 at 10-100 kb) and last among the junction callers below
-     300 bp.
+     300 bp. Locus-disjoint check (`runs/_chromsplit/`; the HG003/HG004
+     labels of `v12b_noHG002` were defined from HG002's truth and false
+     positives): models trained without HG002 on half the chromosomes,
+     HG002 scored on the other half: DEL F1 0.515 (P 0.817), 1-10 kb 0.843,
+     10-100 kb 0.717 (still first), 300 bp-1 kb 0.702 (dysgu 0.711), CMRG
+     0.552, tandem DUP 0.130.
    - **dataset_paper trios** (`runs/_cmp/trios_tools.py` →
      `trios_tools.tsv`, 665 children, individual PASS calls of each tool,
      autosomes): for each PASS call of the child, a call by the same tool
