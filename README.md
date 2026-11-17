@@ -1,5 +1,7 @@
 # SVengers
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24308195.svg)](https://doi.org/10.5281/zenodo.24308195)
+
 **SVengers** is a germline copy-number variant caller (deletions and duplications) for
 short-read whole-genome sequencing, built for **specificity** at cohort scale.
 

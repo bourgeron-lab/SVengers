@@ -129,8 +129,10 @@ access agreements. Only remaining 100% public route: public wavy trios
      empty directory with every download: 13 min, all six files
      identical to the paper's). Container: the release workflow publishes
      `ghcr.io/bourgeron-lab/svengers:<version>` and `:latest` from the next
-     tag on (model v12b and `configs/grch38.toml` inside the image). Still
-     open: Zenodo DOI.
+     tag on (model v12b and `configs/grch38.toml` inside the image), made
+     public. Zenodo: releases archived from v2.1.2 on; v2.1.2 is
+     10.5281/zenodo.24308196, all versions 10.5281/zenodo.24308195 (concept
+     DOI, in `CITATION.cff` and the README badge). Point 4 done.
 5. **Writing**: application note or full paper, to be decided (sets the
    scope of 2 and 3). All de novo numbers are to be recomputed on the
    frozen version at the "confirmed de novo" level (PASS call of the child,

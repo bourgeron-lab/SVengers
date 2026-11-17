@@ -10,6 +10,7 @@ authors:
     orcid: "https://orcid.org/0000-0002-3418-9425"
 license: MIT
 repository-code: "https://github.com/bourgeron-lab/SVengers"
+doi: 10.5281/zenodo.24308195
 abstract: >-
   SVengers calls germline deletions and duplications from short-read whole-genome
   sequencing by combining read depth, discordant pairs, split reads and B-allele
