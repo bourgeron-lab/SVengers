@@ -6,6 +6,61 @@ chr20 (breakpoints identiques à ClinSV, MVR 0,6 %), 34 tests unitaires.
 
 ## Prochaines étapes (par priorité)
 
+### État au 2026-11-17 (v2.0.2) : gel pour l'article, puis validation
+
+Vedette s'appelle **SVengers** depuis v2.0.0 (dépôt bourgeron-lab/SVengers ;
+`vedette` reste un alias de la commande ; ce que Vedette a écrit reste
+lisible, voir `legacy.py`). v2.0.2 est en production sur dataset_paper
+(2 670 génomes) et PMS (319) : refiltrage identique à v1.16.1 aux noms près,
+pré-porte et porte de cohorte calmes, CI verte. Depuis l'état du 2026-11-10 :
+v1.15.1 (perte terminale nette gardée PASS), v1.16.0 (`UNIQUE_DEL_DEPTH` :
+DEL de profondeur en séquence unique gardée PASS, règle coupée dans un génome
+où elle se déclencherait plus de 20 fois ; FORMAT/FT `WeakSupport`), v1.16.1
+(étiquette d'héritage des lignes familiales fusionnées), v2.0.1-2.0.2
+(modèles picklés avant 2.0 lisibles sur une installation neuve, scikit-learn
+épinglé en 1.7).
+
+**Décision : geler la méthode pour l'article (v2.1.0).** Après le gel :
+corrections de bugs seulement ; aucun changement de modèle, de filtre ni de
+schéma de features, sinon les chiffres de l'article bougent. Une décision
+reste à prendre avant le gel.
+
+**0. Modèle de l'article (bloque le gel).** v12b est entraîné en partie sur
+16 enfants GHFC privés : non reproductible hors GHFC.
+- (a) recommandé : la recette v12b réentraînée sur données publiques seules,
+  puis le protocole de déploiement complet (point 3 de l'état du
+  2026-11-10). S'il tient, c'est le modèle publié et celui de production ;
+- (b) garder v12b et déclarer un accès contrôlé aux données d'entraînement
+  (risque éditeur).
+
+**Validation sur la version gelée, par rapport coût/valeur.**
+1. **Sensibilité orthogonale** : les délétions 22q13 (SHANK3) des patients
+   PMS connues par une autre technique (puce, ACPA, MLPA), avec leurs
+   tailles ; données à fournir par Alexandre. Donne une sensibilité réelle
+   par taille et l'exactitude des bornes.
+2. **Comparaisons sans rien relancer** : ClinSV et WisecondorX existent déjà
+   pour dataset_paper → métriques de trio par outil (MVR, transmission,
+   de novo confirmés) ; Manta, DELLY et dysgu sur HG002
+   (`resources/giab/comparison_final`) re-notés contre le modèle gelé. Les
+   callers de profondeur sur HG002 (CNVnator, GATK-gCNV) seulement si
+   l'article complet est retenu.
+3. **Hors échantillon** : HG002 avec un modèle entraîné sans HG002 ;
+   Platinum Pedigree (plan dans « Harness de benchmark » ; téléchargement
+   avec l'accord d'Alexandre, tailles annoncées avant).
+4. **Reproductibilité** : config générique, paquet de ressources GRCh38,
+   conteneur public (déjà construit en CI), DOI Zenodo ; PyPI et bioconda
+   seulement avec l'accord d'Alexandre.
+5. **Rédaction** : note d'application ou article complet, à décider (fixe
+   l'ampleur de 2 et 3). Tous les chiffres de de novo sont à recalculer sur
+   la version gelée au niveau « de novo confirmé » (appel PASS de l'enfant,
+   aucun appel parental, site privé ; déjà mesuré par `bench cohort`).
+
+**Hors gel** (après l'article, ou en parallèle sans toucher la production) :
+appels fragmentés des grandes délétions et événements complexes (`bnd`,
+points 3 et 5 plus bas) ; DUP plus faibles que les DEL (à présenter telles
+quelles dans l'article) ; sauvetage par récurrence des DUP 1-10 kb ; second
+avis CNN (1sexdecies) ; SVD sur le panel of normals.
+
 ### État au 2026-11-10 (v1.15, non publiée) et priorités
 
 Sur `main` depuis v1.14.0 : `bench cohort` (porte de novo, par strates de
