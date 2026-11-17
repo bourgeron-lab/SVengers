@@ -724,7 +724,7 @@ def bench_dup_truth(
     counts = make_tandem_truth(truth, fasta, out, min_identity=min_identity)
     typer.echo(
         f"{counts['tandem']} tandem / {counts['ins_total']} INS -> {out} "
-        f"({counts['other_ins']} insertions non-tandem écartées)"
+        f"({counts['other_ins']} non-tandem insertions left out)"
     )
 
 

@@ -38,7 +38,7 @@ for run, s in (("hg002_run","HG002"), ("hg003_run","HG003"), ("hg004_run","HG004
     print(f"{s}: wave_score={score:.4f}")
 PYEOF
 
-echo "== 2. features (schéma 30 avec wave_score) =="
+echo "== 2. features (schema 30 with wave_score) =="
 for S in HG002 HG003 HG004; do
   run=$GIAB/$(echo $S | tr 'A-Z' 'a-z')_run
   $V filter "$(raw_calls "$run" "$S")" \
@@ -102,7 +102,7 @@ for k in outs:
     pysam.tabix_index(f"resources/giab/hg002_run/HG002.v4_{k}.vcf.gz", preset="vcf", force=True)
 PYEOF
 
-echo "== 7. éval stratifiée v4 (SQ>=7 et PASS) =="
+echo "== 7. stratified eval v4 (SQ>=7 and PASS) =="
 for SUB in sq7 pass; do
   $V bench truth "$GIAB/hg002_run/HG002.v4_$SUB.vcf.gz" \
       --truth "$TRUTH" --bed "$BED" --fasta "$REF" \

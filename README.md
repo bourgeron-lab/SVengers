@@ -305,7 +305,7 @@ correction. SVengers measures them per genome: the copy ratio is cut into 10 Mb 
 (half-overlapping), each window is linearly detrended, and the score is the fraction of its
 spectral energy at periods ≥ 200 kb; median over windows per contig, mean over contigs.
 The warning threshold, **0.128**, was calibrated on 592 genomes against an independent
-wave detector (AUC 0.946; `docs/wave_qc_validation.md`, in French). Wavy genomes fragment
+wave detector (AUC 0.946; `docs/wave_qc_validation.md`). Wavy genomes fragment
 the HMM, flood the split-read recovery and carry more false calls; the score is stored,
 shown in the report and used by its guards. It is measured on the depth as sequenced,
 before any panel of normals (every threshold is calibrated on it); with a panel, the
@@ -865,7 +865,7 @@ stratum (de novo per child: median 27 as in production; recurrent de novo sites 
 `v5n` (production 2026-10-08 to v1.15) is v5 with `wave_score` pinned: v5 had learned a step
 on it and passed 10 to 18 thousand calls on genomes with strong coverage waves instead of
 about 5 thousand. `models/v1` to `v6` and `v5n` are kept for history; `docs/ROADMAP.md`
-(in French) records why later models were not retained.
+records why later models were not retained.
 
 A model directory holds `model_del.joblib`, `model_dup.joblib` and `manifest.json`
 (version, feature list and schema hash, neutral features, training provenance, out-of-fold
@@ -1243,7 +1243,7 @@ micromamba run -n svengers ruff check src tests
 ```
 
 Design notes, the decisions behind each component and the open work are in
-`docs/ROADMAP.md` (in French); release notes are in `CHANGELOG.md`.
+`docs/ROADMAP.md`; release notes are in `CHANGELOG.md`.
 
 Invariants worth knowing before contributing:
 - downstream stages never re-read a CRAM: the evidence store is the contract;

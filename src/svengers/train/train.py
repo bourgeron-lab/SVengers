@@ -131,14 +131,14 @@ def check_feature_variance(
         return dead
     detail = ", ".join(f"{k} ({v})" for k, v in sorted(dead.items()))
     if allow_constant:
-        logger.warning("%s: feature(s) sans variance, entraînement forcé: %s", svtype, detail)
+        logger.warning("%s: feature(s) without variance, training anyway: %s", svtype, detail)
         return dead
     raise ValueError(
-        f"{svtype}: {len(dead)} feature(s) sans variance dans le jeu d'entraînement: "
-        f"{detail}. Une feature constante n'apporte rien au modèle et trahit "
-        f"en général une extraction cassée (piste: convention de nommage des "
-        f"contigs du track, chemin de ressource absent). Corrigez l'extraction, "
-        f"ou passez --allow-constant-features si c'est intentionnel."
+        f"{svtype}: {len(dead)} feature(s) without variance in the training set: "
+        f"{detail}. A constant feature brings nothing to the model and usually "
+        f"betrays a broken extraction (look at the track's contig naming or a "
+        f"missing resource path). Fix the extraction, or pass "
+        f"--allow-constant-features if it is intentional."
     )
 
 
