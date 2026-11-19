@@ -7,6 +7,11 @@ Documentation only.
 - `docs/MODEL.md`: share of the HG002 truth deletions lying in bins masked by the
   panel of normals corrected (44 % at 1-10 kb and 65 % at 10-100 kb, none without
   the panel; v2.1.4 stated 64 %).
+- `CHANGELOG.md` (v2.1.4 entry) and a comment in `config.py`: the share of HG002
+  deletions of 1-10 kb tagged MaxN with the panel (stated 41 %, an ad hoc count
+  without a reproducible definition) replaced by the share of truth deletions
+  with more than 70 % masked bins (44 %, `runs/_cmp/hg002_pon_mask.py`) and the
+  recall gain of the fix (0.306 -> 0.398).
 
 ## v2.1.4 — 2026-11-19
 
@@ -17,15 +22,16 @@ depth path (the paper's HG002 benchmark) are identical to v2.1.0.
   normals.** The MaxN hard filter fires when more than 70 % of a call's depth
   bins are masked, and that mask includes the bins the PoN masks as
   population-variable, which is exactly where common CNVs lie. With the PoN
-  (the cohort fast path), 41 % of the true HG002 deletions of 1-10 kb (GIAB
-  v5.0q) were tagged MaxN despite split and discordant reads. A deletion
+  (the cohort fast path), 44 % of the true HG002 deletions of 1-10 kb (GIAB
+  v5.0q) have more than 70 % of their bins masked, so their calls were tagged
+  MaxN despite split and discordant reads. A deletion
   below 10 kb with junction evidence is now exempt from the masked-bin clause
   (the N-gap/exclusion clause still applies). Not above 10 kb, where the
   exemption passed megabase pericentromeric artefacts, and not for
   duplications, where it added 8,268 cohort sites (+62 %), mostly
   junction-only DUPs below 1 kb.
   - HG002 out of sample, cohort fast path: DEL F1 at 1-10 kb 0.465 -> 0.565
-    (precision 0.966 -> 0.974); CMRG 0.455 -> 0.480.
+    (recall 0.306 -> 0.398, precision 0.966 -> 0.974); CMRG 0.455 -> 0.480.
   - 2,670 GHFC genomes: about 100 more PASS deletions of 1-10 kb per genome,
     the same in every wave stratum; in held-out trios 99 % of the added
     deletions are found in a parent.

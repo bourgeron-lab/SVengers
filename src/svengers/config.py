@@ -127,9 +127,11 @@ class FilterConfig:
     max_excluded_overlap: float = 0.30   # fraction of call overlapping N-gaps/exclude mask
     max_maskfrac: float = 0.70           # fraction of masked depth bins (MaxN)
     # The depth mask also holds the bins the PoN masks as population-variable,
-    # which is where polymorphic CNVs lie: with the PoN, 41 % of the true HG002
-    # deletions of 1-10 kb (GIAB v5.0q) had maskfrac > 0.7 and were tagged MaxN
-    # despite split/discordant reads (0 % without the PoN). Below this size a
+    # which is where polymorphic CNVs lie: with the PoN, 44 % of the true HG002
+    # deletions of 1-10 kb (GIAB v5.0q) have more than 70 % of their bins masked
+    # (none without the PoN), so their calls were tagged MaxN despite
+    # split/discordant reads; the exemption raises the recall of the cohort fast
+    # path at 1-10 kb from 0.306 to 0.398 (precision 0.966 -> 0.974). Below this size a
     # deletion with junction evidence is exempt from the maskfrac clause (the
     # N-gap/exclude clause still applies). On 244 held-out GHFC trios: +100
     # PASS DEL 1-10 kb per child, 99.2 % found in a parent. Not above 10 kb:
