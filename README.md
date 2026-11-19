@@ -27,7 +27,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.1.4** (method frozen for the paper in v2.1.0: bug fixes only), in production
+Status: **v2.1.5** (method frozen for the paper in v2.1.0: bug fixes only), in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -691,7 +691,9 @@ with 4-7 pairs, 2.9 with 8-11 and 0.13 with ≥ 12 (PASS; ~2.2 per genome). Same
 junctions pass at ≥ 12 pairs too: on 637 + 94 trios, 1.3 per child are in a parent and
 0.03-0.07 in the child alone. Their noise sits in a few genomes (chimeric libraries): a
 median genome has 7-11 kept same-strand junctions, and a genome with more than 500 has its
-same-strand junctions filtered `NoisyGenome` (67 of 2,670). At a loss's breakpoint any support counts: a chance
+same-strand junctions filtered `NoisyGenome` (67 of 2,670); so do its inter-chromosomal ones
+when it has more than 100 at ≥ 12 pairs (5 genomes of one sequencing batch, against 47 at most in
+the 2,984 others). At a loss's breakpoint any support counts: a chance
 junction within 10 kb is about one in a thousand. The scan takes ~20 s per genome.
 
 ### 9. Sex-chromosome karyotype
@@ -1140,7 +1142,8 @@ sequence left of `pos` is joined, `L` when the sequence right of it, `?` without
 reads; `kind` `TRA`, `INV` or `FOLD`. **Junction VCF** (`<S>.bnd.vcf.gz`): the junctions
 with split reads at both ends as breakend pairs (`SVTYPE=BND`, `MATEID`, `EVENT`, `KIND`;
 `FORMAT` `GT` (missing), `PE`, `SR`); `FILTER` `PASS` (≥ 12 pairs), `LowSupport`,
-`NoisyGenome` (same-strand junctions of a genome with more than 500), `Common` (common
+`NoisyGenome` (same-strand junctions of a genome with more than 500; inter-chromosomal ones
+of a genome with more than 100 PASS-level ones), `Common` (common
 inversions, ~60-70 per genome; ~110-140 in the TSV, ends without split reads included),
 `Subtelomeric`.
 

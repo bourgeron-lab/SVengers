@@ -1,8 +1,24 @@
 # Changelog
 
-## Unreleased
+## v2.1.5 — 2026-11-19
 
-Documentation only.
+Bug fix of the junction VCF (`svengers bnd`) and documentation corrections; calls,
+model, features, feature schema, filtered VCFs and cohort outputs unchanged.
+
+- **`NoisyGenome` now covers inter-chromosomal junctions** (`<S>.bnd.vcf.gz`).
+  It applied only to same-strand junctions, so a genome whose library yields
+  junctions between chromosomes kept them PASS: five genomes of one sequencing
+  batch had 136 to 253 PASS inter-chromosomal junctions each (a median genome
+  has 1, the most of the 2,984 others 47), and in their three children 11 of
+  635 were in a parent, against 829 of 889 in the 646 other children. A genome
+  with more than 100 inter-chromosomal junctions of 12 pairs or more with split
+  reads at both ends (`BND_NOISY_TRA`) now has them filtered `NoisyGenome`. On
+  the production runs (2,989 genomes) only those five change (1,028 PASS
+  junctions); flagging them in every genome with more than 500 same-strand
+  junctions instead would have taken 56 from 19 other children, 49 of them in a
+  parent. Calls, filter and cohort outputs are unchanged.
+
+Documentation:
 
 - `docs/MODEL.md`: share of the HG002 truth deletions lying in bins masked by the
   panel of normals corrected (44 % at 1-10 kb and 65 % at 10-100 kb, none without

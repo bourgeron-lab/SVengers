@@ -328,3 +328,20 @@ def test_same_strand_junction_pass_unless_the_genome_is_noisy():
     assert bnd_filter(inv, noisy=True) == "NoisyGenome"
     tra = Bnd("S", "chr5", 1_000_000, "R", "chr9", 1_200_000, "L", 14, 4, 3, 60.0)
     assert bnd_filter(tra, noisy=True) == "PASS"
+
+
+def test_translocation_junction_pass_unless_the_genome_has_too_many():
+    from svengers.vcfout import BND_NOISY_TRA, BND_PASS_PE, bnd_filter, noisy_tra_genome
+
+    tra = Bnd("S", "chr5", 1_000_000, "R", "chr9", 1_200_000, "L", 14, 4, 3, 60.0)
+    batch = [Bnd("S", "chr1", i * 10_000, "R", "chr2", i * 10_000, "L", BND_PASS_PE, 2, 2, 60.0)
+             for i in range(BND_NOISY_TRA - 1)]
+    assert not noisy_tra_genome(batch + [tra])        # BND_NOISY_TRA of them: not above it
+    weak = Bnd("S", "chr3", 5, "R", "chr4", 5, "L", BND_PASS_PE - 1, 2, 2, 60.0)
+    unplaced = Bnd("S", "chr3", 9, "?", "chr4", 9, "L", 30, 0, 2, 60.0)
+    common = Bnd("S", "chr3", 7, "R", "chr4", 7, "L", 30, 2, 2, 60.0, flag="common")
+    assert not noisy_tra_genome(batch + [weak, unplaced, common])  # none of them counts
+    assert noisy_tra_genome(batch + [tra, tra])
+    assert bnd_filter(tra, noisy_tra=True) == "NoisyGenome"
+    inv = Bnd("S", "chr5", 1_000_000, "R", "chr5", 1_200_000, "R", 14, 4, 3, 60.0, kind="INV")
+    assert bnd_filter(inv, noisy_tra=True) == "PASS"  # same-strand junctions keep their own count
