@@ -59,8 +59,9 @@ The numbers above use depth counted from the CRAM, with no panel of normals
 bedgraph (`by1000`) normalized by a PoN built from cohort founders, which
 masks the bins whose depth varies across the population. Those bins are where
 polymorphic CNVs lie: on HG002 the PoN masks 8.2 % of the autosomal bins
-(4.6 % without it), but more than 70 % of the bins of 64 % of the true
-deletions of 1-10 kb (2.4 % without it).
+(4.6 % without it), but more than 70 % of the bins of 44 % of the true
+deletions of 1-10 kb and of 65 % of those of 10-100 kb (none without it;
+`runs/_cmp/hg002_pon_mask.py`).
 
 HG002 re-called on the fast path, scored by `v12b_noHG002`, DEL F1 against
 GIAB v5.0q:
