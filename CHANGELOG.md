@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Documentation only.
+
+- `docs/MODEL.md`: share of the HG002 truth deletions lying in bins masked by the
+  panel of normals corrected (44 % at 1-10 kb and 65 % at 10-100 kb, none without
+  the panel; v2.1.4 stated 64 %).
+
 ## v2.1.4 — 2026-11-19
 
 Bug fixes; model, features and feature schema unchanged. Calls from the CRAM
