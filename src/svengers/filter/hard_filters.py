@@ -9,7 +9,12 @@ def hard_filter_tags(features: dict[str, float], size: int, config: FilterConfig
     tags: list[str] = []
     if size < config.min_size:
         tags.append("MinSize")
-    if features["exclude_ovl"] > config.max_excluded_overlap or features["maskfrac"] > 0.7:
+    # PoN-masked bins: a junction-supported deletion < 10 kb is exempt (FilterConfig)
+    junction = features["pe"] + features["sr"] + features["cig"] > 0
+    masked = features["maskfrac"] > config.max_maskfrac and not (
+        junction and features["is_dup"] == 0 and size < config.maxn_junction_exempt_max_size
+    )
+    if features["exclude_ovl"] > config.max_excluded_overlap or masked:
         tags.append("MaxN")
     if (
         features["segdup_ovl"] > config.lowmap_segdup_frac

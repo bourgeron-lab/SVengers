@@ -47,6 +47,55 @@ def test_precise_needs_tight_breakpoints():
     assert not _compatible(_mc("C", 14_000, 64_000), cluster)      # RO ok, bp too far
 
 
+def test_sweep_matches_the_exhaustive_scan():
+    """cluster_calls drops clusters that can no longer take a member from its
+    scan and keeps running medians: same clusters, same order as scanning every
+    cluster within the 1 Mb horizon with medians recomputed (v2.1.0)."""
+    def reference(calls):
+        open_, done = {"DEL": [], "DUP": []}, []
+        for call, t in calls:
+            keep = []
+            for members in open_[t]:
+                (done if _centroid(members)[1] + 1_000_000 < call.start else keep).append(members)
+            open_[t] = keep
+            best, best_ro = None, 0.0
+            for members in keep:
+                cl = SiteCluster(svtype=t, members=list(members))
+                if _compatible(call, cl):
+                    s, e = _centroid(members)
+                    ro = (min(call.end, e) - max(call.start, s)) / max(call.end - call.start, e - s)
+                    if ro > best_ro:
+                        best, best_ro = members, ro
+            if best is None:
+                keep.append([call])
+            else:
+                best.append(call)
+        return done + open_["DEL"] + open_["DUP"]
+
+    def _centroid(members):
+        return (int(np.median([m.start for m in members])), int(np.median([m.end for m in members])))
+
+    rng = np.random.default_rng(7)
+    calls = []
+    for i in range(1_500):
+        start = int(rng.integers(0, 3_000_000))
+        size = int(rng.choice([300, 2_000, 9_000, 80_000, 1_500_000]) * rng.uniform(0.9, 1.1))
+        if i % 3 == 0 and calls:   # recurrent sites with jittered breakpoints
+            m = calls[int(rng.integers(len(calls)))][0]
+            start, size = m.start + int(rng.integers(-200, 200)), m.end - m.start + int(rng.integers(-200, 200))
+        calls.append((_mc(f"S{i}", start, start + max(size, 60), precise=bool(i % 2)),
+                       "DEL" if i % 5 else "DUP"))
+    # a long cluster created before a short one, both closed after a > 1 Mb gap
+    for name, start, end in (("Y", 5_000_000, 5_050_000), ("X", 5_001_000, 5_003_000),
+                             ("Z", 5_010_000, 5_012_000), ("W", 7_000_000, 7_001_000)):
+        calls.append((_mc(name, start, end), "DEL"))
+    calls.sort(key=lambda t: t[0].start)
+    got = [[(m.sample, m.start, m.end) for m in c.members] for c in cluster_calls(calls)]
+    want = [[(m.sample, m.start, m.end) for m in c] for c in reference(calls)]
+    assert got == want
+    assert max(len(c) for c in got) > 5
+
+
 def test_hwe_extremes():
     # perfect equilibrium-ish: common variant
     assert hwe_exact(50, 25, 25) > 0.01

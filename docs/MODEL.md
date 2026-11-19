@@ -52,6 +52,35 @@ at 50-300 bp; CMRG 0.552; tandem duplications 0.130. The F1 is unchanged
 overall, precision is 5 points lower; each half-model also had half the
 labels, so this is a conservative estimate.
 
+## HG002 in the cohort fast path
+
+The numbers above use depth counted from the CRAM, with no panel of normals
+(PoN). A cohort is usually run on the fast path: depth from the 1 kb mosdepth
+bedgraph (`by1000`) normalized by a PoN built from cohort founders, which
+masks the bins whose depth varies across the population. Those bins are where
+polymorphic CNVs lie: on HG002 the PoN masks 8.2 % of the autosomal bins
+(4.6 % without it), but more than 70 % of the bins of 64 % of the true
+deletions of 1-10 kb (2.4 % without it).
+
+HG002 re-called on the fast path, scored by `v12b_noHG002`, DEL F1 against
+GIAB v5.0q:
+
+| Path | 1-10 kb | 10-100 kb | CMRG |
+|---|---|---|---|
+| CRAM depth, no PoN (above) | 0.836 | 0.743 | 0.582 |
+| bedgraph, no PoN | 0.839 | 0.718 | 0.567 |
+| bedgraph + PoN, v2.1.0 | 0.465 | 0.370 | 0.455 |
+| bedgraph + PoN, v2.1.4 | 0.565 | 0.370 | 0.480 |
+
+The depth source does not matter; the PoN does. At 1-10 kb it raises
+precision a little (0.934 without, 0.966-0.974 with) and cuts recall from
+0.76 to 0.31 (v2.1.0) or 0.40 (v2.1.4). v2.1.4 recovers part of the loss: the deletions that the PoN mask had
+hard-filtered (MaxN) although split or discordant reads support them. Most of
+the remaining loss is common deletions: at 1-10 kb, recall is 0.86 without
+the PoN and 0.45 with it for deletions with gnomAD-SV allele frequency
+>= 5 % (n = 545), 0.47 and 0.14 for deletions absent from gnomAD-SV
+(n = 116), 0.50 and 0.39 below 1 % (n = 46).
+
 ## Ablation: public data only (v14p)
 
 Same recipe, features and labels, trained on GIAB HG002/3/4 alone

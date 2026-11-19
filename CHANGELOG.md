@@ -1,5 +1,40 @@
 # Changelog
 
+## v2.1.4 — 2026-11-19
+
+Bug fixes; model, features and feature schema unchanged. Calls from the CRAM
+depth path (the paper's HG002 benchmark) are identical to v2.1.0.
+
+- **MaxN no longer rejects polymorphic deletions masked by the panel of
+  normals.** The MaxN hard filter fires when more than 70 % of a call's depth
+  bins are masked, and that mask includes the bins the PoN masks as
+  population-variable, which is exactly where common CNVs lie. With the PoN
+  (the cohort fast path), 41 % of the true HG002 deletions of 1-10 kb (GIAB
+  v5.0q) were tagged MaxN despite split and discordant reads. A deletion
+  below 10 kb with junction evidence is now exempt from the masked-bin clause
+  (the N-gap/exclusion clause still applies). Not above 10 kb, where the
+  exemption passed megabase pericentromeric artefacts, and not for
+  duplications, where it added 8,268 cohort sites (+62 %), mostly
+  junction-only DUPs below 1 kb.
+  - HG002 out of sample, cohort fast path: DEL F1 at 1-10 kb 0.465 -> 0.565
+    (precision 0.966 -> 0.974); CMRG 0.455 -> 0.480.
+  - 2,670 GHFC genomes: about 100 more PASS deletions of 1-10 kb per genome,
+    the same in every wave stratum; in held-out trios 99 % of the added
+    deletions are found in a parent.
+  - 665 trios (`svengers bench cohort`): de novo DEL 1-10 kb median 6 -> 7
+    per child, confirmed de novo 180 -> 182, Mendelian violation rate
+    0.0234 -> 0.0236, duplications unchanged.
+- **Cohort merge 10x faster, same output.** The clustering sweep compared
+  every call with every open cluster of the last megabase; a cluster whose
+  centroid ends before the sweep line can never take a member again and now
+  leaves the scan at once, and cluster medians are kept on sorted lists
+  instead of being recomputed after each member. Same clusters in the same
+  order (checked on chr1, chr16 and chr21 of 2,670 genomes, and by a
+  randomized test against the previous algorithm); the merge of 2,670
+  genomes takes 2 minutes instead of 21.
+- **Model card**: `docs/MODEL.md` gains the HG002 numbers of the cohort fast
+  path, with and without the PoN.
+
 ## v2.1.3 — 2026-11-17
 
 Documentation only; calls and scores are those of v2.1.0.

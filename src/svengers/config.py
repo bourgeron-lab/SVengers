@@ -125,6 +125,19 @@ class FilterConfig:
 
     min_size: int = 50
     max_excluded_overlap: float = 0.30   # fraction of call overlapping N-gaps/exclude mask
+    max_maskfrac: float = 0.70           # fraction of masked depth bins (MaxN)
+    # The depth mask also holds the bins the PoN masks as population-variable,
+    # which is where polymorphic CNVs lie: with the PoN, 41 % of the true HG002
+    # deletions of 1-10 kb (GIAB v5.0q) had maskfrac > 0.7 and were tagged MaxN
+    # despite split/discordant reads (0 % without the PoN). Below this size a
+    # deletion with junction evidence is exempt from the maskfrac clause (the
+    # N-gap/exclude clause still applies). On 244 held-out GHFC trios: +100
+    # PASS DEL 1-10 kb per child, 99.2 % found in a parent. Not above 10 kb:
+    # there the masked bins are mostly N runs, and the exemption passed
+    # megabase pericentromeric artefacts. Not for duplications: on the 665
+    # trios of dataset_paper it added 8,268 cohort DUP sites (+62 %), nearly
+    # all junction-only DUPs < 1 kb, and ~1 de novo DUP < 1 kb per child.
+    maxn_junction_exempt_max_size: int = 10_000
     lowmap_segdup_frac: float = 0.70     # segdup overlap above which SR support is required
     min_informative_bins: int = 3
     low_sq_threshold: float = 5.0        # phred: operating point of models/v12b (and v5n)

@@ -12,12 +12,13 @@ Output: a sites-only VCF (no genotypes) consumed by `svengers genotype`.
 
 from __future__ import annotations
 
+import bisect
+import heapq
 import logging
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-import numpy as np
 import pysam
 
 from .. import __version__
@@ -26,6 +27,13 @@ from ..reference import Contig
 from ..vcfout import add_coords_line, clamp_end, span, spec_coords, sv_record
 
 logger = logging.getLogger(__name__)
+
+
+def _median(values: list[int]) -> int:
+    """int(np.median(values)) of a sorted list, bit for bit."""
+    n = len(values)
+    mid = values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2
+    return int(mid)
 
 
 @dataclass
@@ -47,17 +55,24 @@ class SiteCluster:
     # cluster_calls quadratic-ish (py-spy'd at 6h+ on the 2670-sample cohort —
     # each sweep step probes every active cluster's centroid)
     _centroid: tuple[int, int] | None = None
+    # member starts and ends kept sorted, so the median after an add costs an
+    # insertion instead of a full recomputation (common sites hold ~2,000 members)
+    _starts: list[int] = field(default_factory=list)
+    _ends: list[int] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self._starts = sorted(m.start for m in self.members)
+        self._ends = sorted(m.end for m in self.members)
 
     def add(self, member: MemberCall) -> None:
         self.members.append(member)
+        bisect.insort(self._starts, member.start)
+        bisect.insort(self._ends, member.end)
         self._centroid = None
 
     def _compute(self) -> tuple[int, int]:
         if self._centroid is None:
-            self._centroid = (
-                int(np.median([m.start for m in self.members])),
-                int(np.median([m.end for m in self.members])),
-            )
+            self._centroid = (_median(self._starts), _median(self._ends))
         return self._centroid
 
     @property
@@ -100,23 +115,39 @@ def _compatible(call: MemberCall, cluster: SiteCluster) -> bool:
 def cluster_calls(
     calls: list[tuple[MemberCall, str]],  # (call, svtype), sorted by start
 ) -> list[SiteCluster]:
-    """Greedy sweep clustering with centroid-compatibility (per contig)."""
-    open_clusters: dict[str, list[SiteCluster]] = {"DEL": [], "DUP": []}
-    done: list[SiteCluster] = []
+    """Greedy sweep clustering with centroid-compatibility (per contig).
+
+    A call joins the compatible open cluster of highest reciprocal overlap
+    (the earliest created on a tie). Compatibility needs an overlap, so once
+    a cluster's centroid ends at or before the sweep line it can never take
+    a member again: it leaves the scanned set at once and waits in a heap
+    until it closes. Clusters are returned in the order the original
+    sweep closed them: those ending `horizon` before the sweep line, in
+    creation order, then the still-open ones, DEL before DUP.
+    """
     horizon = 1_000_000  # clusters ending this far before the sweep line are closed
+    live: dict[str, list[tuple[int, SiteCluster]]] = {"DEL": [], "DUP": []}
+    dead: dict[str, list[tuple[int, int, SiteCluster]]] = {"DEL": [], "DUP": []}
+    done: list[SiteCluster] = []
+    created = 0
 
     for call, svtype in calls:
-        active = open_clusters[svtype]
-        still_open = []
-        for cl in active:
-            if cl.end + horizon < call.start:
-                done.append(cl)
+        heap = dead[svtype]
+        active = []
+        for idx, cl in live[svtype]:
+            if cl.end <= call.start:
+                heapq.heappush(heap, (cl.end, idx, cl))
             else:
-                still_open.append(cl)
-        open_clusters[svtype] = active = still_open
+                active.append((idx, cl))
+        live[svtype] = active
+        closing = []
+        while heap and heap[0][0] + horizon < call.start:
+            _, idx, cl = heapq.heappop(heap)
+            closing.append((idx, cl))
+        done.extend(cl for _, cl in sorted(closing, key=lambda t: t[0]))
 
         best, best_ro = None, 0.0
-        for cl in active:
+        for _, cl in active:
             if _compatible(call, cl):
                 inter = min(call.end, cl.end) - max(call.start, cl.start)
                 ro = inter / max(call.end - call.start, cl.end - cl.start)
@@ -125,10 +156,12 @@ def cluster_calls(
         if best is not None:
             best.add(call)
         else:
-            active.append(SiteCluster(svtype=svtype, members=[call]))
+            active.append((created, SiteCluster(svtype=svtype, members=[call])))
+            created += 1
 
     for svtype in ("DEL", "DUP"):
-        done.extend(open_clusters[svtype])
+        rest = live[svtype] + [(idx, cl) for _, idx, cl in dead[svtype]]
+        done.extend(cl for _, cl in sorted(rest, key=lambda t: t[0]))
     return done
 
 
