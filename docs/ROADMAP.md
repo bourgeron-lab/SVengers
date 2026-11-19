@@ -6,6 +6,37 @@ trio chr20 (breakpoints identical to ClinSV, MVR 0.6%), 34 unit tests.
 
 ## Next steps (by priority)
 
+### State as of 2026-11-19 (v2.1.4): the panel of normals and HG002
+
+The paper's HG002 benchmark used depth counted from the CRAM, without the
+panel of normals (PoN); cohorts run on the fast path (1 kb mosdepth bedgraph
+normalized by a PoN of cohort founders). Both use 1 kb bins: the difference
+is the PoN, which masks population-variable bins, where polymorphic CNVs lie
+(`docs/MODEL.md`, "HG002 in the cohort fast path"). On HG002, DEL F1 at
+1-10 kb: 0.836 (CRAM, no PoN), 0.839 (bedgraph, no PoN), 0.465 (bedgraph +
+PoN, v2.1.0), 0.565 (v2.1.4, which stops MaxN from hard-filtering
+junction-supported deletions < 10 kb in PoN-masked bins). Validation:
+`runs/_v214b/` (cohort gate OK), merge speed-up in `runs/_mergespeed/`.
+
+Open, outside the freeze (v2.2):
+1. **PoN that normalizes without masking.** Keep the population-variable
+   bins and let the per-bin variance enter the depth likelihood, so that
+   polymorphic deletions stay visible to the depth model. Needs a re-call of
+   the cohorts and the full protocol (HG002 both paths, pre-gate, cohort
+   gate). Recall still lost with the PoN at 1-10 kb, by gnomAD-SV frequency:
+   0.86 → 0.45 at AF >= 5 %, 0.47 → 0.14 for deletions absent from gnomAD.
+2. **DUP 1-100 kb with depth and junction support.** Real (found in the
+   child's own parents in 95-97 % of cases against 13-24 % in unrelated
+   parents) but scored SQ < 1 because GIAB labels almost none of them true.
+   A rule keeping them PASS (SOURCE=BOTH, CN >= 3, LowSQ only, wave < 0.20;
+   ~11 DUP 1-10 kb and ~4.6 DUP 10-100 kb per genome) was clean in the
+   children's own calls but failed the cohort gate (`runs/_v214/`): its
+   3,619 new cohort sites are genotyped in every genome from depth alone and
+   flood genotype-only de novo DUPs (wave >= 0.20 children: DUP 1-10 kb
+   +10 per child). Prerequisite: at a DUP site of 1-100 kb, a carrier
+   genotype without the sample's own call needs junction support (or is
+   flagged), then re-run the rule through the gate.
+
 ### State as of 2026-11-17 (v2.1.0): method frozen for the paper, then validation
 
 Vedette has been called **SVengers** since v2.0.0 (repository
