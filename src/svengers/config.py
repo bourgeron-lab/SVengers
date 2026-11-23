@@ -51,6 +51,19 @@ class SegmentConfig:
     # bridge_max_gap_bins long AND at most bridge_max_gap_frac of the shorter
     # side, and their mean ratios differ by at most bridge_max_ratio_diff.
     # The interrupting segments are kept as their own (nested) calls.
+    # Panel-of-normals mode. "mask" (until v2.1): bins whose population MAD
+    # exceeds 30 % of the median are masked; those are the bins of polymorphic
+    # CNVs, so 44 % of the HG002 truth deletions of 1-10 kb lost >70 % of their
+    # bins and the depth channel with them. "variance": the panel's centre and
+    # spread are taken over the founders at the expected copy number of each
+    # bin (PoN schema 0.2), only bins without a reference group are masked, and the
+    # spread enters the depth likelihood (HMM and genotyper) as extra variance.
+    pon_mode: str = "mask"
+    pon_min_modal_frac: float = 0.2  # variance mode: mask bins whose reference group is smaller
+    pon_min_consistent: float = 0.8  # ... or whose founders sit at integer copy numbers less often
+    # variance mode: bins where GRCh38 carries the minor allele are read against the reference
+    # (a deletion most people carry is reported, INFO/REFMINOR), not absorbed by the panel
+    pon_refminor: bool = True
     bridge_max_gap_bins: int = 3     # 0 disables bridging
     bridge_max_gap_frac: float = 0.05
     bridge_max_ratio_diff: float = 0.15

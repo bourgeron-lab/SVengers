@@ -104,6 +104,52 @@ def sex_karyotype(sample, bin_size, raw, mask, baf, pon_path) -> dict:
     return classify(st) if st else {"karyotype": "?", "note": "chrX non lisible"}
 
 
+_HIDDEN_CTX = None   # (scan_results, fasta, BreakpointConfig), shared with forked workers
+
+
+def _hidden_splits(name: str) -> list:
+    """Junctions recovered by realigning one contig's clipped sequences."""
+    import pysam
+
+    from .breakpoints.resolve import recover_junctions
+
+    scan_results, fasta, bp = _HIDDEN_CTX
+    ev = scan_results[name]
+    with pysam.FastaFile(fasta) as fa:
+        ref_arr = np.frombuffer(fa.fetch(name).upper().encode(), dtype=np.uint8)
+    return recover_junctions(ev.sr, ev.sr_seq, ref_arr, bp)
+
+
+def evidence_from_store(path: str, lengths: dict[str, int]):
+    """(InsertModel, {contig: ContigEvidence}) read back from an evidence store
+    written by a CRAM scan: what `scan_cram` returns, without the depth."""
+    from .extract.scan import ContigEvidence
+    from .extract.store import EvidenceStore
+
+    src = EvidenceStore(path)
+    if not any(src.has_contig(n) and src.has_junction_evidence(n) for n in lengths):
+        raise ValueError(f"{path}: no junction evidence (store built without a CRAM scan)")
+    m = src.meta
+    insert = InsertModel(mu=float(m["insert_mu"]), sigma=float(m["insert_sigma"]),
+                         n_pairs=int(m.get("insert_n_pairs", 0)))
+    out = {}
+    for name, length in lengths.items():
+        ev = ContigEvidence(contig=name, depth=np.zeros(0, np.float32))
+        if src.has_contig(name) and src.has_junction_evidence(name):
+            ev.pe = src.pe(name, 0, length + 1)
+            sr = src.sr(name, 0, length + 1, with_seq=True)
+            ev.sr_seq = list(sr.pop("seq"))
+            ev.sr = sr
+            ev.cig = src.cig(name, 0, length + 1)
+            ev.ins = src.ins(name) or {}
+        else:
+            ev.pe = {k: np.array([], np.uint32) for k in ("pos1", "pos2", "mate_tid", "orient", "mapq")}
+            ev.sr = {k: np.array([], np.uint32) for k in ("pos", "side", "mapq", "cliplen")}
+            ev.cig = {k: np.array([], np.uint32) for k in ("pos", "svlen")}
+        out[name] = ev
+    return insert, out
+
+
 def run_call(
     sample: str,
     out_dir: str | Path,
@@ -117,8 +163,16 @@ def run_call(
     only_contigs: list[str] | None = None,
     threads: int = 8,
     command: str = "",
+    evidence_store: str | None = None,
 ) -> tuple[Path, Path]:
-    """Run single-sample calling; returns (vcf_path, store_path)."""
+    """Run single-sample calling; returns (vcf_path, store_path).
+
+    ``evidence_store``: take the junction evidence (discordant pairs, split
+    reads and their clipped sequences, CIGAR deletions, insert-size track,
+    insert model) from an existing evidence store instead of scanning the
+    CRAM; depth comes from ``depth_bedgraph`` as on the fast path. A re-call
+    then takes minutes instead of the CRAM scan, and gives the same calls as a
+    CRAM run of the same code (the store holds everything the scan returns)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     fasta = config.reference.fasta
@@ -126,6 +180,8 @@ def run_call(
         raise ValueError("reference.fasta is not configured")
     if not depth_bedgraph and not cram:
         raise ValueError("Provide a CRAM (self-contained) and/or a depth bedgraph (fast path)")
+    if evidence_store and (cram or not depth_bedgraph):
+        raise ValueError("--evidence-store replaces the CRAM scan: give a depth bedgraph, no CRAM")
 
     all_contigs = read_fai(fasta)
     by_name = {c.name: c for c in all_contigs}
@@ -146,6 +202,12 @@ def run_call(
             cram, fasta, {n: by_name[n].length for n in call_names},
             config.extract, threads=threads,
         )
+    elif evidence_store:
+        insert, scan_results = evidence_from_store(
+            evidence_store, {n: by_name[n].length for n in call_names}
+        )
+        logger.info("%s: junction evidence from %s (%d pairs in the insert model)",
+                    sample, evidence_store, insert.n_pairs)
 
     bin_size = config.extract.fast_bin_size if depth_bedgraph else config.extract.bin_size
     bins = GenomeBins([by_name[n] for n in call_names], bin_size)
@@ -223,6 +285,8 @@ def run_call(
     if wave_score is not None:
         logger.info("%s: wave score %.3f", sample, wave_score)
     wave_score_pon = None
+    extra_sd: dict[str, np.ndarray | None] = {}
+    refminor: dict[str, np.ndarray | None] = {}
 
     # ---- panel-of-normals normalization (divides out residual systematic bias
     #      and masks population-variable bins)
@@ -235,12 +299,23 @@ def run_call(
                 f"PoN bin size {pon.bin_size} != run bin size {bin_size}"
             )
         n_new_masked = 0
+        variance = config.segment.pon_mode == "variance"
+        if config.segment.pon_mode not in ("mask", "variance"):
+            raise ValueError(f"segment.pon_mode {config.segment.pon_mode!r}: mask or variance")
         for name in call_names:
             before = int(mask[name].sum())
             sex, level = pon_profile(by_name[name].kind, ploidy.get(name, 2))
-            ratio[name], mask[name] = pon.normalize(
-                name, ratio[name], mask[name], sex=sex, level=level
-            )
+            if variance:
+                ratio[name], mask[name], extra_sd[name], refminor[name] = pon.normalize_variance(
+                    name, ratio[name], mask[name], sex=sex, level=level,
+                    min_modal_frac=config.segment.pon_min_modal_frac,
+                    min_consistent=config.segment.pon_min_consistent,
+                    refminor=config.segment.pon_refminor,
+                )
+            else:
+                ratio[name], mask[name] = pon.normalize(
+                    name, ratio[name], mask[name], sex=sex, level=level
+                )
             corr[name] = (ratio[name] * mean_depth).astype(np.float32)
             n_new_masked += int(mask[name].sum()) - before
         logger.info("PoN: applied (chrX %s), %d additional bins masked",
@@ -267,12 +342,18 @@ def run_call(
         wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
         wave_score_pon=wave_score_pon,
         pon=str(pon_path) if pon_path else None,
+        pon_mode=config.segment.pon_mode if pon_path else None,
+        evidence_source=str(evidence_store) if evidence_store else None,
         baf_source=("vaf-bedgraph" if vaf_bedgraph else
                     f"vcf:{Path(snv_vcf).name} PASS DP>={config.extract.baf_min_dp}"
                     if snv_vcf else None),
     )
     for name in call_names:
         writer.write_depth(name, raw[name], corr[name], mask[name])
+        if extra_sd.get(name) is not None:
+            writer.write_pon_sd(name, extra_sd[name])
+        if refminor.get(name) is not None:
+            writer.write_refminor(name, refminor[name])
         pos, vaf, dp = baf[name]
         if len(pos):
             writer.write_baf(name, pos, vaf, dp)
@@ -293,6 +374,20 @@ def run_call(
         coverage = mean_depth * (insert.read_length or 150.0) / bin_size
     writer.set_meta(coverage=coverage)
     genotyper = Genotyper(config.genotype, config.segment.max_cn)
+    # hidden split reads: clip realignment dominates the time once the CRAM
+    # scan is done (~2 min per chromosome), contigs in parallel
+    hidden: dict[str, list] = {}
+    if scan_results is not None and insert.n_pairs and config.breakpoint.hidden_splits:
+        from .parallel import default_jobs, pmap
+
+        global _HIDDEN_CTX
+        todo = [n for n in call_names if ploidy[n] != 0 and scan_results[n].sr_seq]
+        _HIDDEN_CTX = (scan_results, fasta, config.breakpoint)
+        try:
+            hidden = dict(zip(todo, pmap(_hidden_splits, todo, min(threads, default_jobs())),
+                              strict=True))
+        finally:
+            _HIDDEN_CTX = None
     calls: list[CNVCall] = []
     for name in call_names:
         if ploidy[name] == 0:
@@ -310,6 +405,7 @@ def run_call(
             bridge_max_gap_bins=config.segment.bridge_max_gap_bins,
             bridge_max_gap_frac=config.segment.bridge_max_gap_frac,
             bridge_max_ratio_diff=config.segment.bridge_max_ratio_diff,
+            extra_sd=extra_sd.get(name),
         )
         junctions = []
         if scan_results is not None and insert.n_pairs:
@@ -324,15 +420,7 @@ def run_call(
                 "%s %s: %d CIGAR-deletion junctions", sample, name, len(cig_junctions)
             )
             if config.breakpoint.hidden_splits and ev.sr_seq:
-                import pysam as _pysam
-
-                from .breakpoints.resolve import recover_junctions
-
-                with _pysam.FastaFile(fasta) as fa:
-                    ref_arr = np.frombuffer(
-                        fa.fetch(name).upper().encode(), dtype=np.uint8
-                    )
-                recovered = recover_junctions(ev.sr, ev.sr_seq, ref_arr, config.breakpoint)
+                recovered = hidden[name]
                 junctions = merge_junction_sets(junctions, recovered)
                 logger.info(
                     "%s %s: %d hidden-split junctions recovered (%d DUP)",
@@ -349,6 +437,7 @@ def run_call(
             bin_size=bin_size, ploidy=ploidy[name],
             mean_depth=coverage,
             sigma0=hmm.fit_sigma0(ratio[name], mask[name], ploidy[name]),
+            extra_sd=extra_sd.get(name),
         )
         for call in contig_calls:
             if call.source != "INSERT":  # INSERT calls are pre-genotyped by the detector

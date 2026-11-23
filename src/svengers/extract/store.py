@@ -29,14 +29,17 @@ from typing import Any
 import numpy as np
 import zarr
 
-SCHEMA_VERSION = "0.6"
+SCHEMA_VERSION = "0.7"
 # 0.2 adds optional sr clip sequences; 0.3 adds large CIGAR deletions (cig/);
 # 0.4 adds wave QC meta (wave_score, wave_by_contig — absent on older stores)
 # 0.5: wave_score is measured before the PoN; wave_score_pon (after it) and
 # pon (the panel's path) are added — None without a PoN
 # 0.6: baf_source attr (vaf-bedgraph, vcf:<name> ...); a BAF rewritten from a
 # VCF (`svengers baf`) keeps the previous arrays as <contig>/baf_track/
-SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4", "0.5", "0.6"}
+# 0.7: optional <contig>/pon_sd (per-bin relative population spread, PoN
+# variance mode), read by the genotypers, <contig>/pon_refminor (bins where
+# GRCh38 carries the minor allele, read against the reference); pon_mode attr
+SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7"}
 
 PE_DEL, PE_DUP, PE_INV, PE_INTER = 0, 1, 2, 3
 SR_LEFT_CLIP, SR_RIGHT_CLIP = 0, 1
@@ -105,6 +108,12 @@ class EvidenceStoreWriter:
         _create_array(g, "depth_raw", raw.astype(np.float32), _DEPTH_CHUNK)
         _create_array(g, "depth_corr", corrected.astype(np.float32), _DEPTH_CHUNK)
         _create_array(g, "mask", mask.astype(bool), _DEPTH_CHUNK)
+
+    def write_pon_sd(self, contig: str, sd: np.ndarray) -> None:
+        _create_array(self._contig(contig), "pon_sd", sd.astype(np.float32), _DEPTH_CHUNK)
+
+    def write_refminor(self, contig: str, flag: np.ndarray) -> None:
+        _create_array(self._contig(contig), "pon_refminor", flag.astype(bool), _DEPTH_CHUNK)
 
     def write_baf(self, contig: str, pos: np.ndarray, vaf: np.ndarray, dp: np.ndarray) -> None:
         write_baf_group(self._contig(contig), pos, vaf, dp)
@@ -214,6 +223,20 @@ class EvidenceStore:
             int(np.searchsorted(pos, start, side="left")),
             int(np.searchsorted(pos, end, side="right")),
         )
+
+    def pon_sd(self, contig: str) -> np.ndarray | None:
+        """Per-bin relative population spread (PoN variance mode), or None."""
+        try:
+            return self.root[contig]["pon_sd"][:]
+        except KeyError:
+            return None
+
+    def pon_refminor(self, contig: str) -> np.ndarray | None:
+        """Bins read against the reference where GRCh38 carries the minor allele, or None."""
+        try:
+            return self.root[contig]["pon_refminor"][:]
+        except KeyError:
+            return None
 
     def has_junction_evidence(self, contig: str) -> bool:
         """True if this store recorded PE/SR arrays for the contig (CRAM scan ran)."""

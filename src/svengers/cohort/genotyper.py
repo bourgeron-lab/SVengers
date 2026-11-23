@@ -72,6 +72,7 @@ class StoreGenotyper:
                     mean_depth=self.coverage,
                     sigma0=fit_sigma0(ratio, mask, self.ploidy.get(contig, 2)),
                     het_rate=n_het / callable_bp if callable_bp else None,
+                    extra_sd=self.store.pon_sd(contig),
                 )
                 self._has_junctions[contig] = self.store.has_junction_evidence(contig)
         return self._data[contig]
