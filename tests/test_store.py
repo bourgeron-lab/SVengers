@@ -152,3 +152,34 @@ def test_baf_backfill_from_a_deepvariant_vcf(store, tmp_path):
     with pytest.raises(ValueError):
         backfill_baf(store.path, str(other), force=True)
     assert type(store)(store.path).baf("chr1", 0, 10_000)["pos"].tolist() == [100, 200, 450, 600]
+
+
+def test_evidence_from_store_gives_back_the_scan(store, tmp_path):
+    """`call --evidence-store`: the junction evidence of a store, as the CRAM
+    scan returned it (writing it again gives the same arrays); a contig the
+    store lacks comes back empty; a store without any junction evidence (a
+    bedgraph-only run) is refused."""
+    from svengers.call import evidence_from_store
+    from svengers.extract.store import EvidenceStoreWriter
+
+    insert, ev = evidence_from_store(str(store.path), {"chr1": 10_000, "chr2": 5_000})
+    assert (insert.mu, insert.sigma) == (350.0, 70.0)
+    e = ev["chr1"]
+    assert e.pe["pos1"].tolist() == [1000, 1050, 5000] and e.pe["orient"].tolist() == [PE_DEL, PE_DEL, PE_DUP]
+    assert e.sr["pos"].tolist() == [1200, 1201, 4000] and e.sr_seq[2] == b"GGGGCCCC" * 5
+    assert e.cig["pos"].tolist() == [] and e.ins == {}
+    assert len(ev["chr2"].pe["pos1"]) == 0 and ev["chr2"].sr_seq == []
+    out = tmp_path / "again.zarr"
+    w = EvidenceStoreWriter(out, sample="S1", reference_id="deadbeef", bin_size=100)
+    w.write_pe("chr1", **e.pe)
+    w.write_sr("chr1", **e.sr, seqs=e.sr_seq)
+    again = EvidenceStore(out)
+    assert again.pe("chr1", 0, 10_000)["pos2"].tolist() == [4000, 4020, 9000]
+    assert again.sr("chr1", 0, 10_000, with_seq=True)["seq"] == store.sr("chr1", 0, 10_000, with_seq=True)["seq"]
+
+    plain = tmp_path / "plain.zarr"
+    w = EvidenceStoreWriter(plain, sample="S1", reference_id="deadbeef", bin_size=100)
+    w.set_meta(mean_depth=30.0, insert_mu=0.0, insert_sigma=0.0)
+    w.write_depth("chr1", np.ones(10, np.float32), np.ones(10, np.float32), np.zeros(10, bool))
+    with pytest.raises(ValueError, match="no junction evidence"):
+        evidence_from_store(str(plain), {"chr1": 1_000})

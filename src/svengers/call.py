@@ -104,6 +104,36 @@ def sex_karyotype(sample, bin_size, raw, mask, baf, pon_path) -> dict:
     return classify(st) if st else {"karyotype": "?", "note": "chrX non lisible"}
 
 
+def evidence_from_store(path: str, lengths: dict[str, int]):
+    """(InsertModel, {contig: ContigEvidence}) read back from an evidence store
+    written by a CRAM scan: what `scan_cram` returns, without the depth."""
+    from .extract.scan import ContigEvidence
+    from .extract.store import EvidenceStore
+
+    src = EvidenceStore(path)
+    if not any(src.has_contig(n) and src.has_junction_evidence(n) for n in lengths):
+        raise ValueError(f"{path}: no junction evidence (store built without a CRAM scan)")
+    m = src.meta
+    insert = InsertModel(mu=float(m["insert_mu"]), sigma=float(m["insert_sigma"]),
+                         n_pairs=int(m.get("insert_n_pairs", 0)))
+    out = {}
+    for name, length in lengths.items():
+        ev = ContigEvidence(contig=name, depth=np.zeros(0, np.float32))
+        if src.has_contig(name) and src.has_junction_evidence(name):
+            ev.pe = src.pe(name, 0, length + 1)
+            sr = src.sr(name, 0, length + 1, with_seq=True)
+            ev.sr_seq = list(sr.pop("seq"))
+            ev.sr = sr
+            ev.cig = src.cig(name, 0, length + 1)
+            ev.ins = src.ins(name) or {}
+        else:
+            ev.pe = {k: np.array([], np.uint32) for k in ("pos1", "pos2", "mate_tid", "orient", "mapq")}
+            ev.sr = {k: np.array([], np.uint32) for k in ("pos", "side", "mapq", "cliplen")}
+            ev.cig = {k: np.array([], np.uint32) for k in ("pos", "svlen")}
+        out[name] = ev
+    return insert, out
+
+
 def run_call(
     sample: str,
     out_dir: str | Path,
@@ -117,8 +147,16 @@ def run_call(
     only_contigs: list[str] | None = None,
     threads: int = 8,
     command: str = "",
+    evidence_store: str | None = None,
 ) -> tuple[Path, Path]:
-    """Run single-sample calling; returns (vcf_path, store_path)."""
+    """Run single-sample calling; returns (vcf_path, store_path).
+
+    ``evidence_store``: take the junction evidence (discordant pairs, split
+    reads and their clipped sequences, CIGAR deletions, insert-size track,
+    insert model) from an existing evidence store instead of scanning the
+    CRAM; depth comes from ``depth_bedgraph`` as on the fast path. A re-call
+    then takes minutes instead of the CRAM scan, and gives the same calls as a
+    CRAM run of the same code (the store holds everything the scan returns)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     fasta = config.reference.fasta
@@ -126,6 +164,8 @@ def run_call(
         raise ValueError("reference.fasta is not configured")
     if not depth_bedgraph and not cram:
         raise ValueError("Provide a CRAM (self-contained) and/or a depth bedgraph (fast path)")
+    if evidence_store and (cram or not depth_bedgraph):
+        raise ValueError("--evidence-store replaces the CRAM scan: give a depth bedgraph, no CRAM")
 
     all_contigs = read_fai(fasta)
     by_name = {c.name: c for c in all_contigs}
@@ -146,6 +186,12 @@ def run_call(
             cram, fasta, {n: by_name[n].length for n in call_names},
             config.extract, threads=threads,
         )
+    elif evidence_store:
+        insert, scan_results = evidence_from_store(
+            evidence_store, {n: by_name[n].length for n in call_names}
+        )
+        logger.info("%s: junction evidence from %s (%d pairs in the insert model)",
+                    sample, evidence_store, insert.n_pairs)
 
     bin_size = config.extract.fast_bin_size if depth_bedgraph else config.extract.bin_size
     bins = GenomeBins([by_name[n] for n in call_names], bin_size)
@@ -267,6 +313,7 @@ def run_call(
         wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
         wave_score_pon=wave_score_pon,
         pon=str(pon_path) if pon_path else None,
+        evidence_source=str(evidence_store) if evidence_store else None,
         baf_source=("vaf-bedgraph" if vaf_bedgraph else
                     f"vcf:{Path(snv_vcf).name} PASS DP>={config.extract.baf_min_dp}"
                     if snv_vcf else None),

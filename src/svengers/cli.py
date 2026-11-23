@@ -67,6 +67,10 @@ def call(
         None, "--contig", help="Restrict to contig(s), repeatable (smoke tests)"
     ),
     config_file: Optional[Path] = typer.Option(None, "--config", help="TOML configuration"),
+    evidence_store: Optional[Path] = typer.Option(
+        None, help="Re-call from an existing evidence store: its junction evidence replaces "
+        "the CRAM scan (needs --depth-bedgraph; write to another --out-dir)"
+    ),
 ) -> None:
     """Single-sample CNV calling: evidence extraction + segmentation -> VCF + evidence store."""
     from .call import run_call
@@ -90,6 +94,7 @@ def call(
         pon_path=str(pon) if pon else None,
         only_contigs=contig if contig else None,
         command=shlex.join(sys.argv),
+        evidence_store=str(evidence_store) if evidence_store else None,
     )
     typer.echo(f"VCF:   {vcf}")
     typer.echo(f"Store: {store}")
