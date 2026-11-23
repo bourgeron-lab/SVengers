@@ -17,6 +17,13 @@ scratch/
 resources/
 logs/
 models/*.joblib.tmp
+# superseded models (v7-v11b), kept on disk, never in production
+models/v7/
+models/v8/
+models/v9/
+models/v10/
+models/v11a/
+models/v11b/
 runs/
 genetrek-data-*.tsv
 

@@ -62,22 +62,29 @@ def regenotype_calls(vcf_in: str | Path, store_path: str | Path, vcf_out: str | 
                                cig_support=int(fmt.get("CG") or 0))
                 sg.genotyper.genotype(call, data)
                 old_gt = fmt.get("GT")
-                new_gt = None if call.gt == (-1, -1) else call.gt
-                fmt["GT"] = new_gt if new_gt is not None else (None, None)
-                fmt["GQ"] = call.gq
-                if call.cn >= 0:
-                    fmt["CN"] = call.cn
-                    fmt["CNQ"] = round(call.cn_posterior, 4)
-                if not np.isnan(call.mean_ratio):
-                    fmt["RD"] = round(call.mean_ratio, 4)
-                fmt["BAFN"] = call.baf_n
-                if np.isnan(call.baf_dev):
-                    if "BAFDEV" in fmt and fmt.get("BAFDEV") is not None:
-                        del fmt["BAFDEV"]
-                else:
-                    fmt["BAFDEV"] = round(call.baf_dev, 4)
+                new_gt = write_genotype(fmt, call)
                 counts["regenotyped"] += 1
                 counts["gt_changed"] += tuple(old_gt or ()) != tuple(new_gt or (None, None))
                 vout.write(rec)
     pysam.tabix_index(str(vcf_out), preset="vcf", force=True)
     return counts
+
+
+def write_genotype(fmt, call: CNVCall):
+    """Write the store-derived fields of a genotyped call (``_FIELDS``) into a
+    record's sample; returns the new GT (None when undetermined)."""
+    new_gt = None if call.gt == (-1, -1) else call.gt
+    fmt["GT"] = new_gt if new_gt is not None else (None, None)
+    fmt["GQ"] = call.gq
+    if call.cn >= 0:
+        fmt["CN"] = call.cn
+        fmt["CNQ"] = round(call.cn_posterior, 4)
+    if not np.isnan(call.mean_ratio):
+        fmt["RD"] = round(call.mean_ratio, 4)
+    fmt["BAFN"] = call.baf_n
+    if np.isnan(call.baf_dev):
+        if "BAFDEV" in fmt and fmt.get("BAFDEV") is not None:
+            del fmt["BAFDEV"]
+    else:
+        fmt["BAFDEV"] = round(call.baf_dev, 4)
+    return new_gt

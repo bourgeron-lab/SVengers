@@ -118,6 +118,16 @@ def run_filter(
 
     artifacts = IntervalSet.from_bed(artifact_bed) if artifact_bed else None
     store = EvidenceStore(store_path)
+    bridged = None
+    if config.segment.bridge_max_gap_bins > 0:
+        # calls made before call-time bridging (v1.12.0) still carry one event
+        # in abutting depth pieces: join them as `call` would (genotype/bridge.py)
+        from ..genotype.bridge import bridge_calls
+
+        out_name = Path(vcf_out).name
+        bridged = Path(vcf_out).with_name(out_name.split(".vcf")[0] + ".bridged.tmp.vcf.gz")
+        if bridge_calls(vcf_in, store_path, bridged, config)["joined"]:
+            vcf_in = bridged
     annotator = ContextAnnotator.from_paths(
         segdup_bed=config.reference.segdup_bed,
         lcr_bed=config.reference.lcr_bed,
@@ -245,6 +255,9 @@ def run_filter(
         feat_fh.close()
     if mode == "wz":
         pysam.tabix_index(out_path, preset="vcf", force=True)
+    if bridged is not None:
+        for p in (bridged, Path(f"{bridged}.tbi")):
+            p.unlink(missing_ok=True)
     logger.info(
         "filter: %(total)d calls, %(pass)d PASS, %(hard_filtered)d hard-filtered, "
         "%(low_sq)d LowSQ, %(sq_override)d large-event SQ overrides", counts,

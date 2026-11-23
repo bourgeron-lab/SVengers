@@ -27,7 +27,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.1.5** (method frozen for the paper in v2.1.0: bug fixes only), in production
+Status: **v2.1.6**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -346,6 +346,11 @@ the copy ratio:
   heterozygous sites (VAF 0.15-0.85) under each CN (CN 2 at 1/2, CN 3 at 1/3 and 2/3, …;
   a clear heterozygous site contradicts CN ≤ 1), capped at 3 sites' weight per bin;
 - masked bins are uninformative (equal emission), so segments run through gaps;
+- same-CN segments split by a short interruption (≤ 3 bins and ≤ 5 % of the shorter side,
+  mean ratios within 0.15: one outlier bin, or the 2 kb CN0 of a common deletion on the
+  remaining allele) are joined; calls made before this existed (v1.12.0) are joined the same
+  way by `svengers filter`, depth-only pieces only (never a junction-supported call nor a
+  mostly masked `MaxN` piece), tagged `BRIDGED`;
 - transition probability 1e-8 per bin; Viterbi path, forward-backward posteriors.
 
 Non-baseline segments become depth candidates, tagged `NoEvidence` (< 3 bins), `MaxN`

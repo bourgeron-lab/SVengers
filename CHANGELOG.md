@@ -1,5 +1,35 @@
 # Changelog
 
+## v2.1.6 — 2026-11-23
+
+Bug fix: large depth events left in abutting pieces are joined at the filter stage. Model,
+features, feature schema and evidence store unchanged.
+
+- **`svengers filter` joins depth calls that one event left in abutting pieces**
+  (`genotype/bridge.py`). Since v1.12.0 `svengers call` joins same-CN depth segments
+  split by a short interruption, but the production calls were made before (stores of
+  2026-10-14/16 and 2026-11-01): a 22q13 terminal deletion came out as 43.6-49.32 Mb and
+  49.322 Mb-qter, around the 2 kb CN0 of a common deletion on the remaining allele. The
+  filter now applies the call-time rule to the raw calls, from the store alone: depth-only
+  calls (SOURCE=DEPTH) of one contig, type and CN, gap of at most 3 bins and 5 % of the
+  shorter side, mean ratios within 0.15, joins chained. A junction-supported call is never
+  joined (its breakpoints are evidence that the event ends there: a 4.3 kb PASS
+  deletion with junction evidence would have absorbed a NoEvidence piece), nor a `MaxN` piece (a de novo 16p11.2
+  deletion lost its PASS in a first version, joined to a piece of the BP4 segmental
+  duplication). The joined call keeps the first piece's ID, is re-genotyped from the store
+  (GT, GQ, CN, CNQ, RD, BAFN, BAFDEV), gets its own call-time tags (NoEvidence, MaxN,
+  LowPosterior, MinSize) and `INFO/BRIDGED` (number of pieces). On calls made with
+  call-time bridging the step changes nothing.
+- Production runs (dataset_paper, PMS): 4,062 joined calls in 715 genomes and 161 in 95,
+  among them 28 + 16 PASS deletions and 43 + 10 PASS duplications of 100 kb or more; PASS
+  events of 100 kb or more per genome 0.98 -> 0.98 (DEL) and 0.57 -> 0.56 (DUP) in
+  dataset_paper, 1.15 -> 1.08 and 0.72 -> 0.69 in PMS. Cohort gates OK on both. Confirmed
+  de novo calls 182 -> 180 (dataset_paper) and 129 -> 122 (PMS): every one that went is
+  covered by a confirmed de novo call of the same child joined from its pieces (PMS 22q13
+  deletions counted once instead of two to four times). HG002: production path unchanged;
+  CRAM path calls joined, Truvari metrics identical in every stratum.
+- `.gitignore`: superseded models v7-v11b stay on disk, out of the repository.
+
 ## v2.1.5 — 2026-11-19
 
 Bug fix of the junction VCF (`svengers bnd`) and documentation corrections; calls,
