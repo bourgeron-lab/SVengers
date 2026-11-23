@@ -45,6 +45,7 @@ class MemberCall:
     gq: int
     passing: bool = True   # PASS (or kept-filter) in the single-sample VCF
     sq: float = 0.0
+    junction: bool = False  # SOURCE BOTH or JUNCTION: discordant pairs / split reads
 
 
 @dataclass
@@ -184,6 +185,7 @@ def read_sample_calls(
     with pysam.VariantFile(str(vcf_path)) as vcf:
         sample = list(vcf.header.samples)[0]
         spec = spec_coords(vcf.header)
+        has_source = "SOURCE" in vcf.header.info
         for rec in vcf:
             svtype = rec.info.get("SVTYPE")
             if svtype not in ("DEL", "DUP"):
@@ -219,6 +221,7 @@ def read_sample_calls(
                     gq=gq,
                     passing=passing or not pass_only,
                     sq=sq,
+                    junction=has_source and rec.info.get("SOURCE") in ("BOTH", "JUNCTION"),
                 )
             )
     return out
@@ -265,6 +268,9 @@ def _contig_sites(work: tuple) -> list[tuple[int, int, str, list[tuple]]]:
             ("SPREAD", cl.spread),
             ("PRECISE_FRAC", round(
                 sum(1 for m in cl.members if m.precise) / len(cl.members), 3
+            )),
+            ("JUNC_FRAC", round(
+                sum(1 for m in cl.members if m.junction) / len(cl.members), 3
             )),
             ("SQMAX", round(max(best_sq.values()), 2)),
             ("SQMEAN", round(sum(best_sq.values()) / len(best_sq), 2)),
@@ -321,6 +327,8 @@ def run_merge(
     header.info.add("NSAMPLES", "1", "Integer", "Number of distinct carrier samples")
     header.info.add("SPREAD", "1", "Integer", "Breakpoint spread among members (bp)")
     header.info.add("PRECISE_FRAC", "1", "Float", "Fraction of members with precise breakpoints")
+    header.info.add("JUNC_FRAC", "1", "Float",
+                    "Fraction of members with junction evidence (SOURCE BOTH or JUNCTION)")
     header.info.add("SQMAX", "1", "Float", "Highest per-sample SQ among the clustered calls")
     header.info.add("SQMEAN", "1", "Float", "Mean of the per-sample best SQ among carriers")
     header.info.add(

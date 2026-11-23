@@ -35,7 +35,9 @@ _NEW_INFO = [
      "imbalance of a copy gain; TERMINAL_DEL_DEPTH: deletion reaching a contig end, "
      "with a single breakpoint and so little junction evidence, whose depth shows a clean "
      "copy loss; UNIQUE_DEL_DEPTH: depth-only deletion >= 10 kb outside repeats whose depth "
-     "shows a clean copy loss, in a genome without coverage waves)"),
+     "shows a clean copy loss, in a genome without coverage waves; JUNCTION_DUP_DEPTH: "
+     "duplication of 1-100 kb seen by both depth and junction reads, CN >= 3, in a genome "
+     "without strong coverage waves)"),
 ]
 
 
@@ -80,6 +82,10 @@ def sq_override(svtype: str, size: int, feats: dict, cf, terminal: bool = False)
             and feats["maskfrac"] < cf.unique_del_rescue_max_mask
             and 0 <= feats["wave_score"] < cf.unique_del_rescue_max_wave):
         return "UNIQUE_DEL_DEPTH"
+    if (svtype == "DUP" and cf.junction_dup_rescue_min_size <= size < cf.junction_dup_rescue_max_size
+            and feats.get("src_both", 0) == 1 and feats["cn"] >= cf.junction_dup_rescue_min_cn
+            and 0 <= feats.get("wave_score", -1.0) < cf.junction_dup_rescue_max_wave):
+        return "JUNCTION_DUP_DEPTH"
     if (svtype == "DUP" and size >= cf.large_dup_rescue_size and feats["cn"] >= 3
             and feats["baf_n"] >= cf.large_dup_rescue_min_baf_n
             and feats["baf_dev"] >= cf.large_dup_rescue_min_baf_dev

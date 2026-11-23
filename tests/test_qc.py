@@ -1515,3 +1515,23 @@ def test_unique_depth_rule_off_in_a_noisy_genome():
     assert run(cap) == ["UNIQUE_DEL_DEPTH"] * cap + ["TERMINAL_DEL_DEPTH"]
     assert run(cap + 1) == [None] * (cap + 1) + ["TERMINAL_DEL_DEPTH"]
     assert run(cap + 1, sq=9.0) == [None] * (cap + 2)   # a high SQ needs no override
+
+
+def test_junction_supported_duplication_keeps_its_pass():
+    """A duplication of 1-100 kb seen by both depth and junction reads with
+    CN >= 3, in a genome without strong waves, keeps its PASS: the model
+    scores real ones like artefacts (94-97 % found in the child's own parents)."""
+    from svengers.config import load_config
+    from svengers.filter.pipeline import sq_override
+
+    f = load_config(None).filter
+    gain = {"cn": 3, "src_both": 1, "src_junction": 0, "wave_score": 0.11, "maskfrac": 0.0,
+            "segdup_ovl": 0.0, "baf_n": 0, "baf_dev": float("nan")}
+    assert sq_override("DUP", 5_000, gain, f) == "JUNCTION_DUP_DEPTH"
+    assert sq_override("DUP", 60_000, dict(gain, cn=4), f) == "JUNCTION_DUP_DEPTH"
+    assert sq_override("DUP", 800, gain, f) is None                          # below one bin
+    assert sq_override("DUP", 100_000, gain, f) is None                      # LARGE_DUP_BAF's range
+    assert sq_override("DUP", 5_000, dict(gain, src_both=0), f) is None      # depth or junction alone
+    assert sq_override("DUP", 5_000, dict(gain, cn=2), f) is None
+    assert sq_override("DUP", 5_000, dict(gain, wave_score=0.25), f) is None
+    assert sq_override("DUP", 5_000, dict(gain, wave_score=-1.0), f) is None  # GIAB branch
