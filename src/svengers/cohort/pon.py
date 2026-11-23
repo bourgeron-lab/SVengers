@@ -42,7 +42,14 @@ from ..vcfout import span, spec_coords
 
 logger = logging.getLogger(__name__)
 
-PON_SCHEMA = "0.1"
+PON_SCHEMA = "0.2"
+SUPPORTED_PON_SCHEMAS = {"0.1", "0.2"}
+# 0.2 adds, per bin and sex stratum, the centre and spread of the founders at
+# the bin's modal copy number (centre_*, spread_*, modal_frac_*): carriers of a
+# polymorphic CNV no longer shift the centre nor inflate the spread
+MODE_WINDOW = 0.25   # a founder is in the reference group within +-25 % of its centre
+MIN_ANCHOR_FRAC = 0.2  # founders near the expected ratio needed to anchor the group there
+CONSISTENT_WINDOW = 0.3  # distance to the nearest integer copy number, in states
 _BLOCK = 262_144  # bins per streaming block (= depth chunk size)
 
 
@@ -112,18 +119,21 @@ def build_pon(
             len(stores),
         )
 
-    def _profile(subset: list[EvidenceStore], contig: str, n_bins: int):
-        median = np.full(n_bins, np.nan, dtype=np.float32)
-        mad = np.full(n_bins, np.nan, dtype=np.float32)
+    def _profile(subset: list[EvidenceStore], contig: str, n_bins: int, anchor: float = 1.0):
+        out = {k: np.full(n_bins, np.nan, dtype=np.float32)
+               for k in ("median", "mad", "centre", "spread", "modal_frac", "consistent_frac")}
         for b0 in range(0, n_bins, _BLOCK):
             b1 = min(b0 + _BLOCK, n_bins)
             stack = np.empty((len(subset), b1 - b0), dtype=np.float32)
             for k, s in enumerate(subset):
                 stack[k] = _ratio_block(s, contig, b0, b1)
             med = np.median(stack, axis=0)
-            median[b0:b1] = med
-            mad[b0:b1] = np.median(np.abs(stack - med[None, :]), axis=0) * 1.4826
-        return median, mad
+            out["median"][b0:b1] = med
+            out["mad"][b0:b1] = np.median(np.abs(stack - med[None, :]), axis=0) * 1.4826
+            for key, arr in zip(("centre", "spread", "modal_frac", "consistent_frac"),
+                                modal_stats(stack, anchor=anchor), strict=True):
+                out[key][b0:b1] = arr
+        return out
 
     if denoise_k:
         rng = np.random.default_rng(17)
@@ -149,15 +159,56 @@ def build_pon(
             if len(subset) < (min_samples if label == "all" else max(min_samples // 2, 3)):
                 logger.warning("PoN %s/%s: only %d samples, skipping", contig, label, len(subset))
                 continue
-            median, mad = _profile(subset, contig, n_bins)
-            _create_array(g, f"median_{label}", median, _BLOCK)
-            _create_array(g, f"mad_{label}", mad, _BLOCK)
+            # expected ratio of the reference group: a male X or Y at 0.5
+            anchor = 0.5 if (is_sex_contig and label == "male") else 1.0
+            prof = _profile(subset, contig, n_bins, anchor)
+            median = prof["median"]
+            for key in ("median", "mad", "centre", "spread", "modal_frac", "consistent_frac"):
+                _create_array(g, f"{key}_{label}", prof[key], _BLOCK)
             g.attrs[f"n_{label}"] = len(subset)
 
         if denoise_k and not is_sex_contig and median is not None and k >= 1:
             _build_svd(g, svd_subset, contig, median, k)
         logger.info("PoN %s done (%d bins)", contig, n_bins)
     return Path(out_path)
+
+
+def modal_stats(stack: np.ndarray, anchor: float = 1.0, window: float = MODE_WINDOW,
+                rounds: int = 2, min_anchor_frac: float = MIN_ANCHOR_FRAC):
+    """(centre, spread, modal_frac, consistent_frac) per bin of a (founders, bins) ratio matrix:
+    median and MAD (x 1.4826) of the reference group, the founders within
+    +-``window`` of the centre, refined ``rounds`` times.
+
+    The search starts at the expected ratio ``anchor`` (1.0; 0.5 on a male
+    chrX/chrY), not at the median: at a common deletion whose non-carriers
+    are a minority (AF ~0.3: 49 % non-carriers, 42 % het, 9 % hom) the
+    median sits among the het carriers and would turn every non-carrier
+    into a duplication. Where fewer than ``min_anchor_frac`` founders sit
+    near the anchor (a systematic bias of the reference: every founder at
+    0.5), it starts at the median instead."""
+    import warnings
+
+    median = np.median(stack, axis=0)
+    near = (np.abs(stack - anchor) <= window * anchor).mean(axis=0)
+    centre = np.where(near >= min_anchor_frac, np.float32(anchor), median)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)   # all-NaN columns
+        for _ in range(rounds):
+            keep = np.abs(stack - centre[None, :]) <= window * np.abs(centre)[None, :]
+            new = np.nanmedian(np.where(keep, stack, np.nan), axis=0)
+            centre = np.where(np.isfinite(new), new, centre)
+        keep = np.abs(stack - centre[None, :]) <= window * np.abs(centre)[None, :]
+        spread = np.nanmedian(np.abs(np.where(keep, stack, np.nan) - centre[None, :]), axis=0) * 1.4826
+    # share of founders at an integer copy number of the reference (within
+    # +-30 % of the step between states): ~1 at a polymorphic CNV, low where
+    # the depth is spread out (the within-group spread above is bounded by the
+    # window and would understate such noise)
+    step = np.abs(centre) * (0.5 / anchor)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pos = stack / np.where(step > 0, step, np.nan)[None, :]
+    consistent = (np.abs(pos - np.round(pos)) <= CONSISTENT_WINDOW).mean(axis=0)
+    return (centre.astype(np.float32), spread.astype(np.float32),
+            keep.mean(axis=0).astype(np.float32), consistent.astype(np.float32))
 
 
 def _build_svd(
@@ -200,9 +251,58 @@ class PanelOfNormals:
     def __init__(self, path: str | Path):
         self.root = zarr.open_group(str(path), mode="r")
         self.meta = dict(self.root.attrs)
-        if self.meta.get("schema_version") != PON_SCHEMA:
+        if self.meta.get("schema_version") not in SUPPORTED_PON_SCHEMAS:
             raise ValueError(f"{path}: unsupported PoN schema")
         self.bin_size = int(self.meta["bin_size"])
+
+    def modal(self, contig: str, sex: str = "all") -> tuple[np.ndarray, ...] | None:
+        """(centre, spread, modal_frac, consistent_frac) of the reference group (schema >= 0.2)."""
+        try:
+            g = self.root[contig]
+        except KeyError:
+            return None
+        for label in (sex, "all", "female", "male"):
+            try:
+                return (g[f"centre_{label}"][:], g[f"spread_{label}"][:],
+                        g[f"modal_frac_{label}"][:], g[f"consistent_frac_{label}"][:])
+            except KeyError:
+                continue
+        return None
+
+    def normalize_variance(
+        self,
+        contig: str,
+        ratio: np.ndarray,
+        mask: np.ndarray,
+        sex: str = "all",
+        min_median: float = 0.25,
+        min_modal_frac: float = 0.2,
+        min_consistent: float = 0.8,
+        level: float = 1.0,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        """(normalized ratio, extended mask, relative spread per bin).
+
+        Variance mode: bins divided by the centre of the founders at the modal
+        copy number and brought back to ``level``; masked only where there is
+        no reference (centre below ``min_median`` x level, a reference group
+        under ``min_modal_frac`` of the panel, or fewer than ``min_consistent``
+        founders at an integer copy number: a depth spread out, not a CNV). The modal group's spread
+        relative to its centre is returned for the depth likelihood instead of
+        masking variable bins."""
+        if level <= 0:
+            return ratio, mask, None
+        m = self.modal(contig, sex)
+        if m is None or len(m[0]) != len(ratio):
+            logger.warning("PoN: no modal profile for %s (schema 0.1 panel?), ratio left untouched", contig)
+            return ratio, mask, None
+        centre, spread, frac, consistent = m
+        ok = (np.isfinite(centre) & (centre >= min_median * level) & (frac >= min_modal_frac)
+              & (consistent >= min_consistent))
+        out = ratio.copy()
+        out[ok] = ratio[ok] / centre[ok] * level
+        rel = np.zeros(len(ratio), dtype=np.float32)
+        rel[ok] = np.nan_to_num(spread[ok] / centre[ok], nan=0.0)
+        return out, mask | ~ok, rel
 
     def profile(self, contig: str, sex: str = "all") -> tuple[np.ndarray, np.ndarray] | None:
         try:

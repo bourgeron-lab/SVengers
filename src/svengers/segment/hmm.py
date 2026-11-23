@@ -119,8 +119,13 @@ def depth_log_emissions(
     ploidy: int,
     max_cn: int,
     sigma0: float,
+    extra_sd: np.ndarray | None = None,
 ) -> np.ndarray:
     """(n_bins, n_states) Gaussian log-likelihood of the copy ratio.
+
+    ``extra_sd``: per-bin population spread of the ratio relative to its
+    centre (PoN variance mode), added as multiplicative noise: variance
+    sigma0^2 * max(e, floor) + (extra_sd * e)^2 at expected ratio e.
 
     Expected ratio for state c is c/2 regardless of contig ploidy (the ratio is
     normalized to the DIPLOID autosomal mean; a hemizygous X has baseline
@@ -130,8 +135,12 @@ def depth_log_emissions(
     expected = states / 2.0
     # variance grows with the mean (Poisson-like), floored for CN0
     var = sigma0**2 * np.maximum(expected, _MIN_RATIO_VAR)
+    if extra_sd is not None:
+        var = var[None, :] + (extra_sd[:, None] * expected[None, :]) ** 2
+    else:
+        var = var[None, :]
     log_norm = -0.5 * np.log(2 * np.pi * var)
-    emit = log_norm[None, :] - 0.5 * (ratio[:, None] - expected[None, :]) ** 2 / var[None, :]
+    emit = log_norm - 0.5 * (ratio[:, None] - expected[None, :]) ** 2 / var
     emit[mask] = 0.0  # uninformative bins
     return emit
 
@@ -229,6 +238,7 @@ def segment_contig(
     bridge_max_gap_bins: int = 0,
     bridge_max_gap_frac: float = 0.05,
     bridge_max_ratio_diff: float = 0.15,
+    extra_sd: np.ndarray | None = None,
 ) -> tuple[list[Segment], np.ndarray]:
     """Run the HMM on one contig; return non-baseline segments and the CN path.
 
@@ -240,7 +250,7 @@ def segment_contig(
     if n == 0:
         return [], np.array([], dtype=np.int32)
     sigma0 = fit_sigma0(ratio, mask, ploidy)
-    emit = depth_log_emissions(ratio, mask, ploidy, max_cn, sigma0)
+    emit = depth_log_emissions(ratio, mask, ploidy, max_cn, sigma0, extra_sd)
     if baf_emit is not None and baf_weight > 0:
         emit = emit + baf_weight * baf_emit
 

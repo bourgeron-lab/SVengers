@@ -285,6 +285,7 @@ def run_call(
     if wave_score is not None:
         logger.info("%s: wave score %.3f", sample, wave_score)
     wave_score_pon = None
+    extra_sd: dict[str, np.ndarray | None] = {}
 
     # ---- panel-of-normals normalization (divides out residual systematic bias
     #      and masks population-variable bins)
@@ -297,12 +298,22 @@ def run_call(
                 f"PoN bin size {pon.bin_size} != run bin size {bin_size}"
             )
         n_new_masked = 0
+        variance = config.segment.pon_mode == "variance"
+        if config.segment.pon_mode not in ("mask", "variance"):
+            raise ValueError(f"segment.pon_mode {config.segment.pon_mode!r}: mask or variance")
         for name in call_names:
             before = int(mask[name].sum())
             sex, level = pon_profile(by_name[name].kind, ploidy.get(name, 2))
-            ratio[name], mask[name] = pon.normalize(
-                name, ratio[name], mask[name], sex=sex, level=level
-            )
+            if variance:
+                ratio[name], mask[name], extra_sd[name] = pon.normalize_variance(
+                    name, ratio[name], mask[name], sex=sex, level=level,
+                    min_modal_frac=config.segment.pon_min_modal_frac,
+                    min_consistent=config.segment.pon_min_consistent,
+                )
+            else:
+                ratio[name], mask[name] = pon.normalize(
+                    name, ratio[name], mask[name], sex=sex, level=level
+                )
             corr[name] = (ratio[name] * mean_depth).astype(np.float32)
             n_new_masked += int(mask[name].sum()) - before
         logger.info("PoN: applied (chrX %s), %d additional bins masked",
@@ -329,6 +340,7 @@ def run_call(
         wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
         wave_score_pon=wave_score_pon,
         pon=str(pon_path) if pon_path else None,
+        pon_mode=config.segment.pon_mode if pon_path else None,
         evidence_source=str(evidence_store) if evidence_store else None,
         baf_source=("vaf-bedgraph" if vaf_bedgraph else
                     f"vcf:{Path(snv_vcf).name} PASS DP>={config.extract.baf_min_dp}"
@@ -336,6 +348,8 @@ def run_call(
     )
     for name in call_names:
         writer.write_depth(name, raw[name], corr[name], mask[name])
+        if extra_sd.get(name) is not None:
+            writer.write_pon_sd(name, extra_sd[name])
         pos, vaf, dp = baf[name]
         if len(pos):
             writer.write_baf(name, pos, vaf, dp)
@@ -387,6 +401,7 @@ def run_call(
             bridge_max_gap_bins=config.segment.bridge_max_gap_bins,
             bridge_max_gap_frac=config.segment.bridge_max_gap_frac,
             bridge_max_ratio_diff=config.segment.bridge_max_ratio_diff,
+            extra_sd=extra_sd.get(name),
         )
         junctions = []
         if scan_results is not None and insert.n_pairs:
@@ -418,6 +433,7 @@ def run_call(
             bin_size=bin_size, ploidy=ploidy[name],
             mean_depth=coverage,
             sigma0=hmm.fit_sigma0(ratio[name], mask[name], ploidy[name]),
+            extra_sd=extra_sd.get(name),
         )
         for call in contig_calls:
             if call.source != "INSERT":  # INSERT calls are pre-genotyped by the detector

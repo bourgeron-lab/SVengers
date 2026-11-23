@@ -44,8 +44,11 @@ def expected_ratio(alt_dosage: int, svtype: str, ploidy: int) -> float:
     return max(cn, 0) / 2.0
 
 
-def _ratio_loglik(ratio: np.ndarray, expected: float, sigma0: float) -> float:
+def _ratio_loglik(ratio: np.ndarray, expected: float, sigma0: float,
+                  extra_sd: np.ndarray | None = None) -> float:
     var = sigma0**2 * max(expected, _MIN_RATIO_VAR)
+    if extra_sd is not None:
+        var = var + (extra_sd * expected) ** 2
     ll = -0.5 * np.log(2 * np.pi * var) - 0.5 * (ratio - expected) ** 2 / var
     if len(ll) > _MAX_DEPTH_BINS:
         ll = ll * (_MAX_DEPTH_BINS / len(ll))
@@ -117,6 +120,7 @@ class ContigData:
     mean_depth: float        # diploid-normalized units of the ratio denominator
     sigma0: float
     het_rate: float | None = None  # clear hets per bp on the contig; None: no paralog check
+    extra_sd: np.ndarray | None = None  # per-bin relative population spread (PoN variance mode)
 
 
 class Genotyper:
@@ -144,6 +148,7 @@ class Genotyper:
         b1 = max(-(-call.end // data.bin_size), b0 + 1)
         sel_mask = data.mask[b0:b1]
         ratio = data.ratio[b0:b1][~sel_mask]
+        xsd = data.extra_sd[b0:b1][~sel_mask] if data.extra_sd is not None else None
 
         sel_baf = (data.baf_pos >= call.start) & (data.baf_pos < call.end)
         vaf_all = data.baf_vaf[sel_baf]
@@ -169,7 +174,7 @@ class Genotyper:
                 expected = expected_ratio(dosage, call.svtype, data.ploidy)
                 baseline = data.ploidy / 2.0
                 diluted = baseline + (expected - baseline) * dilution
-                logp[i] += _ratio_loglik(ratio, diluted, data.sigma0)
+                logp[i] += _ratio_loglik(ratio, diluted, data.sigma0, xsd)
             rate = (
                 self.config.mismap_rate * data.mean_depth
                 if dosage == 0
@@ -206,6 +211,8 @@ class Genotyper:
                 frac, base = np.ones((len(ratio), 1)), 0.0
             expected = base * (1 - frac) + (states / 2.0)[None, :] * frac
             var = data.sigma0**2 * np.maximum(expected, _MIN_RATIO_VAR)
+            if xsd is not None:
+                var = var + (xsd[:, None] * expected) ** 2
             ll = -0.5 * np.log(2 * np.pi * var) - 0.5 * (ratio[:, None] - expected) ** 2 / var
             if len(ratio) > _MAX_DEPTH_BINS:
                 ll = ll * (_MAX_DEPTH_BINS / len(ratio))
