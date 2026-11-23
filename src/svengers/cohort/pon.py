@@ -50,6 +50,9 @@ SUPPORTED_PON_SCHEMAS = {"0.1", "0.2"}
 MODE_WINDOW = 0.25   # a founder is in the reference group within +-25 % of its centre
 MIN_ANCHOR_FRAC = 0.2  # founders near the expected ratio needed to anchor the group there
 CONSISTENT_WINDOW = 0.3  # distance to the nearest integer copy number, in states
+REFMINOR_CONSISTENT = 0.9  # reference-minor bin: founders at integer states of the reference scale
+REFMINOR_MAX_ZERO = 0.9    # ... and not (nearly) all without reads
+REFMINOR_SPREAD = 0.05     # relative spread given to reference-minor bins in the likelihood
 _BLOCK = 262_144  # bins per streaming block (= depth chunk size)
 
 
@@ -121,7 +124,7 @@ def build_pon(
 
     def _profile(subset: list[EvidenceStore], contig: str, n_bins: int, anchor: float = 1.0):
         out = {k: np.full(n_bins, np.nan, dtype=np.float32)
-               for k in ("median", "mad", "centre", "spread", "modal_frac", "consistent_frac")}
+               for k in ("median", "mad", "centre", "spread", "modal_frac", "consistent_frac", "refminor")}
         for b0 in range(0, n_bins, _BLOCK):
             b1 = min(b0 + _BLOCK, n_bins)
             stack = np.empty((len(subset), b1 - b0), dtype=np.float32)
@@ -130,7 +133,7 @@ def build_pon(
             med = np.median(stack, axis=0)
             out["median"][b0:b1] = med
             out["mad"][b0:b1] = np.median(np.abs(stack - med[None, :]), axis=0) * 1.4826
-            for key, arr in zip(("centre", "spread", "modal_frac", "consistent_frac"),
+            for key, arr in zip(("centre", "spread", "modal_frac", "consistent_frac", "refminor"),
                                 modal_stats(stack, anchor=anchor), strict=True):
                 out[key][b0:b1] = arr
         return out
@@ -163,7 +166,7 @@ def build_pon(
             anchor = 0.5 if (is_sex_contig and label == "male") else 1.0
             prof = _profile(subset, contig, n_bins, anchor)
             median = prof["median"]
-            for key in ("median", "mad", "centre", "spread", "modal_frac", "consistent_frac"):
+            for key in ("median", "mad", "centre", "spread", "modal_frac", "consistent_frac", "refminor"):
                 _create_array(g, f"{key}_{label}", prof[key], _BLOCK)
             g.attrs[f"n_{label}"] = len(subset)
 
@@ -175,7 +178,7 @@ def build_pon(
 
 def modal_stats(stack: np.ndarray, anchor: float = 1.0, window: float = MODE_WINDOW,
                 rounds: int = 2, min_anchor_frac: float = MIN_ANCHOR_FRAC):
-    """(centre, spread, modal_frac, consistent_frac) per bin of a (founders, bins) ratio matrix:
+    """(centre, spread, modal_frac, consistent_frac, refminor) per bin of a (founders, bins) ratio matrix:
     median and MAD (x 1.4826) of the reference group, the founders within
     +-``window`` of the centre, refined ``rounds`` times.
 
@@ -207,8 +210,18 @@ def modal_stats(stack: np.ndarray, anchor: float = 1.0, window: float = MODE_WIN
     with np.errstate(invalid="ignore", divide="ignore"):
         pos = stack / np.where(step > 0, step, np.nan)[None, :]
     consistent = (np.abs(pos - np.round(pos)) <= CONSISTENT_WINDOW).mean(axis=0)
+    # reference-minor allele: GRCh38 carries the rare allele (most founders deleted), so few
+    # founders sit near the anchor and the centre fell back to the median, yet they sit at
+    # integer copy numbers of the reference scale (steps of 0.5) and not all at zero (a bin
+    # without reads for every founder is unmappable, not deleted)
+    rpos = stack / 0.5
+    anchor_consistent = (np.abs(rpos - np.round(rpos)) <= CONSISTENT_WINDOW).mean(axis=0)
+    zero = (stack < 0.25 * anchor).mean(axis=0)
+    refminor = ((near < min_anchor_frac) & (anchor_consistent >= REFMINOR_CONSISTENT)
+                & (zero <= REFMINOR_MAX_ZERO))
     return (centre.astype(np.float32), spread.astype(np.float32),
-            keep.mean(axis=0).astype(np.float32), consistent.astype(np.float32))
+            keep.mean(axis=0).astype(np.float32), consistent.astype(np.float32),
+            refminor.astype(np.uint8))
 
 
 def _build_svd(
@@ -256,15 +269,17 @@ class PanelOfNormals:
         self.bin_size = int(self.meta["bin_size"])
 
     def modal(self, contig: str, sex: str = "all") -> tuple[np.ndarray, ...] | None:
-        """(centre, spread, modal_frac, consistent_frac) of the reference group (schema >= 0.2)."""
+        """(centre, spread, modal_frac, consistent_frac, refminor) of the reference group (schema >= 0.2)."""
         try:
             g = self.root[contig]
         except KeyError:
             return None
         for label in (sex, "all", "female", "male"):
             try:
+                rm = (g[f"refminor_{label}"][:] > 0 if f"refminor_{label}" in g
+                      else np.zeros(len(g[f"centre_{label}"]), bool))
                 return (g[f"centre_{label}"][:], g[f"spread_{label}"][:],
-                        g[f"modal_frac_{label}"][:], g[f"consistent_frac_{label}"][:])
+                        g[f"modal_frac_{label}"][:], g[f"consistent_frac_{label}"][:], rm)
             except KeyError:
                 continue
         return None
@@ -279,7 +294,8 @@ class PanelOfNormals:
         min_modal_frac: float = 0.2,
         min_consistent: float = 0.8,
         level: float = 1.0,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+        refminor: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
         """(normalized ratio, extended mask, relative spread per bin).
 
         Variance mode: bins divided by the centre of the founders at the modal
@@ -288,21 +304,32 @@ class PanelOfNormals:
         under ``min_modal_frac`` of the panel, or fewer than ``min_consistent``
         founders at an integer copy number: a depth spread out, not a CNV). The modal group's spread
         relative to its centre is returned for the depth likelihood instead of
-        masking variable bins."""
+        masking variable bins.
+
+        ``refminor``: bins where GRCh38 carries the minor allele (most founders
+        deleted, at integer states of the reference scale) keep the sample's
+        ratio against the reference instead of the population's, and are
+        returned flagged: a sample deleted there like most people shows the
+        deletion GRCh38 does not have."""
         if level <= 0:
-            return ratio, mask, None
+            return ratio, mask, None, None
         m = self.modal(contig, sex)
         if m is None or len(m[0]) != len(ratio):
             logger.warning("PoN: no modal profile for %s (schema 0.1 panel?), ratio left untouched", contig)
-            return ratio, mask, None
-        centre, spread, frac, consistent = m
+            return ratio, mask, None, None
+        centre, spread, frac, consistent, rm = m
         ok = (np.isfinite(centre) & (centre >= min_median * level) & (frac >= min_modal_frac)
               & (consistent >= min_consistent))
         out = ratio.copy()
         out[ok] = ratio[ok] / centre[ok] * level
         rel = np.zeros(len(ratio), dtype=np.float32)
         rel[ok] = np.nan_to_num(spread[ok] / centre[ok], nan=0.0)
-        return out, mask | ~ok, rel
+        if not refminor:
+            return out, mask | ~ok, rel, None
+        rm = rm & ~ok
+        out[rm] = ratio[rm]
+        rel[rm] = REFMINOR_SPREAD
+        return out, mask | (~ok & ~rm), rel, rm
 
     def profile(self, contig: str, sex: str = "all") -> tuple[np.ndarray, np.ndarray] | None:
         try:

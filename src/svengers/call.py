@@ -286,6 +286,7 @@ def run_call(
         logger.info("%s: wave score %.3f", sample, wave_score)
     wave_score_pon = None
     extra_sd: dict[str, np.ndarray | None] = {}
+    refminor: dict[str, np.ndarray | None] = {}
 
     # ---- panel-of-normals normalization (divides out residual systematic bias
     #      and masks population-variable bins)
@@ -305,10 +306,11 @@ def run_call(
             before = int(mask[name].sum())
             sex, level = pon_profile(by_name[name].kind, ploidy.get(name, 2))
             if variance:
-                ratio[name], mask[name], extra_sd[name] = pon.normalize_variance(
+                ratio[name], mask[name], extra_sd[name], refminor[name] = pon.normalize_variance(
                     name, ratio[name], mask[name], sex=sex, level=level,
                     min_modal_frac=config.segment.pon_min_modal_frac,
                     min_consistent=config.segment.pon_min_consistent,
+                    refminor=config.segment.pon_refminor,
                 )
             else:
                 ratio[name], mask[name] = pon.normalize(
@@ -350,6 +352,8 @@ def run_call(
         writer.write_depth(name, raw[name], corr[name], mask[name])
         if extra_sd.get(name) is not None:
             writer.write_pon_sd(name, extra_sd[name])
+        if refminor.get(name) is not None:
+            writer.write_refminor(name, refminor[name])
         pos, vaf, dp = baf[name]
         if len(pos):
             writer.write_baf(name, pos, vaf, dp)

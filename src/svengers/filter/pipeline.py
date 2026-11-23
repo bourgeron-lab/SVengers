@@ -28,6 +28,9 @@ _NEW_INFO = [
     ("EXCLUDE_OVL", "1", "Float", "Fraction of call overlapping the exclusion mask"),
     ("POPCOV_SD", "1", "Float", "Mean population coverage stdev over the call"),
     ("MODEL_VER", "1", "String", "SVengers filter model version"),
+    ("REFMINOR", "1", "Float",
+     "Fraction of the call's depth bins where GRCh38 carries the minor allele (most of the panel "
+     "of normals deleted there): read against the reference, a deletion most people carry"),
     ("SQ_OVERRIDE", "1", "String",
      "Reason the calibrated SQ was overridden (LARGE_DEL_DEPTH: deletion beyond the "
      "model's training size range whose chromosome-level depth confirms a copy loss; "
@@ -197,6 +200,18 @@ def run_filter(
                 and reaches_contig_end(store, rec.contig, start, end, lengths.get(rec.contig))
             )
 
+    rm_cache: dict = {}
+
+    def refminor_frac(contig: str, start: int, end: int) -> float:
+        if contig not in rm_cache:
+            rm_cache[contig] = store.pon_refminor(contig) if store.has_contig(contig) else None
+        a = rm_cache[contig]
+        if a is None:
+            return 0.0
+        b0, b1 = start // store.bin_size, max(-(-end // store.bin_size), start // store.bin_size + 1)
+        seg = a[b0:b1]
+        return float(seg.mean()) if len(seg) else 0.0
+
     sq_all = model.score_batch(feats_all, svtypes) if model is not None else None
     overrides = (genome_overrides(svtypes, spans, feats_all, sq_all, terminal, cf)
                  if sq_all is not None else [None] * len(feats_all))
@@ -224,6 +239,9 @@ def run_filter(
                 new_rec.info["LCR_OVL"] = round(feats["lcr_ovl"], 4)
                 new_rec.info["EXCLUDE_OVL"] = round(feats["exclude_ovl"], 4)
                 new_rec.info["POPCOV_SD"] = round(feats["popcov_stdev"], 3)
+                rm = refminor_frac(rec.contig, *spans[i])
+                if rm > 0:
+                    new_rec.info["REFMINOR"] = round(rm, 3)
 
                 if sq_all is not None:
                     sq = float(sq_all[i])

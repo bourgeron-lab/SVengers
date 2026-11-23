@@ -61,6 +61,9 @@ class SegmentConfig:
     pon_mode: str = "mask"
     pon_min_modal_frac: float = 0.2  # variance mode: mask bins whose reference group is smaller
     pon_min_consistent: float = 0.8  # ... or whose founders sit at integer copy numbers less often
+    # variance mode: bins where GRCh38 carries the minor allele are read against the reference
+    # (a deletion most people carry is reported, INFO/REFMINOR), not absorbed by the panel
+    pon_refminor: bool = True
     bridge_max_gap_bins: int = 3     # 0 disables bridging
     bridge_max_gap_frac: float = 0.05
     bridge_max_ratio_diff: float = 0.15

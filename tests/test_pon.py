@@ -193,7 +193,7 @@ def test_modal_statistics_ignore_cnv_carriers():
     stack = np.stack([common, biased], axis=1)
     med = np.median(common)
     assert med < 0.6 and np.median(np.abs(common - med)) * 1.4826 > 0.3 * med
-    centre, spread, frac, consistent = modal_stats(stack)
+    centre, spread, frac, consistent, _rm = modal_stats(stack)
     assert consistent[0] > 0.95
     assert centre[0] == pytest.approx(1.0, abs=0.03) and spread[0] < 0.08
     assert frac[0] == pytest.approx(0.35, abs=0.02)
@@ -221,7 +221,7 @@ def test_variance_mode_keeps_polymorphic_bins(tmp_path):
     _raw, corr, mask = s0.depth("chr1")
     _, old_mask = pon.normalize("chr1", corr / MEAN_DEPTH, mask)
     assert old_mask[100]                                   # masked in "mask" mode
-    norm, new_mask, rel = pon.normalize_variance("chr1", corr / MEAN_DEPTH, mask)
+    norm, new_mask, rel, _rm = pon.normalize_variance("chr1", corr / MEAN_DEPTH, mask)
     assert not new_mask[100] and norm[100] == pytest.approx(0.5, abs=0.05)
     assert 0 < rel[100] < 0.1
     assert new_mask[200] and rel[200] == 0.0
@@ -241,3 +241,32 @@ def test_extra_spread_softens_depth_emissions():
     assert np.allclose(plain[0], soft[0])
     assert (soft[1, 1] - soft[1, 2]) < (plain[1, 1] - plain[1, 2])
     assert soft[1, 1] > soft[1, 2]                         # still favours CN1
+
+
+def test_reference_minor_bins_are_read_against_the_reference(tmp_path):
+    """Where GRCh38 carries the minor allele (most founders deleted, the others
+    at one copy or two, all at integer states), the bin is read against the
+    reference with refminor on: a sample deleted there reads 0, not 1; a bin
+    with no reads in nearly every founder (unmappable) is not reference-minor;
+    a reference bias (every founder at 0.6) neither."""
+    from svengers.cohort.pon import modal_stats
+    from svengers.extract.store import EvidenceStore
+
+    rng = np.random.default_rng(3)
+    paths = []
+    for i in range(20):
+        ratio = rng.normal(1.0, 0.04, N_BINS)
+        ratio[100] = ([0.0] * 7 + [0.5, 0.5, 1.0])[i % 10] + rng.normal(0, 0.02)  # 70 % deleted, 10 % CN2
+        ratio[200] = 0.0 if i else 0.02                                       # no reads anywhere
+        ratio[300] = rng.normal(0.6, 0.03)                                    # reference bias
+        paths.append(_make_store(tmp_path, f"F{i}", np.clip(ratio, 0, None)))
+    pon = PanelOfNormals(build_pon(paths, tmp_path / "pon.zarr", min_samples=5))
+    s0 = EvidenceStore(paths[0])                 # F0: deleted at bin 100
+    _raw, corr, mask = s0.depth("chr1")
+    norm, new_mask, _rel, rm = pon.normalize_variance("chr1", corr / MEAN_DEPTH, mask, refminor=True)
+    assert rm[100] and not new_mask[100] and norm[100] < 0.1
+    assert not rm[200] and not rm[300]
+    norm0, mask0, _r, rm0 = pon.normalize_variance("chr1", corr / MEAN_DEPTH, mask)
+    assert rm0 is None and (mask0[100] or norm0[100] > 0.5)
+    stack = np.stack([np.r_[np.zeros(12), np.full(5, 0.5), np.ones(3)]], axis=1).astype(np.float32)
+    assert modal_stats(stack)[4][0] == 1

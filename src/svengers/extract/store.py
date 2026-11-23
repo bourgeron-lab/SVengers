@@ -37,7 +37,8 @@ SCHEMA_VERSION = "0.7"
 # 0.6: baf_source attr (vaf-bedgraph, vcf:<name> ...); a BAF rewritten from a
 # VCF (`svengers baf`) keeps the previous arrays as <contig>/baf_track/
 # 0.7: optional <contig>/pon_sd (per-bin relative population spread, PoN
-# variance mode), read by the genotypers; pon_mode attr
+# variance mode), read by the genotypers, <contig>/pon_refminor (bins where
+# GRCh38 carries the minor allele, read against the reference); pon_mode attr
 SUPPORTED_SCHEMAS = {"0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7"}
 
 PE_DEL, PE_DUP, PE_INV, PE_INTER = 0, 1, 2, 3
@@ -110,6 +111,9 @@ class EvidenceStoreWriter:
 
     def write_pon_sd(self, contig: str, sd: np.ndarray) -> None:
         _create_array(self._contig(contig), "pon_sd", sd.astype(np.float32), _DEPTH_CHUNK)
+
+    def write_refminor(self, contig: str, flag: np.ndarray) -> None:
+        _create_array(self._contig(contig), "pon_refminor", flag.astype(bool), _DEPTH_CHUNK)
 
     def write_baf(self, contig: str, pos: np.ndarray, vaf: np.ndarray, dp: np.ndarray) -> None:
         write_baf_group(self._contig(contig), pos, vaf, dp)
@@ -224,6 +228,13 @@ class EvidenceStore:
         """Per-bin relative population spread (PoN variance mode), or None."""
         try:
             return self.root[contig]["pon_sd"][:]
+        except KeyError:
+            return None
+
+    def pon_refminor(self, contig: str) -> np.ndarray | None:
+        """Bins read against the reference where GRCh38 carries the minor allele, or None."""
+        try:
+            return self.root[contig]["pon_refminor"][:]
         except KeyError:
             return None
 
