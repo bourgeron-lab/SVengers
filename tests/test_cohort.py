@@ -209,6 +209,7 @@ def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     assert sites[(20_000_000, 20_030_000)].info["SQMAX"] == 20.0
     assert abs(sites[(50_654_000, 50_684_001)].info["SQMAX"] - 2.1) < 1e-6
     assert abs(sites[(50_654_000, 50_684_001)].info["SQMEAN"] - 2.1) < 1e-6
+    assert sites[(20_000_000, 20_030_000)].info["JUNC_FRAC"] == 0.0   # no SOURCE: no junction
 
 
 def test_merge_clamps_site_end_to_contig(tmp_path):
@@ -666,3 +667,24 @@ def test_weak_genotype():
         True, False, False, False, False]
     assert not weak_genotype("INV", 5_000, pe, rd).any()
     assert weak_genotype("DEL", 5_000, pe, rd, {"weak_del_rd": 0.95}).tolist() == [False] * 5
+
+
+def test_weak_genotype_at_a_junction_duplication_site():
+    """At a DUP site of 1-100 kb nominated by junction-supported calls, a
+    carrier without a discordant pair is weak whatever its copy ratio (a
+    coverage wave raises the ratio without everted pairs); elsewhere the
+    copy-ratio rule holds."""
+    import numpy as np
+
+    from svengers.cohort.metrics import weak_genotype
+
+    pe = np.array([0, 0, 2, 0])
+    rd = np.array([1.5, 1.1, 1.5, np.nan])
+    assert weak_genotype("DUP", 5_000, pe, rd, junc_frac=0.8).tolist() == [True, True, False, True]
+    assert weak_genotype("DUP", 5_000, np.array([1]), np.array([1.5]), junc_frac=0.8).tolist() == [True]
+    assert weak_genotype("DUP", 5_000, pe, rd, junc_frac=0.2).tolist() == [False, True, False, False]
+    assert weak_genotype("DUP", 5_000, pe, rd).tolist() == [False, True, False, False]
+    assert weak_genotype("DUP", 150_000, pe, rd, junc_frac=0.8).tolist() == [False, True, False, False]
+    assert not weak_genotype("DUP", 800, pe, rd, junc_frac=1.0).any()
+    assert weak_genotype("DEL", 5_000, pe, np.array([0.5, 0.9, 0.5, np.nan]),
+                         junc_frac=1.0).tolist() == [False, True, False, False]

@@ -231,6 +231,21 @@ class FilterConfig:
     # continuous 1-11 per genome, then 15, 32, 57 ... 894. Beyond this count
     # the rule is off for the genome.
     unique_del_rescue_max_per_genome: int = 20
+    # Duplications of 1-100 kb seen by both depth and junction reads. The model
+    # was trained on GIAB labels that hold almost none of them true and scores
+    # real ones like artefacts: in 649 dataset_paper trios, 10.8 (1-10 kb) and
+    # 4.6 (10-100 kb) such calls per child are rejected on SQ alone although
+    # 94 % and 97 % are in the child's own parents (20 % and 14 % in another
+    # family's), with inheritance flat across SQ; of the duplications of
+    # 10-100 kb curated by eye in IGV, SVengers called 170 of 173 and passed
+    # none (147 of the 166 called as one call rejected by SQ alone, 125 with
+    # junction evidence). Kept PASS when CN >= 3 in a genome without strong
+    # waves; their cohort sites need junction-supported carriers (see
+    # cohort.metrics.weak_genotype).
+    junction_dup_rescue_min_size: int = 1_000
+    junction_dup_rescue_max_size: int = 100_000
+    junction_dup_rescue_min_cn: int = 3
+    junction_dup_rescue_max_wave: float = 0.20
 
 
 @dataclass(frozen=True)

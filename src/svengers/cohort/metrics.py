@@ -231,10 +231,16 @@ TRIO_DEFAULTS = {
     # ratio that barely moves; the trio tools read such a genotype as missing
     "weak_min_size": 1000, "weak_large_size": 10_000,
     "weak_del_rd": 0.75, "weak_del_rd_large": 0.62, "weak_dup_rd": 1.25,
+    # a DUP site of 1-100 kb nominated mostly by junction-supported calls: a
+    # carrier with no discordant pair is weak whatever its copy ratio (see
+    # weak_genotype)
+    "weak_dup_junction_frac": 0.5, "weak_dup_junction_max_size": 100_000,
+    "weak_dup_junction_min_pe": 2,
 }
 
 
-def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None):
+def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None,
+                  junc_frac: float | None = None):
     """True where a non-reference genotype has no support of its own: no
     discordant pair, and a copy ratio that does not show the SV type (DEL
     above weak_del_rd, weak_del_rd_large from weak_large_size; DUP below
@@ -247,7 +253,19 @@ def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None):
     GQ 99), concentrated on some flowcells (three children of one flowcell
     carry 1,600-3,200 each). The rule removes 36-72 % of the de novo DEL
     1-10 kb (35 % in wave >= 0.20) for 2-8 % of the inherited genotypes, and
-    halves the de novo DEL >= 10 kb for 4-6 %; DUP >= 1 kb de novo -49 to -80 %."""
+    halves the de novo DEL >= 10 kb for 4-6 %; DUP >= 1 kb de novo -49 to -80 %.
+
+    At a DUP site of weak_min_size to weak_dup_junction_max_size whose member
+    calls have junction evidence in at least weak_dup_junction_frac of cases
+    (``junc_frac``, INFO/JUNC_FRAC), a non-reference genotype with fewer than
+    weak_dup_junction_min_pe discordant pairs is weak whatever its copy ratio: a real tandem duplication
+    shows everted pairs (91 % of the transmitted carriers with a call of their
+    own at 1-10 kb do), while a coverage wave raises the ratio without them.
+    When duplications of this size were kept PASS from both depth and junction
+    evidence, their new cohort sites gave the children 1.7 (wave < 0.20) and
+    13 (wave >= 0.20) de novo genotypes each at 1-10 kb, and 0.5 and 8.3 at
+    10-100 kb; requiring a pair leaves 0.85, 2.9, 0.28 and 0.52, for 59-73 %
+    of the transmitted carriers kept."""
     import numpy as np
 
     t = {**TRIO_DEFAULTS, **(t or {})}
@@ -260,6 +278,9 @@ def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None):
         off = rd > thr
     else:
         off = rd < t["weak_dup_rd"]
+        if (junc_frac is not None and junc_frac >= t["weak_dup_junction_frac"]
+                and length < t["weak_dup_junction_max_size"]):
+            return pe < t["weak_dup_junction_min_pe"]
     return (pe == 0) & off & ~np.isnan(rd)
 
 
@@ -329,7 +350,10 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
          f"WeakSupport: non-reference genotype >= {t['weak_min_size']} bp with no discordant "
          f"pair and a copy ratio that does not show the SV type (DEL RD > {t['weak_del_rd']:g}, "
          f"> {t['weak_del_rd_large']:g} from {t['weak_large_size']} bp; DUP RD < "
-         f"{t['weak_dup_rd']:g}); read as missing by the trio tools"),
+         f"{t['weak_dup_rd']:g}; at a DUP site < {t['weak_dup_junction_max_size']} bp with "
+         f"JUNC_FRAC >= {t['weak_dup_junction_frac']:g}: fewer than "
+         f"{t['weak_dup_junction_min_pe']} discordant pairs, any copy ratio); read as missing by "
+         f"the trio tools"),
     ):
         if line[0] not in header.formats:
             header.formats.add(*line)
@@ -368,6 +392,7 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
     fo = BGZFile(part, "wb") if part.endswith(".gz") else open(part, "wb")
     with pysam.VariantFile(str(sh["sites_vcf"])) as sites, fo:
         spec = spec_coords(sites.header)
+        has_junc_frac = "JUNC_FRAC" in sites.header.info   # sites merged before v2.2: absent
         for i, rec in enumerate(sites):
             if i < i0:
                 continue
@@ -391,7 +416,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
             sex_contig = rec.contig in SEX_CONTIGS
             ploidy = np.where(male, 1, 2) if sex_contig else np.full(len(samples), 2)
             col_pe = np.array([tables[s]["pe"][i] for s in samples])
-            weak = (col_nalt > 0) & weak_genotype(svtype, end - start, col_pe, col_rd, trio)
+            weak = (col_nalt > 0) & weak_genotype(svtype, end - start, col_pe, col_rd, trio,
+                                                  junc_frac=rec.info.get("JUNC_FRAC") if has_junc_frac else None)
             # FT on every sample of a record that has one (a string FORMAT left
             # unset next to set ones reads back as padding bytes)
             any_weak = bool(weak.any())
