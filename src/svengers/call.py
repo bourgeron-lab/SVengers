@@ -104,6 +104,22 @@ def sex_karyotype(sample, bin_size, raw, mask, baf, pon_path) -> dict:
     return classify(st) if st else {"karyotype": "?", "note": "chrX non lisible"}
 
 
+_HIDDEN_CTX = None   # (scan_results, fasta, BreakpointConfig), shared with forked workers
+
+
+def _hidden_splits(name: str) -> list:
+    """Junctions recovered by realigning one contig's clipped sequences."""
+    import pysam
+
+    from .breakpoints.resolve import recover_junctions
+
+    scan_results, fasta, bp = _HIDDEN_CTX
+    ev = scan_results[name]
+    with pysam.FastaFile(fasta) as fa:
+        ref_arr = np.frombuffer(fa.fetch(name).upper().encode(), dtype=np.uint8)
+    return recover_junctions(ev.sr, ev.sr_seq, ref_arr, bp)
+
+
 def evidence_from_store(path: str, lengths: dict[str, int]):
     """(InsertModel, {contig: ContigEvidence}) read back from an evidence store
     written by a CRAM scan: what `scan_cram` returns, without the depth."""
@@ -340,6 +356,20 @@ def run_call(
         coverage = mean_depth * (insert.read_length or 150.0) / bin_size
     writer.set_meta(coverage=coverage)
     genotyper = Genotyper(config.genotype, config.segment.max_cn)
+    # hidden split reads: clip realignment dominates the time once the CRAM
+    # scan is done (~2 min per chromosome), contigs in parallel
+    hidden: dict[str, list] = {}
+    if scan_results is not None and insert.n_pairs and config.breakpoint.hidden_splits:
+        from .parallel import default_jobs, pmap
+
+        global _HIDDEN_CTX
+        todo = [n for n in call_names if ploidy[n] != 0 and scan_results[n].sr_seq]
+        _HIDDEN_CTX = (scan_results, fasta, config.breakpoint)
+        try:
+            hidden = dict(zip(todo, pmap(_hidden_splits, todo, min(threads, default_jobs())),
+                              strict=True))
+        finally:
+            _HIDDEN_CTX = None
     calls: list[CNVCall] = []
     for name in call_names:
         if ploidy[name] == 0:
@@ -371,15 +401,7 @@ def run_call(
                 "%s %s: %d CIGAR-deletion junctions", sample, name, len(cig_junctions)
             )
             if config.breakpoint.hidden_splits and ev.sr_seq:
-                import pysam as _pysam
-
-                from .breakpoints.resolve import recover_junctions
-
-                with _pysam.FastaFile(fasta) as fa:
-                    ref_arr = np.frombuffer(
-                        fa.fetch(name).upper().encode(), dtype=np.uint8
-                    )
-                recovered = recover_junctions(ev.sr, ev.sr_seq, ref_arr, config.breakpoint)
+                recovered = hidden[name]
                 junctions = merge_junction_sets(junctions, recovered)
                 logger.info(
                     "%s %s: %d hidden-split junctions recovered (%d DUP)",
