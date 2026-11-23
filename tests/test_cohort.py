@@ -681,6 +681,7 @@ def test_weak_genotype_at_a_junction_duplication_site():
     pe = np.array([0, 0, 2, 0])
     rd = np.array([1.5, 1.1, 1.5, np.nan])
     assert weak_genotype("DUP", 5_000, pe, rd, junc_frac=0.8).tolist() == [True, True, False, True]
+    assert weak_genotype("DUP", 5_000, np.array([1]), np.array([1.5]), junc_frac=0.8).tolist() == [True]
     assert weak_genotype("DUP", 5_000, pe, rd, junc_frac=0.2).tolist() == [False, True, False, False]
     assert weak_genotype("DUP", 5_000, pe, rd).tolist() == [False, True, False, False]
     assert weak_genotype("DUP", 150_000, pe, rd, junc_frac=0.8).tolist() == [False, True, False, False]

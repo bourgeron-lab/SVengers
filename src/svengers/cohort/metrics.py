@@ -235,6 +235,7 @@ TRIO_DEFAULTS = {
     # carrier with no discordant pair is weak whatever its copy ratio (see
     # weak_genotype)
     "weak_dup_junction_frac": 0.5, "weak_dup_junction_max_size": 100_000,
+    "weak_dup_junction_min_pe": 2,
 }
 
 
@@ -256,8 +257,8 @@ def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None,
 
     At a DUP site of weak_min_size to weak_dup_junction_max_size whose member
     calls have junction evidence in at least weak_dup_junction_frac of cases
-    (``junc_frac``, INFO/JUNC_FRAC), a non-reference genotype without any
-    discordant pair is weak whatever its copy ratio: a real tandem duplication
+    (``junc_frac``, INFO/JUNC_FRAC), a non-reference genotype with fewer than
+    weak_dup_junction_min_pe discordant pairs is weak whatever its copy ratio: a real tandem duplication
     shows everted pairs (91 % of the transmitted carriers with a call of their
     own at 1-10 kb do), while a coverage wave raises the ratio without them.
     When duplications of this size were kept PASS from both depth and junction
@@ -279,7 +280,7 @@ def weak_genotype(svtype: str, length: int, pe, rd, t: dict | None = None,
         off = rd < t["weak_dup_rd"]
         if (junc_frac is not None and junc_frac >= t["weak_dup_junction_frac"]
                 and length < t["weak_dup_junction_max_size"]):
-            return pe == 0
+            return pe < t["weak_dup_junction_min_pe"]
     return (pe == 0) & off & ~np.isnan(rd)
 
 
@@ -350,7 +351,8 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
          f"pair and a copy ratio that does not show the SV type (DEL RD > {t['weak_del_rd']:g}, "
          f"> {t['weak_del_rd_large']:g} from {t['weak_large_size']} bp; DUP RD < "
          f"{t['weak_dup_rd']:g}; at a DUP site < {t['weak_dup_junction_max_size']} bp with "
-         f"JUNC_FRAC >= {t['weak_dup_junction_frac']:g}, any copy ratio); read as missing by "
+         f"JUNC_FRAC >= {t['weak_dup_junction_frac']:g}: fewer than "
+         f"{t['weak_dup_junction_min_pe']} discordant pairs, any copy ratio); read as missing by "
          f"the trio tools"),
     ):
         if line[0] not in header.formats:
