@@ -154,6 +154,13 @@ class FilterConfig:
     # all junction-only DUPs < 1 kb, and ~1 de novo DUP < 1 kb per child.
     maxn_junction_exempt_max_size: int = 10_000
     lowmap_segdup_frac: float = 0.70     # segdup overlap above which SR support is required
+    # A deletion with this many unmasked (PoN-consistent) depth bins is not a
+    # mapping artefact whatever its segmental-duplication share: the 1q21.1,
+    # 15q11.2 and 16p11.2 deletions run between duplication blocks, and a
+    # 5.9 Mb 1q21.1 deletion (2 Mb of unmasked bins at ratio 0.49, mask 0.67,
+    # SEGDUP_OVL 0.80) was LowMap. Exempts it from LowMap and from the
+    # LARGE_DEL_DEPTH mask ceiling.
+    informative_core_bins: int = 500
     min_informative_bins: int = 3
     low_sq_threshold: float = 5.0        # phred: operating point of models/v12b (and v5n)
     # Large deletions sit outside the model's training range: only 131 of

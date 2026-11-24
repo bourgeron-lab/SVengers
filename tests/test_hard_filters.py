@@ -22,3 +22,14 @@ def test_pon_masked_deletion_with_junction_evidence_is_not_maxn():
     assert "MaxN" in hard_filter_tags(_feats(exclude_ovl=0.5, pe=4, sr=6), 3_000, f)
     assert "MaxN" in hard_filter_tags(dict(masked, pe=4, sr=6, is_dup=1.0), 600, f)  # DUP: no exemption
     assert "MaxN" not in hard_filter_tags(_feats(maskfrac=0.7), 3_000, f)
+
+
+def test_large_informative_deletion_is_not_lowmap():
+    """A deletion between segmental-duplication blocks (1q21.1) with >= 500
+    unmasked depth bins keeps clear of LowMap; a DUP or a short run does not."""
+    f = load_config(None).filter
+    sd = dict(segdup_ovl=0.8, maskfrac=0.67)
+    assert "LowMap" not in hard_filter_tags(_feats(n_bins_informative=1950.0, **sd), 5_900_000, f)
+    assert "LowMap" in hard_filter_tags(_feats(n_bins_informative=200.0, **sd), 600_000, f)
+    assert "LowMap" in hard_filter_tags(_feats(n_bins_informative=1950.0, is_dup=1.0, **sd),
+                                        5_900_000, f)

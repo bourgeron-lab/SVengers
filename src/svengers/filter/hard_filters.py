@@ -20,6 +20,8 @@ def hard_filter_tags(features: dict[str, float], size: int, config: FilterConfig
         features["segdup_ovl"] > config.lowmap_segdup_frac
         and features["sr"] == 0
         and features["cig"] == 0
+        and not (features["is_dup"] == 0
+                 and features["n_bins_informative"] >= config.informative_core_bins)
     ):
         tags.append("LowMap")
     if (

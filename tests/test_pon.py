@@ -223,10 +223,12 @@ def test_variance_mode_keeps_polymorphic_bins(tmp_path):
     assert old_mask[100]                                   # masked in "mask" mode
     norm, new_mask, rel, _rm = pon.normalize_variance("chr1", corr / MEAN_DEPTH, mask)
     assert not new_mask[100] and norm[100] == pytest.approx(0.5, abs=0.05)
-    assert 0 < rel[100] < 0.1
+    assert 0 <= rel[100] < 0.1
     assert new_mask[200] and rel[200] == 0.0
     assert norm[300] == pytest.approx(1.0, abs=0.15)
     assert not new_mask[500] and rel[500] < 0.1
+    # only the spread in excess of the founders' sampling noise is returned
+    assert np.median(rel[~new_mask]) == pytest.approx(0.0, abs=1e-6)
 
 
 def test_extra_spread_softens_depth_emissions():

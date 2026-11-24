@@ -183,3 +183,37 @@ def test_bridging_chains_across_baseline_and_other_states():
     dels = [(s.start_bin, s.end_bin) for s in out if s.cn == 1]
     assert dels == [(0, 1200), (1210, 1500)]
     assert [(s.start_bin, s.cn) for s in out if s.cn != 1] == [(300, 3), (900, 0)]
+
+
+def test_masked_ends_are_trimmed_and_ignored_by_the_posterior():
+    """A deletion run through masked bins on both sides (segmental
+    duplications flanking a 16p11.2-like deletion): the segment keeps its
+    unmasked core, the trimmed bins are counted for CIPOS/CIEND, and the
+    posterior is the mean over informative bins only."""
+    from svengers.config import Config
+    from svengers.merge_candidates import segment_to_call
+
+    rng = np.random.default_rng(7)
+    ratio = _ratio(3000, rng)
+    ratio[1000:1600] = rng.normal(0.5, 0.08, 600)
+    mask = np.zeros(3000, dtype=bool)
+    mask[1000:1150] = True        # masked SD flank, ratio still low
+    mask[1550:1600] = True
+    segments, _ = hmm.segment_contig(ratio, mask, ploidy=2, max_cn=5, transition=1e-6)
+    seg = [s for s in segments if s.cn == 1]
+    assert len(seg) == 1
+    seg = seg[0]
+    assert abs(seg.start_bin - 1150) <= 2 and abs(seg.end_bin - 1550) <= 2
+    assert seg.trim_left >= 140 and seg.trim_right >= 40
+    assert seg.masked_frac == 0.0 and seg.posterior > 0.9
+    call = segment_to_call("chr1", seg, 1000, 2, Config())
+    assert call.cipos[0] == -1000 * (1 + seg.trim_left)
+    assert call.ciend[1] == 1000 * (1 + seg.trim_right)
+    assert "LowPosterior" not in call.filters
+
+
+def test_fully_masked_segment_is_not_trimmed():
+    seg = hmm.Segment(10, 20, 1, 0.5, float("nan"), 10, 1.0)
+    mask = np.ones(30, dtype=bool)
+    gamma = np.full((30, 6), 1 / 6)
+    assert hmm.trim_masked_ends(seg, np.ones(30), mask, gamma) is seg

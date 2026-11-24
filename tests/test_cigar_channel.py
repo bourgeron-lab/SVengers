@@ -66,3 +66,18 @@ def test_cig_junction_merges_into_pe_junction():
     j = merged[0]
     assert j.precise and j.cig == 5 and j.pe == 4
     assert j.start == 10_000 and j.end == 10_120
+
+
+def test_depth_run_short_of_its_junction_is_reconciled():
+    """A mosaic deletion whose depth run stops 8.4 kb short of a 96 kb
+    junction (beyond 10 % of the 83 kb run, within 10 % of the junction)."""
+    from svengers.breakpoints.cluster import Junction
+    from svengers.config import Config
+    from svengers.merge_candidates import reconcile
+    from svengers.segment.hmm import Segment
+
+    seg = Segment(573, 656, 1, 0.95, 0.66, 83, 0.0)
+    junc = Junction("DEL", 568_570, 664_379, (0, 0), (0, 0), 10, 3, 3, True)
+    calls = reconcile("chr1", [seg], [junc], 1000, 2, Config())
+    assert len(calls) == 1 and calls[0].source == "BOTH"
+    assert (calls[0].start, calls[0].end) == (568_570, 664_379)

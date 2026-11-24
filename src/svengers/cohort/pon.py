@@ -324,6 +324,13 @@ class PanelOfNormals:
         out[ok] = ratio[ok] / centre[ok] * level
         rel = np.zeros(len(ratio), dtype=np.float32)
         rel[ok] = np.nan_to_num(spread[ok] / centre[ok], nan=0.0)
+        # the founders' spread includes their own sampling noise, which the
+        # depth likelihood already carries (sigma0): only the excess over the
+        # contig's typical spread is population variance (v2.2 candidate: the
+        # whole spread, ~0.085 everywhere, doubled the variance genome-wide)
+        if ok.any():
+            base = float(np.median(rel[ok]))
+            rel[ok] = np.sqrt(np.maximum(rel[ok] ** 2 - base**2, 0.0))
         if not refminor:
             return out, mask | ~ok, rel, None
         rm = rm & ~ok

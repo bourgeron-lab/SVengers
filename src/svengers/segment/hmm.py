@@ -42,6 +42,8 @@ class Segment:
     mean_ratio: float     # mean copy ratio over unmasked bins
     n_bins: int
     masked_frac: float
+    trim_left: int = 0    # masked bins trimmed off the start (breakpoint uncertainty)
+    trim_right: int = 0   # masked bins trimmed off the end
 
 
 # ------------------------------------------------------------------ core HMM (numba)
@@ -278,7 +280,7 @@ def segment_contig(
                 start_bin=int(s),
                 end_bin=int(e),
                 cn=cn,
-                posterior=float(gamma[s:e, cn].mean()),
+                posterior=_posterior(gamma[s:e, cn], unmasked),
                 mean_ratio=float(ratio[s:e][unmasked].mean()) if unmasked.any() else float("nan"),
                 n_bins=int(e - s),
                 masked_frac=float(mask[s:e].mean()),
@@ -291,11 +293,52 @@ def segment_contig(
         max_gap_frac=bridge_max_gap_frac,
         max_ratio_diff=bridge_max_ratio_diff,
     )
+    segments = [trim_masked_ends(seg, ratio, mask, gamma) for seg in segments]
     logger.debug(
         "HMM: %d bins, sigma0=%.3f, %d non-baseline segments (%d after bridging)",
         n, sigma0, n_raw, len(segments),
     )
     return segments, path
+
+
+def _posterior(g: np.ndarray, informative: np.ndarray) -> float:
+    """Mean posterior of the called state over the informative (unmasked) bins.
+
+    A masked bin has a flat emission: its posterior only echoes its distance
+    to the nearest informative bins, and a 150 kb segmental-duplication run
+    inside a 16p11.2 deletion dragged the mean under ``min_cn_posterior``."""
+    if informative.any():
+        return float(g[informative].mean())
+    return float(g.mean())
+
+
+def trim_masked_ends(seg: Segment, ratio: np.ndarray, mask: np.ndarray,
+                     gamma: np.ndarray) -> Segment:
+    """Drop the masked bins at either end of a segment.
+
+    The HMM carries a CN state through masked (uninformative) bins, so a
+    deletion flanked by segmental duplications (16p11.2, 15q11.2, 1q21.1)
+    ran on through them and its call inherited the duplications' MASKFRAC and
+    SEGDUP_OVL (LowMap, MaxN). The call keeps its informative core; the
+    trimmed bins widen CIPOS/CIEND. A segment with no unmasked bin is
+    returned unchanged (MaxN)."""
+    s, e = seg.start_bin, seg.end_bin
+    while s < e and mask[s]:
+        s += 1
+    while e > s and mask[e - 1]:
+        e -= 1
+    if s == e or (s == seg.start_bin and e == seg.end_bin):
+        return seg
+    unmasked = ~mask[s:e]
+    return Segment(
+        start_bin=s, end_bin=e, cn=seg.cn,
+        posterior=_posterior(gamma[s:e, seg.cn], unmasked),
+        mean_ratio=float(ratio[s:e][unmasked].mean()),
+        n_bins=e - s,
+        masked_frac=float(mask[s:e].mean()),
+        trim_left=seg.trim_left + s - seg.start_bin,
+        trim_right=seg.trim_right + seg.end_bin - e,
+    )
 
 
 def bridge_segments(
@@ -366,7 +409,7 @@ def bridge_segments(
                 start_bin=start,
                 end_bin=end,
                 cn=seg.cn,
-                posterior=float(gamma[flank, seg.cn].mean()),
+                posterior=_posterior(gamma[flank, seg.cn], ~mask[flank]),
                 mean_ratio=float(ratio[unmasked].mean()) if len(unmasked) else float("nan"),
                 n_bins=end - start,
                 masked_frac=float(mask[start:end].mean()),

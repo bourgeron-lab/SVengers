@@ -37,8 +37,8 @@ def segment_to_call(
         mean_ratio=seg.mean_ratio,
         n_bins=seg.n_bins,
         masked_frac=seg.masked_frac,
-        cipos=(-bin_size, bin_size),
-        ciend=(-bin_size, bin_size),
+        cipos=(-bin_size * (1 + seg.trim_left), bin_size),
+        ciend=(-bin_size, bin_size * (1 + seg.trim_right)),
         precise=False,
     )
     if seg.n_bins < config.segment.min_bins:
@@ -73,13 +73,19 @@ def reconcile(
     used_junction = np.zeros(len(junctions), dtype=bool)
 
     for call in seg_calls:
-        tol = _boundary_tolerance(call.size, bin_size)
-        best_idx, best_dist = -1, tol + 1
+        # masked ends trimmed off the segment widen the tolerance by as much
+        trimmed = max(-call.cipos[0], call.ciend[1]) - bin_size
+        base_tol = _boundary_tolerance(call.size, bin_size) + trimmed
+        best_idx, best_dist = -1, None
         for j, junc in enumerate(junctions):
             if used_junction[j] or junc.svtype != call.svtype:
                 continue
             dist = max(abs(junc.start - call.start), abs(junc.end - call.end))
-            if dist < best_dist:
+            # 10 % of the larger of the two: a mosaic deletion's depth run stops
+            # short of its junction (a 96 kb deletion at ratio 0.66 came out as an
+            # 83 kb run, 79 bp past the 10 %-of-run tolerance)
+            tol = max(base_tol, _boundary_tolerance(junc.size, bin_size))
+            if dist <= tol and (best_dist is None or dist < best_dist):
                 best_idx, best_dist = j, dist
         if best_idx >= 0:
             junc = junctions[best_idx]

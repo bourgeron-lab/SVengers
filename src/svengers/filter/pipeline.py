@@ -67,7 +67,8 @@ def sq_override(svtype: str, size: int, feats: dict, cf, terminal: bool = False)
     `terminal`: the call reaches a contig end (`reaches_contig_end`)."""
     if (svtype == "DEL" and size >= cf.large_del_rescue_size
             and feats["fc_chrom"] < cf.large_del_rescue_fc_chrom
-            and feats["maskfrac"] < cf.large_del_rescue_max_mask):
+            and (feats["maskfrac"] < cf.large_del_rescue_max_mask
+                 or feats["n_bins_informative"] >= cf.informative_core_bins)):
         return "LARGE_DEL_DEPTH"
     if (svtype == "DEL" and terminal and size >= cf.terminal_del_rescue_size
             and 0 <= feats["cn"] <= 1
