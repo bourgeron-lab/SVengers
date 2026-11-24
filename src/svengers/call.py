@@ -311,6 +311,7 @@ def run_call(
                     min_modal_frac=config.segment.pon_min_modal_frac,
                     min_consistent=config.segment.pon_min_consistent,
                     refminor=config.segment.pon_refminor,
+                    spread_excess=config.segment.pon_spread_excess,
                 )
             else:
                 ratio[name], mask[name] = pon.normalize(

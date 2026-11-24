@@ -64,6 +64,10 @@ class SegmentConfig:
     # variance mode: bins where GRCh38 carries the minor allele are read against the reference
     # (a deletion most people carry is reported, INFO/REFMINOR), not absorbed by the panel
     pon_refminor: bool = True
+    # variance mode: only the founders' spread in excess of the contig's typical
+    # spread (their own sampling noise, already in sigma0) enters the likelihood;
+    # False adds the whole spread (more damping of coverage waves)
+    pon_spread_excess: bool = True
     bridge_max_gap_bins: int = 3     # 0 disables bridging
     bridge_max_gap_frac: float = 0.05
     bridge_max_ratio_diff: float = 0.15

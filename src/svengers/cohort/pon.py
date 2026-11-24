@@ -295,6 +295,7 @@ class PanelOfNormals:
         min_consistent: float = 0.8,
         level: float = 1.0,
         refminor: bool = False,
+        spread_excess: bool = True,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
         """(normalized ratio, extended mask, relative spread per bin).
 
@@ -328,7 +329,7 @@ class PanelOfNormals:
         # depth likelihood already carries (sigma0): only the excess over the
         # contig's typical spread is population variance (v2.2 candidate: the
         # whole spread, ~0.085 everywhere, doubled the variance genome-wide)
-        if ok.any():
+        if spread_excess and ok.any():
             base = float(np.median(rel[ok]))
             rel[ok] = np.sqrt(np.maximum(rel[ok] ** 2 - base**2, 0.0))
         if not refminor:
