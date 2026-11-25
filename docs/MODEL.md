@@ -56,12 +56,27 @@ labels, so this is a conservative estimate.
 
 The numbers above use depth counted from the CRAM, with no panel of normals
 (PoN). A cohort is usually run on the fast path: depth from the 1 kb mosdepth
-bedgraph (`by1000`) normalized by a PoN built from cohort founders, which
-masks the bins whose depth varies across the population. Those bins are where
-polymorphic CNVs lie: on HG002 the PoN masks 8.2 % of the autosomal bins
-(4.6 % without it), but more than 70 % of the bins of 44 % of the true
+bedgraph (`by1000`) normalized by a PoN built from cohort founders. Up to
+v2.1, the PoN worked in **mask mode**: each bin divided by the founders' median
+and masked where their depth varies across the population. Those bins are where
+polymorphic CNVs lie: on HG002 the mask covers 8.2 % of the autosomal bins
+(4.6 % without a PoN), but more than 70 % of the bins of 44 % of the true
 deletions of 1-10 kb and of 65 % of those of 10-100 kb (none without it;
 `runs/_cmp/hg002_pon_mask.py`).
+
+Since v2.2 the GHFC configuration reads the PoN in **variance mode** (PoN
+schema 0.2, `[segment] pon_mode = "variance"`). Per bin and sex stratum the
+panel stores the centre and spread of the founders at the expected copy
+number (the reference group), not their median: at a common deletion whose
+non-carriers are a minority the median sits among the carriers, the reference
+group does not. A bin is masked only when the founders have no reference group
+or do not sit at integer copy numbers (a spread-out depth, not a CNV);
+elsewhere the sample's ratio is divided by the group's centre and the group's
+spread, in excess of the contig's typical spread (the founders' own sampling
+noise, already in the model), enters the HMM and genotyper depth likelihoods
+as extra variance. Bins where GRCh38 carries the minor allele (most founders
+deleted, at integer states of the reference scale) are read against the
+reference (`INFO/REFMINOR`).
 
 HG002 re-called on the fast path, scored by `v12b_noHG002`, DEL F1 against
 GIAB v5.0q:
@@ -70,17 +85,21 @@ GIAB v5.0q:
 |---|---|---|---|
 | CRAM depth, no PoN (above) | 0.836 | 0.743 | 0.582 |
 | bedgraph, no PoN | 0.839 | 0.718 | 0.567 |
-| bedgraph + PoN, v2.1.0 | 0.465 | 0.370 | 0.455 |
-| bedgraph + PoN, v2.1.4 | 0.565 | 0.370 | 0.480 |
+| bedgraph + PoN mask mode, v2.1.0 | 0.465 | 0.370 | 0.455 |
+| bedgraph + PoN mask mode, v2.1.4 | 0.565 | 0.370 | 0.480 |
+| bedgraph + PoN variance mode, v2.2.0 | 0.705 | 0.706 | 0.496 |
 
-The depth source does not matter; the PoN does. At 1-10 kb it raises
-precision a little (0.934 without, 0.966-0.974 with) and cuts recall from
-0.76 to 0.31 (v2.1.0) or 0.40 (v2.1.4). v2.1.4 recovers part of the loss: the deletions that the PoN mask had
-hard-filtered (MaxN) although split or discordant reads support them. Most of
-the remaining loss is common deletions: at 1-10 kb, recall is 0.86 without
-the PoN and 0.45 with it for deletions with gnomAD-SV allele frequency
->= 5 % (n = 545), 0.47 and 0.14 for deletions absent from gnomAD-SV
-(n = 116), 0.50 and 0.39 below 1 % (n = 46).
+The depth source does not matter; the PoN mode does. In mask mode, at
+1-10 kb the PoN raises precision a little (0.934 without, 0.966-0.974 with)
+and cuts recall from 0.76 to 0.31 (v2.1.0) or 0.40 (v2.1.4; v2.1.4 recovers
+the deletions that the mask had hard-filtered as MaxN although split or
+discordant reads support them). Most of that loss was common deletions: at
+1-10 kb, recall is 0.86 without the PoN and 0.45 with it in mask mode for
+deletions with gnomAD-SV allele frequency >= 5 % (n = 545), 0.47 and 0.14 for
+deletions absent from gnomAD-SV (n = 116), 0.50 and 0.39 below 1 % (n = 46).
+Variance mode brings 1-10 kb recall to 0.557 at precision 0.960, and
+10-100 kb to 0.545 at precision 1.0 (CRAM path without a PoN: 0.739 and
+0.591).
 
 ## Ablation: public data only (v14p)
 

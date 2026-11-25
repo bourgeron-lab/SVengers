@@ -291,7 +291,7 @@ def run_call(
     # ---- panel-of-normals normalization (divides out residual systematic bias
     #      and masks population-variable bins)
     if pon_path:
-        from .cohort.pon import PanelOfNormals
+        from .cohort.pon import PanelOfNormals, effective_pon_mode
 
         pon = PanelOfNormals(pon_path)
         if pon.bin_size != bin_size:
@@ -299,9 +299,7 @@ def run_call(
                 f"PoN bin size {pon.bin_size} != run bin size {bin_size}"
             )
         n_new_masked = 0
-        variance = config.segment.pon_mode == "variance"
-        if config.segment.pon_mode not in ("mask", "variance"):
-            raise ValueError(f"segment.pon_mode {config.segment.pon_mode!r}: mask or variance")
+        variance = effective_pon_mode(config.segment.pon_mode, pon) == "variance"
         for name in call_names:
             before = int(mask[name].sum())
             sex, level = pon_profile(by_name[name].kind, ploidy.get(name, 2))
@@ -343,7 +341,7 @@ def run_call(
         wave_by_contig={k: round(v, 4) for k, v in wave_by_contig.items()},
         wave_score_pon=wave_score_pon,
         pon=str(pon_path) if pon_path else None,
-        pon_mode=config.segment.pon_mode if pon_path else None,
+        pon_mode=("variance" if variance else "mask") if pon_path else None,
         evidence_source=str(evidence_store) if evidence_store else None,
         baf_source=("vaf-bedgraph" if vaf_bedgraph else
                     f"vcf:{Path(snv_vcf).name} PASS DP>={config.extract.baf_min_dp}"

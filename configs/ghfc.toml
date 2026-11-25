@@ -15,3 +15,14 @@ pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/re
 # ~0.12, docs/ROADMAP.md 1septdecies) trained on the copy number of the
 # v1.15 genotyper (edge bins with their flanks). Operating point SQ>=5.
 low_sq_threshold = 5.0
+
+[segment]
+# v2.2: panel of normals in variance mode (PoN schema 0.2,
+# resources/pon/dp_founders299.pon02.zarr): a bin is masked only when the 299
+# founders have no reference group at the expected copy number; elsewhere the
+# founders' spread in excess of the contig's typical spread enters the HMM and
+# genotyper depth likelihoods. HG002 production path, DEL 1-10 kb F1
+# 0.565 -> 0.705 and 10-100 kb 0.370 -> 0.706 (mask mode masked 44 % of the
+# truth deletions of 1-10 kb). pon_spread_excess = false (whole spread) damps
+# coverage waves further but lost recall on wave-free genomes.
+pon_mode = "variance"

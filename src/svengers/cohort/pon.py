@@ -176,6 +176,19 @@ def build_pon(
     return Path(out_path)
 
 
+def effective_pon_mode(mode: str, pon: "PanelOfNormals") -> str:
+    """The PoN mode a call runs in: ``mode`` (mask or variance), except that a schema
+    0.1 panel, which has no reference-group profile, is read in mask mode (variance mode
+    would leave the ratio unnormalized)."""
+    if mode not in ("mask", "variance"):
+        raise ValueError(f"segment.pon_mode {mode!r}: mask or variance")
+    if mode == "variance" and pon.meta.get("schema_version") == "0.1":
+        logger.warning("PoN %s: schema 0.1 panel, read in mask mode (variance mode needs a "
+                       "panel built by svengers >= 2.2)", pon.path)
+        return "mask"
+    return mode
+
+
 def modal_stats(stack: np.ndarray, anchor: float = 1.0, window: float = MODE_WINDOW,
                 rounds: int = 2, min_anchor_frac: float = MIN_ANCHOR_FRAC):
     """(centre, spread, modal_frac, consistent_frac, refminor) per bin of a (founders, bins) ratio matrix:
@@ -262,6 +275,7 @@ def _build_svd(
 
 class PanelOfNormals:
     def __init__(self, path: str | Path):
+        self.path = str(path)
         self.root = zarr.open_group(str(path), mode="r")
         self.meta = dict(self.root.attrs)
         if self.meta.get("schema_version") not in SUPPORTED_PON_SCHEMAS:

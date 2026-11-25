@@ -1,5 +1,62 @@
 # Changelog
 
+## v2.2.0 — 2026-11-25
+
+Method release: the panel of normals keeps polymorphic bins callable, deletions flanked by
+segmental duplications keep their informative core, junction-supported duplications of
+1-100 kb pass, and a cohort can be re-called from its stores without rescanning the CRAMs.
+Filter model (`models/v12b`) and feature schema unchanged; evidence store schema 0.7 (adds
+`<contig>/pon_sd` and `<contig>/pon_refminor`; 0.1-0.6 still read); PoN schema 0.2.
+
+- **Panel of normals, variance mode** (`[segment] pon_mode = "variance"`, set in
+  `configs/ghfc.toml`; the built-in default stays `mask`). `svengers pon build` now stores,
+  per bin and sex stratum, the centre and spread of the founders at the expected copy
+  number (reference group; a common deletion whose non-carriers are a minority no longer
+  moves it), the share of founders in it and the share at integer copy numbers. A bin is
+  masked only when it has no reference group or a spread-out depth; elsewhere the ratio is
+  divided by the group's centre and the group's spread in excess of the contig's typical
+  spread enters the HMM and genotyper depth likelihoods (`pon_spread_excess = false` adds
+  the whole spread). Bins where GRCh38 carries the minor allele are read against the
+  reference and annotated `INFO/REFMINOR` (`pon_refminor`). A schema 0.1 panel given with
+  `variance` is read in mask mode, with a warning.
+- **Deletions flanked by segmental duplications**: masked bins are trimmed off both ends of
+  a depth segment (CIPOS/CIEND widened by as much, and the junction tolerance with them),
+  the segment posterior is the mean over its unmasked bins, the junction/segment
+  reconciliation tolerance is 10 % of the larger of the two sizes, and deletions with
+  ≥ 500 unmasked bins (`filter.informative_core_bins`) are exempt from `LowMap` and from
+  the masked-bin ceiling of `LARGE_DEL_DEPTH` (16p11.2, 15q11.2 BP1-BP2 and 1q21.1
+  deletions).
+- **Duplications of 1-100 kb**: new SQ override `JUNCTION_DUP_DEPTH` (`SOURCE=BOTH`,
+  CN ≥ 3, wave score < 0.20); `merge` writes `INFO/JUNC_FRAC` (share of member calls with
+  junction evidence), and at a duplication site of 1-100 kb with `JUNC_FRAC` ≥ 0.5 a
+  carrier genotype with fewer than two discordant pairs is `FT=WeakSupport`.
+- **`svengers call --evidence-store`**: re-call from an earlier store's junction evidence
+  instead of the CRAM scan (identical calls on a test chromosome; ~8 min per genome on the
+  fast path); hidden split reads are recovered for all contigs in parallel.
+- **Validation** (production v2.1.6 -> v2.2.0, the 2,989 GHFC genomes re-called from their
+  stores with a 299-founder schema 0.2 panel):
+  - HG002 fast path (`v12b_noHG002`, GIAB v5.0q), DEL F1 1-10 kb 0.565 -> 0.705, 10-100 kb
+    0.370 -> 0.706, CMRG 0.480 -> 0.496; CRAM path unchanged (0.836, 0.743).
+  - Deletions and duplications curated by eye in IGV (475 genomes): DEL 509 -> 518 / 562,
+    DUP 165 -> 306 / 410, de novo DEL 47 -> 48 / 48.
+  - PASS per genome: DEL 1-10 kb 396 -> 515, DEL ≥ 10 kb 21 -> 47, DUP 1-10 kb 0.4 -> 11.3,
+    DUP ≥ 10 kb 0.9 -> 6.4; DEL and DUP < 1 kb 3,343 -> 3,260 and 623 -> 552.
+  - dataset_paper (665 children): median de novo per child 16 -> 7, recurrent de novo
+    sites 1,053 -> 495, Mendelian-violation rate 0.0236 -> 0.0234, transmission 0.892 ->
+    0.875, confirmed de novo 180 -> 182. PMS (94 children): median de novo 12 -> 8,
+    confirmed de novo 122 -> 147; cohort gate OK.
+  - The cohort gate flags one stratum: the 27 children of wave score ≥ 0.20, de novo
+    deletions ≥ 10 kb 5 -> 7 per child (median). Two thirds of them are genotypes of the
+    cohort genotyper with no call of the child's own, where the depth of a wavy genome
+    outweighs balanced heterozygous sites. SVengers targets genomes without coverage
+    waves; such genomes are flagged by the wave QC (< 0.128 in 491 of the 665 children,
+    where the median de novo per child goes 14 -> 6 and de novo deletions ≥ 10 kb stay at
+    1).
+  - Whole PoN spread (`pon_spread_excess = false`) tested on the same genomes: median de
+    novo per child 4 and fewer recurrent sites, but DEL 513 / 562 in IGV, confirmed de
+    novo 177 and 139 (PMS), DUP 1-10 kb PASS per genome 8.0, and the wavy stratum at 10:
+    not the default.
+
 ## v2.1.6 — 2026-11-23
 
 Bug fix: large depth events left in abutting pieces are joined at the filter stage. Model,

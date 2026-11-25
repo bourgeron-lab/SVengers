@@ -27,7 +27,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.1.6**, in production
+Status: **v2.2.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -152,6 +152,10 @@ the same run).
   empty: the HMM, the genotyper, the large-duplication rescue, the mosaic scan and the
   karyotype all lose their allelic evidence.
 - Smoke test: add `--contig chr20` to `call` (about a minute on the fast path).
+- `--evidence-store OLD/S.evidence.zarr` (v2.2) re-calls a genome from the junction
+  evidence of an earlier store instead of scanning the CRAM again (depth and BAF from the
+  tracks, as on the fast path): same calls as a CRAM run of the same code, ~8 min per
+  genome. Use it to re-call a cohort after a change to segmentation or the panel.
 
 **Fast path.** If your pipeline already produces a 1 kb depth track and a per-site VAF
 track, pass them with `--depth-bedgraph` / `--vaf-bedgraph` alongside the CRAM: depth and
@@ -326,15 +330,37 @@ shown in the report and used by its guards. It is measured on the depth as seque
 before any panel of normals (every threshold is calibrated on it); with a panel, the
 corrected depth is scored too (`wave_score_pon`).
 
-**Panel-of-normals normalization (`--pon`).** Each bin's ratio is divided by the panel's
-per-bin median (sex-stratified profile on chrX/chrY: the male profile for one X, the
-female one for two or more) and brought back to that profile's level (0.5 on the male
-chrX/chrY, 1.0 on the female chrX and the autosomes); the HMM then reads the result
-against the contig's own ploidy, so an XXX chrX at 1.5 is three copies, not a gain. Bins where the panel is too variable
-(MAD > 0.30 × median) or systematically low (median < 0.25 × baseline) are masked. If the
-panel carries SVD components, the sample's projection onto them is removed as well. This
-divides out residual systematic bias the GC model cannot see (mappability, reference
-artefacts, batch effects, coverage waves). See
+**Panel-of-normals normalization (`--pon`).** Two modes (`[segment] pon_mode`):
+
+- **`variance`** (GHFC configuration since v2.2; needs a panel built by
+  `svengers pon build` >= 2.2, PoN schema 0.2). Per bin and sex stratum the panel
+  stores the centre and spread of the founders at the expected copy number (the
+  reference group: 1.0, or 0.5 on a male chrX/chrY), not their median, so a common
+  deletion whose non-carriers are a minority does not move it. Each bin's ratio is
+  divided by that centre; a bin is masked only when fewer than 20 % of the founders
+  form a reference group or fewer than 80 % sit at an integer copy number (a spread-out
+  depth, not a CNV). Elsewhere the group's relative spread, in excess of the contig's
+  typical spread (the founders' own sampling noise, already in the model), enters the
+  HMM and genotyper depth likelihoods as extra variance: polymorphic bins stay callable
+  instead of being masked. Bins where GRCh38 carries the minor allele (most founders
+  deleted, at integer states of the reference scale) are read against the reference,
+  and calls there are annotated `INFO/REFMINOR`. On HG002's fast path, DEL F1 rises
+  from 0.565 to 0.705 at 1-10 kb and from 0.370 to 0.706 at 10-100 kb
+  ([docs/MODEL.md](docs/MODEL.md#hg002-in-the-cohort-fast-path)).
+  `pon_spread_excess = false` adds the whole spread (more damping of coverage waves,
+  less recall). A schema 0.1 panel given with `variance` is read in mask mode.
+- **`mask`** (built-in default, the only mode before v2.2). Each bin's ratio is
+  divided by the panel's per-bin median; bins where the panel is too variable
+  (MAD > 0.30 × median) or systematically low (median < 0.25 × baseline) are masked.
+  If the panel carries SVD components, the sample's projection onto them is removed as
+  well.
+
+In both modes the sex-stratified profile is used on chrX/chrY (the male profile for one
+X, the female one for two or more) and the ratio is brought back to that profile's level
+(0.5 on the male chrX/chrY, 1.0 on the female chrX and the autosomes); the HMM then reads
+the result against the contig's own ploidy, so an XXX chrX at 1.5 is three copies, not a
+gain. This divides out residual systematic bias the GC model cannot see (mappability,
+reference artefacts, batch effects, coverage waves). See
 [Building your own panel of normals](#building-your-own-panel-of-normals).
 
 **CN-HMM segmentation.** Per contig, an HMM with integer states CN 0-5 (5 = "≥ 5") runs on
@@ -354,7 +380,10 @@ the copy ratio:
 - transition probability 1e-8 per bin; Viterbi path, forward-backward posteriors.
 
 Non-baseline segments become depth candidates, tagged `NoEvidence` (< 3 bins), `MaxN`
-(> 70 % masked) or `LowPosterior` (mean posterior < 0.90) without being dropped.
+(> 70 % masked) or `LowPosterior` (mean posterior < 0.90, over the unmasked bins) without
+being dropped. Masked bins at either end of a segment are trimmed off (v2.2), and its
+CIPOS/CIEND widened by as much: a deletion flanked by segmental duplications keeps its
+informative core instead of extending into bins that carry no depth evidence.
 
 **Junction evidence.**
 
@@ -375,7 +404,8 @@ Non-baseline segments become depth candidates, tagged `NoEvidence` (< 3 bins), `
   confidence intervals, pre-genotyped heterozygous.
 
 **Reconciliation.** A depth segment matched by a junction of the same type (within
-max(2 bins, 10 % of the size)) takes the junction's coordinates (`SOURCE=BOTH`, precise
+max(2 bins, 10 % of the larger of the two sizes), widened by any masked bins trimmed off
+the segment's ends) takes the junction's coordinates (`SOURCE=BOTH`, precise
 when both ends have split reads). A junction alone is kept up to 10 kb
 (`SOURCE=JUNCTION`); a duplication junction made of everted pairs only, without split-read
 or CIGAR support, is discarded (on HG002, 37,689 false for 74 true). A segment alone stays
@@ -432,7 +462,7 @@ CNQ); and the genome's wave score.
 |---|---|
 | `MinSize` | shorter than 50 bp |
 | `MaxN` | > 30 % in the exclusion mask, or > 70 % masked bins |
-| `LowMap` | > 70 % segmental duplication with no split-read or CIGAR support |
+| `LowMap` | > 70 % segmental duplication with no split-read or CIGAR support (a deletion with ≥ 500 unmasked depth bins is exempt) |
 | `NoEvidence` | no PE, SR, CIGAR or insert-shift support and < 3 informative bins |
 | `CohortArtifact` | > 50 % inside a recurrent-artefact BED (`--artifact-bed`) |
 
@@ -445,10 +475,11 @@ P(true) is isotonic-calibrated: SQ 5 is P ≈ 0.68, SQ 13 is P ≈ 0.95. Calls b
 does not match the build (a model trained on a prefix of the current schema is accepted).
 
 **Overrides.** The model has almost never seen very large events, and scores them badly.
-Four rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
+Five rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
 
 - `LARGE_DEL_DEPTH`: deletion ≥ 200 kb whose depth relative to its chromosome is < 0.75,
-  with < 50 % masked bins. Without it, half of the 1-10 Mb deletions of a family cohort
+  with < 50 % masked bins or ≥ 500 unmasked bins (`informative_core_bins`: a 1q21.1 or
+  16p11.2 deletion flanked by segmental duplications keeps its informative core). Without it, half of the 1-10 Mb deletions of a family cohort
   were rejected, causal terminal deletions included; on every labelled call available, it
   retains 131/131 true and no false.
 - `LARGE_DUP_BAF`: duplication ≥ 100 kb at CN ≥ 3 whose heterozygous sites show the
@@ -475,6 +506,11 @@ Four rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
   (`unique_del_rescue_max_per_genome`) has a genome-wide noise the wave score misses
   (one gave 894 such losses, chr4-heavy, against 1-11 elsewhere): there the rule is off.
   It adds 1-2 PASS deletions per genome in median.
+- `JUNCTION_DUP_DEPTH` (v2.2): duplication of 1-100 kb seen by both depth and junction
+  reads (`SOURCE=BOTH`), at CN ≥ 3, in a genome of wave score < 0.20. Of the duplications
+  of 10-100 kb curated by eye in IGV, SVengers called 170 of 173 and passed none, 125 of
+  them with junction evidence. Their cohort sites need junction-supported carriers (see
+  `FT=WeakSupport` below).
 
 `--features-out` also writes the feature matrix (TSV), the input of model training.
 
@@ -562,6 +598,11 @@ benchmarks and `bench cohort` read a `WeakSupport` genotype as missing. On datas
 this takes the median de novo per child from 19 to 15 (103 to 65 at wave ≥ 0.20) and the
 recurrent de novo sites from 1,401 to 1,012, for 2-8 % of the inherited genotypes ≥ 1 kb.
 Below 1 kb split reads are the main evidence and no genotype is flagged.
+At a duplication site of 1-100 kb whose member calls mostly carry junction evidence
+(`INFO/JUNC_FRAC` ≥ 0.5, set by `merge`), a carrier genotype with fewer than two
+discordant pairs is `WeakSupport` whatever its copy ratio: a real tandem duplication shows
+everted pairs (91 % of the transmitted carriers with a call of their own at 1-10 kb do),
+a coverage wave raises the ratio without them.
 
 `svengers pon artifacts` turns a cohort VCF into a recurrent-artefact BED (founder AF ≥ 0.03
 with HWE p ≤ 1e-6, or ≥ 3 nominators with discordance ≥ 0.5), which `filter --artifact-bed`
@@ -851,14 +892,17 @@ also needs it. Without a panel, SVengers behaves as v1.1.0 did.
    trisomy 13, which the median alone cannot do (it divides every genome by the same
    profile).
 4. **Re-call every genome with `--pon my_pon.zarr`**, the founders included (Nextflow:
-   `params.pon`). Keep the panel at a stable path: the store records it, and the report's
-   karyotype reads it from there.
+   `params.pon`), with `[segment] pon_mode = "variance"` in the configuration (the
+   GHFC setting; the built-in default is still `mask`). Keep the panel at a stable path:
+   the store records it, and the report's karyotype reads it from there.
 
-**Semantics.** With a panel, depth reports deviation from the population norm. Common
-CNVs, frequent enough to move the median or variable enough to trip the MAD mask, leave the
-depth channel; they remain detectable through junctions when a CRAM is scanned. Use the
-panel for rare-variant work (de novo, case-control); build frequency catalogues without
-it.
+**Semantics.** With a panel, depth reports deviation from the population norm. In mask
+mode, common CNVs, frequent enough to move the median or variable enough to trip the MAD
+mask, leave the depth channel; they remain detectable through junctions when a CRAM is
+scanned. In variance mode they stay in the depth channel, read against the reference
+group, with a likelihood widened by the population's spread. Use the panel for
+rare-variant work (de novo, case-control); build frequency catalogues without it, or
+check them against a run without it.
 
 ## Filter models
 
@@ -1189,7 +1233,7 @@ Main keys (defaults):
 |---|---|
 | `[reference]` | `fasta`, `exclude_bed`, `segdup_bed`, `lcr_bed`, `pop_cov_stdev_bw`, `call_contigs` (chr1-22, chrX, chrY) |
 | `[extract]` | `bin_size` (100, CRAM path), `fast_bin_size` (1000, bedgraph path), `min_mapq_depth` (1), `min_mapq_evidence` (10), `min_clip_len` (15), `min_cigar_sv` (30), `insert_z_discordant` (4.0), `baf_min_dp` (8) |
-| `[segment]` | `max_cn` (5), `transition` (1e-8), `min_bins` (3), `min_cn_posterior` (0.90), `max_masked_frac` (0.7), `baf_weight` (1.0) |
+| `[segment]` | `max_cn` (5), `transition` (1e-8), `min_bins` (3), `min_cn_posterior` (0.90), `max_masked_frac` (0.7), `baf_weight` (1.0), `pon_mode` (mask; GHFC: variance), `pon_spread_excess` (true), `bridge_max_gap_bins` (3) |
 | `[breakpoint]` | `min_pe` (3), `min_sr` (2), `min_cigar_support` (3), `dup_junction_requires_sr` (true), `insert_shift_z` (3.5), `min_size` (50), `junction_only_max_size` (10000), `max_junction_size` (20 Mb), `hidden_splits` (true), `resolve_window` (2000), `resolve_min_identity` (0.85), `resolve_max_alignments` (150000) |
 | `[genotype]` | `junction_overdispersion` (0.75), `baf_overdispersion` (50), `het_prior` (1e-4), `hom_prior` (1e-6) |
 | `[filter]` | `min_size` (50), `max_excluded_overlap` (0.30), `lowmap_segdup_frac` (0.70), `low_sq_threshold` (5.0), `large_del_rescue_*`, `large_dup_rescue_*` |

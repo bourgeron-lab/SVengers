@@ -272,3 +272,21 @@ def test_reference_minor_bins_are_read_against_the_reference(tmp_path):
     assert rm0 is None and (mask0[100] or norm0[100] > 0.5)
     stack = np.stack([np.r_[np.zeros(12), np.full(5, 0.5), np.ones(3)]], axis=1).astype(np.float32)
     assert modal_stats(stack)[4][0] == 1
+
+
+def test_schema_01_panel_is_read_in_mask_mode(tmp_path, cohort_stores):
+    """Variance mode needs the reference-group profile of a schema 0.2 panel: a schema
+    0.1 panel (no centre/spread arrays) is read in mask mode instead of leaving the
+    ratio unnormalized."""
+    import zarr
+
+    from svengers.cohort.pon import effective_pon_mode
+
+    path = build_pon(cohort_stores, tmp_path / "pon.zarr", min_samples=5)
+    pon = PanelOfNormals(path)
+    assert effective_pon_mode("variance", pon) == "variance"
+    assert effective_pon_mode("mask", pon) == "mask"
+    zarr.open_group(str(path), mode="r+").attrs["schema_version"] = "0.1"
+    assert effective_pon_mode("variance", PanelOfNormals(path)) == "mask"
+    with pytest.raises(ValueError):
+        effective_pon_mode("median", pon)
