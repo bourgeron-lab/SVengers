@@ -27,7 +27,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.3.0**, in production
+Status: **v2.4.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -475,7 +475,7 @@ P(true) is isotonic-calibrated: SQ 5 is P ≈ 0.68, SQ 13 is P ≈ 0.95. Calls b
 does not match the build (a model trained on a prefix of the current schema is accepted).
 
 **Overrides.** The model has almost never seen very large events, and scores them badly.
-Five rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
+Six rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
 
 - `LARGE_DEL_DEPTH`: deletion ≥ 200 kb whose depth relative to its chromosome is < 0.75,
   with < 50 % masked bins or ≥ 500 unmasked bins (`informative_core_bins`: a 1q21.1 or
@@ -511,6 +511,14 @@ Five rules keep them PASS whatever their SQ, recorded in `INFO/SQ_OVERRIDE`:
   of 10-100 kb curated by eye in IGV, SVengers called 170 of 173 and passed none, 125 of
   them with junction evidence. Their cohort sites need junction-supported carriers (see
   `FT=WeakSupport` below).
+- `UNIQUE_DUP_DEPTH` (v2.4): duplication ≥ 10 kb outside repeats (segmental duplication
+  and low-complexity overlap < 0.2), with a depth ratio ≥ 1.35, ≥ 90 % consistent bins and
+  < 50 % masked bins, in a genome of wave score < 0.20; at most 20 per genome, as
+  `UNIQUE_DEL_DEPTH`. The depth ratio, not the CN state, gates it, so that the gains of a
+  male chrX (CN 2, ratio ≈ 2) qualify. The duplications of ≥ 10 kb curated by eye in IGV
+  that the model missed were textbook depth gains (ratio 1.5, 97 % consistent bins) scored
+  SQ ≈ 0.1; the rule raises the curated DUP recall from 306 to 362 of 410 on autosomes and
+  from 25 to 54 of 72 on the sex chromosomes, and adds ~3.5 PASS duplications per genome.
 
 `--features-out` also writes the feature matrix (TSV), the input of model training.
 

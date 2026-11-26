@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.4.0 — 2026-11-26
+
+Filter release: one more SQ override, for clean duplications of ≥ 10 kb. Model (`models/v15`),
+feature schema, evidence store (0.7) and PoN schema (0.2) unchanged.
+
+- **`UNIQUE_DUP_DEPTH`**: a duplication ≥ 10 kb outside repeats (segmental duplication and
+  low-complexity overlap < 0.2), with a depth ratio (`dhffc`) ≥ 1.35, ≥ 90 % consistent
+  bins and < 50 % masked bins, in a genome of wave score < 0.20, keeps its PASS whatever its
+  SQ (`INFO/SQ_OVERRIDE=UNIQUE_DUP_DEPTH`); at most 20 per genome, the cap shared in kind
+  with `UNIQUE_DEL_DEPTH` (`filter.unique_dup_rescue_*`). The duplications of ≥ 10 kb
+  curated by eye in IGV that v2.3.0 missed in normal genomes were textbook depth gains
+  (depth ratio 1.5, 97 % consistent bins, CN 3) scored SQ ≈ 0.1: the model distrusts
+  depth-only gains, and the existing overrides only cover ≥ 100 kb with allelic support
+  (`LARGE_DUP_BAF`) or 1-100 kb with junction support (`JUNCTION_DUP_DEPTH`). The rule gates
+  on the depth ratio rather than the CN state so that the gains of a male chrX (CN 2, ratio
+  ≈ 2) qualify.
+- **Validation** (production v2.3.0 -> v2.4.0, the 2,989 GHFC genomes re-filtered):
+  - Duplications curated by eye in IGV (475 genomes): autosomes 306 -> 362 / 410, sex
+    chromosomes 25 -> 54 / 72; curated absent duplications called 3 -> 4 / 37; deletions
+    and de novo events unchanged.
+  - HG002 out of sample (GIAB v5.0q, tandem repeats, CMRG), fast path and CRAM path:
+    unchanged but one false duplication on the fast path.
+  - PASS per genome (carrier genotypes, dataset_paper): DUP ≥ 10 kb 6.1 -> 9.6 (6.2 -> 9.9
+    below wave score 0.128); every other class unchanged.
+  - dataset_paper (665 children): median de novo per child 7 -> 7, unchanged in the
+    normal and intermediate wave strata; confirmed de novo 184 -> 192 (DUP ≥ 10 kb 29 ->
+    37). PMS (94 children): median 7 -> 8, confirmed de novo 147 -> 150. The 27 children of
+    wave score ≥ 0.20, where the rule is off, gain genotype-only de novo duplications (median
+    0 -> 4) at the new cohort sites force-genotyped in them; their confirmed de novo are
+    unchanged.
+
 ## v2.3.0 — 2026-11-26
 
 Model release: the default filter model is now `models/v15`, trained on the cohort fast
