@@ -1335,6 +1335,7 @@ def test_large_duplication_keeps_pass_when_the_allelic_balance_shows_a_gain():
     assert sq_override("DUP", 994_000, dict(gain, baf_dev=0.06), f) is None   # a wave
     assert sq_override("DUP", 994_000, dict(gain, segdup_ovl=0.8), f) is None  # paralogs
     assert sq_override("DUP", 994_000, dict(gain, baf_n=12), f) is None        # too few hets
+    # (without depth features here: UNIQUE_DUP_DEPTH reads the depth, see its test)
     assert sq_override("DUP", 60_000, gain, f) is None                         # model's range
     assert sq_override("DUP", 994_000, dict(gain, cn=2), f) is None
     assert sq_override("DEL", 6_427_000, dict(gain, fc_chrom=0.528, cn=1), f) == "LARGE_DEL_DEPTH"
@@ -1515,6 +1516,42 @@ def test_unique_depth_rule_off_in_a_noisy_genome():
     assert run(cap) == ["UNIQUE_DEL_DEPTH"] * cap + ["TERMINAL_DEL_DEPTH"]
     assert run(cap + 1) == [None] * (cap + 1) + ["TERMINAL_DEL_DEPTH"]
     assert run(cap + 1, sq=9.0) == [None] * (cap + 2)   # a high SQ needs no override
+
+
+def test_unique_depth_duplication_keeps_its_pass():
+    """A clean copy gain >= 10 kb outside repeats, in a genome without strong
+    coverage waves, keeps its PASS whatever its junction evidence or allelic
+    balance: 10-100 kb gains without junction reads, gains with too few
+    heterozygous sites, male chrX gains (CN 2, depth over flanks 2.0)."""
+    from svengers.config import load_config
+    from svengers.filter.pipeline import genome_overrides, sq_override
+
+    f = load_config(None).filter
+    gain = {"cn": 3, "dhffc": 1.50, "frac_consistent": 0.97, "maskfrac": 0.01,
+            "fc_chrom": 1.5, "src_both": 0, "src_junction": 0, "segdup_ovl": 0.0,
+            "lcr_ovl": 0.02, "baf_n": 12, "baf_dev": 0.14, "wave_score": 0.10}
+    assert sq_override("DUP", 33_000, gain, f) == "UNIQUE_DUP_DEPTH"
+    assert sq_override("DUP", 330_000, gain, f) == "UNIQUE_DUP_DEPTH"   # too few hets for LARGE_DUP_BAF
+    male_x = dict(gain, cn=2, dhffc=1.99, fc_chrom=2.0, baf_n=0, baf_dev=-1.0)
+    assert sq_override("DUP", 79_000, male_x, f) == "UNIQUE_DUP_DEPTH"
+    assert sq_override("DUP", 330_000, dict(gain, baf_n=80), f) == "LARGE_DUP_BAF"
+    assert sq_override("DUP", 9_000, gain, f) is None
+    assert sq_override("DUP", 33_000, dict(gain, dhffc=1.3), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, frac_consistent=0.8), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, segdup_ovl=0.3), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, lcr_ovl=0.3), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, maskfrac=0.6), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, wave_score=0.25), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, wave_score=-1.0), f) is None
+    assert sq_override("DUP", 33_000, dict(gain, dhffc=float("nan")), f) is None
+
+    cap = f.unique_dup_rescue_max_per_genome
+    def run(n):
+        return genome_overrides(["DUP"] * n, [(0, 33_000)] * n, [gain] * n, [0.1] * n,
+                                [False] * n, f)
+
+    assert run(cap) == ["UNIQUE_DUP_DEPTH"] * cap
+    assert run(cap + 1) == [None] * (cap + 1)
 
 
 def test_junction_supported_duplication_keeps_its_pass():

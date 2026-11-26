@@ -40,7 +40,8 @@ _NEW_INFO = [
      "copy loss; UNIQUE_DEL_DEPTH: depth-only deletion >= 10 kb outside repeats whose depth "
      "shows a clean copy loss, in a genome without coverage waves; JUNCTION_DUP_DEPTH: "
      "duplication of 1-100 kb seen by both depth and junction reads, CN >= 3, in a genome "
-     "without strong coverage waves)"),
+     "without strong coverage waves; UNIQUE_DUP_DEPTH: duplication >= 10 kb outside repeats "
+     "whose depth shows a clean copy gain, in a genome without strong coverage waves)"),
 ]
 
 
@@ -96,22 +97,33 @@ def sq_override(svtype: str, size: int, feats: dict, cf, terminal: bool = False)
             and feats["segdup_ovl"] < cf.large_dup_rescue_max_segdup
             and feats["maskfrac"] < cf.large_dup_rescue_max_mask):
         return "LARGE_DUP_BAF"
+    nan = float("nan")
+    if (svtype == "DUP" and size >= cf.unique_dup_rescue_size
+            and feats.get("dhffc", nan) >= cf.unique_dup_rescue_min_ratio
+            and feats.get("frac_consistent", nan) >= cf.unique_dup_rescue_min_consistent
+            and feats.get("segdup_ovl", nan) < cf.unique_dup_rescue_max_repeat
+            and feats.get("lcr_ovl", nan) < cf.unique_dup_rescue_max_repeat
+            and feats.get("maskfrac", nan) < cf.unique_dup_rescue_max_mask
+            and 0 <= feats.get("wave_score", -1.0) < cf.unique_dup_rescue_max_wave):
+        return "UNIQUE_DUP_DEPTH"
     return None
 
 
 def genome_overrides(svtypes, spans, feats_all, sq_all, terminal, cf) -> list[str | None]:
-    """`sq_override` of every low-SQ call of one genome. UNIQUE_DEL_DEPTH is
-    dropped for the whole genome when it would fire more than
-    `unique_del_rescue_max_per_genome` times: a burst is genome-wide noise."""
+    """`sq_override` of every low-SQ call of one genome. UNIQUE_DEL_DEPTH and
+    UNIQUE_DUP_DEPTH are dropped for the whole genome when they would fire
+    more than `unique_del_rescue_max_per_genome` / `unique_dup_rescue_max_per_genome`
+    times: a burst is genome-wide noise."""
     out = [
         sq_override(t, e - s, f, cf, term) if sq < cf.low_sq_threshold else None
         for t, (s, e), f, sq, term in zip(svtypes, spans, feats_all, sq_all, terminal, strict=True)
     ]
-    n = out.count("UNIQUE_DEL_DEPTH")
-    if n > cf.unique_del_rescue_max_per_genome:
-        logger.info("filter: %d UNIQUE_DEL_DEPTH candidates > %d, rule off for this genome",
-                    n, cf.unique_del_rescue_max_per_genome)
-        out = [None if o == "UNIQUE_DEL_DEPTH" else o for o in out]
+    for rule, cap in (("UNIQUE_DEL_DEPTH", cf.unique_del_rescue_max_per_genome),
+                      ("UNIQUE_DUP_DEPTH", cf.unique_dup_rescue_max_per_genome)):
+        n = out.count(rule)
+        if n > cap:
+            logger.info("filter: %d %s candidates > %d, rule off for this genome", n, rule, cap)
+            out = [None if o == rule else o for o in out]
     return out
 
 

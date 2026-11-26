@@ -257,6 +257,28 @@ class FilterConfig:
     junction_dup_rescue_max_size: int = 100_000
     junction_dup_rescue_min_cn: int = 3
     junction_dup_rescue_max_wave: float = 0.20
+    # Unique-sequence duplications >= 10 kb with a clean copy gain, whatever
+    # their junction evidence: the gain counterpart of UNIQUE_DEL_DEPTH, for
+    # the gains the two rules above leave out (10-100 kb without junction
+    # reads, >= 100 kb with too few heterozygous sites for the allelic test,
+    # and chrX of males, where a gain is CN 2 and has no heterozygous site).
+    # Depth over flanks >= 1.35 (1.5 at a heterozygous autosomal gain, 2.0 on
+    # a male chrX), >= 90 % consistent bins, outside segmental duplications
+    # and low-complexity sequence. Of the duplications >= 10 kb curated by eye
+    # in IGV in genomes of wave score < 0.128, 235 of 300 autosomal and 25 of
+    # 59 chrX ones passed (v2.3.0), 270 and 49 with the rule. On dataset_paper
+    # (v2.3.0), ~3.4 such calls per genome below wave score 0.20, and 92-93 %
+    # of the children's are carried by a parent (98 % for PASS duplications
+    # >= 10 kb); at wave >= 0.20, 54 %: hence the wave ceiling. Off in a
+    # genome where it would fire more than unique_dup_rescue_max_per_genome
+    # times.
+    unique_dup_rescue_size: int = 10_000
+    unique_dup_rescue_min_ratio: float = 1.35
+    unique_dup_rescue_min_consistent: float = 0.9
+    unique_dup_rescue_max_repeat: float = 0.2     # segdup_ovl and lcr_ovl
+    unique_dup_rescue_max_mask: float = 0.5
+    unique_dup_rescue_max_wave: float = 0.20
+    unique_dup_rescue_max_per_genome: int = 20
 
 
 @dataclass(frozen=True)
