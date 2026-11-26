@@ -5,7 +5,7 @@
 # (sources, licences and checksums: docs/RESOURCES.md), then replace
 # /path/to/svengers-grch38 below with that directory. Relative paths are read from the
 # working directory. These are the files the paper's results were produced with; the
-# filter model (models/v12b) was trained on them.
+# filter models (models/v12b, models/v15) were trained on them.
 
 [reference]
 fasta = "/path/to/svengers-grch38/GRCh38_GIABv3_no_alt_analysis_set_maskedGRC_decoys_MAP2K3_KMT2C_KCNJ18.fasta"
@@ -17,6 +17,6 @@ lcr_bed = "/path/to/svengers-grch38/selfchain-LCR.hg38.bed"
 # (docs/RESOURCES.md).
 pop_cov_stdev_bw = "/path/to/svengers-grch38/popCovStdev.bw"
 
-# Operating point of models/v12b (also the built-in default).
+# Operating point of models/v15 and v12b (also the built-in default).
 [filter]
 low_sq_threshold = 5.0

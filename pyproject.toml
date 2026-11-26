@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "svengers"
-version = "2.2.0"
+version = "2.3.0"
 description = "SVengers: a multi-evidence germline CNV caller (DEL/DUP) for short-read WGS with calibrated post-calling filtering"
 readme = "README.md"
 requires-python = ">=3.11"

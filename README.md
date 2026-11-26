@@ -27,7 +27,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.2.0**, in production
+Status: **v2.3.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -79,7 +79,7 @@ A dedicated environment is recommended: the CLI and the Nextflow wrapper call th
 `svengers` executable of that environment (`params.svengers_bin`).
 
 Containers: every release is published as `ghcr.io/bourgeron-lab/svengers:<version>` (and
-`:latest`), with the filter model in `/opt/svengers/models/v12b` and the generic GRCh38
+`:latest`), with the filter model in `/opt/svengers/models/v15` and the generic GRCh38
 config in `/opt/svengers/configs/grch38.toml`; mount the resource directory built by
 `workflows/build_grch38_resources.sh` ([docs/RESOURCES.md](docs/RESOURCES.md)).
 
@@ -130,7 +130,7 @@ svengers call --sample S1 --cram S1.cram --snv-vcf S1.snv.vcf.gz \
 
 # 2. filter: hard filters + calibrated SQ score
 svengers filter out/S1/S1.svengers.vcf.gz --store out/S1/S1.evidence.zarr \
-    --model-dir models/v12b --config my_site.toml --out out/S1/S1.filtered.vcf.gz
+    --model-dir models/v15 --config my_site.toml --out out/S1/S1.filtered.vcf.gz
 
 # 3. optional: chromosomal-scale mosaic segments, from the store alone
 svengers mosaic out/S1/S1.evidence.zarr --out out/S1/S1.mosaic.tsv
@@ -906,18 +906,26 @@ check them against a run without it.
 
 ## Filter models
 
-The production model is **`models/v12b`**: two gradient-boosting classifiers (DEL, DUP)
-with isotonic calibration, trained on GIAB HG002/HG003/HG004 (labels from the GIAB v5.0q
-truth with Truvari, and by transmission for the parents) and on 16 children with wavy
-coverage (transmission labels from clean parents), with the per-genome `wave_score`
-feature pinned to −1 at scoring (`neutral_features` in its manifest). **Operating point:
-SQ ≥ 5**, the built-in default (`[filter] low_sq_threshold` to change it, e.g. for a model
-of your own).
+The production model is **`models/v15`** (since v2.3.0): two gradient-boosting classifiers
+(DEL, DUP) with isotonic calibration, trained on GIAB HG002/HG003/HG004 (labels from the
+GIAB v5.0q truth with Truvari, and by transmission for the parents), once with depth
+counted from the CRAM and once re-called on the cohort fast path (1 kb bedgraph depth,
+panel of normals in variance mode), and on 16 children with wavy coverage (transmission
+labels from clean parents), with the per-genome `wave_score` feature pinned to −1 at
+scoring (`neutral_features` in its manifest). **Operating point: SQ ≥ 5**, the built-in
+default (`[filter] low_sq_threshold` to change it, e.g. for a model of your own).
+
+`v15` is `v12b` (the model frozen with v2.1.0 for the paper, kept in `models/v12b`) with
+the fast-path GIAB rows added. `v12b` had only seen CRAM depth: on the fast path, where a
+deletion of a few kb spans few informative 1 kb bins, it gave many true deletions a low
+SQ. On HG002 out of sample (fast path, GIAB v5.0q), DEL F1 at 1-10 kb goes from 0.705 to
+0.820 (recall 0.557 -> 0.714, precision 0.960 -> 0.964); on the CRAM path the two models
+are equal (DEL F1 0.513 vs 0.515). Details: [docs/MODEL.md](docs/MODEL.md).
 
 Training data, access and the public-data ablation: [docs/MODEL.md](docs/MODEL.md). The
 weights ship with the code; the 16 children's genomes are under controlled access. A model
 retrained on GIAB alone matches `v12b` on HG002 but no longer rejects coverage-wave
-artefacts in wavy genomes, so `v12b` stays the model of record.
+artefacts in wavy genomes, so the wavy children stay in the training data.
 
 `v12b` has the labels and recipe of `v5n`, trained on the copy number the genotyper now
 gives (edge bins read with their flanks, see [Calling](#1-calling-svengers-call)). It needs calls
@@ -1224,7 +1232,7 @@ lcr_bed = "/path/to/selfchain_lcr.bed"
 pop_cov_stdev_bw = "/path/to/popCovStdev.bw"     # optional
 
 [filter]
-low_sq_threshold = 5.0                           # operating point of models/v12b
+low_sq_threshold = 5.0                           # operating point of models/v15
 ```
 
 Main keys (defaults):

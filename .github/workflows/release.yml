@@ -50,7 +50,7 @@ jobs:
         run: |
           docker run --rm ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }} --version
           docker run --rm --entrypoint test ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }} \
-            -s /opt/svengers/models/v12b/model_del.joblib
+            -s /opt/svengers/models/v15/model_del.joblib
       - name: Push to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

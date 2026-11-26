@@ -1,7 +1,7 @@
 # GRCh38 resources
 
-SVengers needs a reference FASTA and four companion tracks. The filter model
-(`models/v12b`) was trained on features computed from these exact files: a
+SVengers needs a reference FASTA and four companion tracks. The filter models
+(`models/v15`, `models/v12b`) were trained on features computed from these exact files: a
 different version of a track changes the features and the scores, so results
 match the published ones only with the files below. They are not in the
 repository; `workflows/build_grch38_resources.sh` rebuilds the directory from
@@ -82,7 +82,8 @@ model; this is planned after the paper (`docs/ROADMAP.md`).
 - **Panel of normals** (`--pon`): built from your own cohort, with the same
   sequencing and processing as the genomes to call (README, *Panel of
   normals*). The paper used 300 founders of its cohort.
-- **Filter model**: `models/v12b` is in the repository; its training data are
-  described in `docs/MODEL.md`.
+- **Filter model**: `models/v15` (default since v2.3.0) and `models/v12b` (the
+  paper's) are in the repository; their training data are described in
+  `docs/MODEL.md`.
 - **Ensembl GFF** (gene column of the report) and the **GeneTrek** gene table
   (impact score): optional.

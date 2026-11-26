@@ -1,0 +1,146 @@
+{
+  "model_version": "v15",
+  "svengers_version": "2.2.0",
+  "schema_hash": "f89b9e8890da996f",
+  "features": [
+    "size_log10",
+    "is_dup",
+    "precise",
+    "src_both",
+    "src_junction",
+    "maskfrac",
+    "dhffc",
+    "fc_chrom",
+    "fc_residual",
+    "depth_cv",
+    "frac_consistent",
+    "n_bins_informative",
+    "flank_asym",
+    "pe",
+    "sr",
+    "cig",
+    "ins_z",
+    "ins_pairs",
+    "evidence_ratio",
+    "homlen",
+    "baf_n",
+    "baf_dev",
+    "segdup_ovl",
+    "lcr_ovl",
+    "exclude_ovl",
+    "popcov_stdev",
+    "gq",
+    "cn",
+    "cnq",
+    "wave_score"
+  ],
+  "created": "2026-11-26T10:44:03",
+  "training_data": "v12b's recipe and labels (GIAB HG002/3/4 with CRAM depth, 16 wavy GHFC trio children) plus GIAB HG002/3/4 re-called on the cohort fast path (1 kb bedgraph depth, PoN variance mode, v2.2); wave_score pinned at scoring",
+  "metrics": {
+    "DEL": {
+      "n": 114704,
+      "n_tp": 89847,
+      "n_labeled_oof": 114704,
+      "pr_auc_oof": 0.9933,
+      "roc_auc_oof": 0.9783,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 92783,
+          "fdr": 0.0509,
+          "recall": 0.9801
+        },
+        {
+          "sq": 7,
+          "kept": 84028,
+          "fdr": 0.0225,
+          "recall": 0.9142
+        },
+        {
+          "sq": 10,
+          "kept": 78379,
+          "fdr": 0.0127,
+          "recall": 0.8613
+        },
+        {
+          "sq": 13,
+          "kept": 71221,
+          "fdr": 0.0068,
+          "recall": 0.7873
+        },
+        {
+          "sq": 17,
+          "kept": 65573,
+          "fdr": 0.0046,
+          "recall": 0.7264
+        },
+        {
+          "sq": 20,
+          "kept": 60004,
+          "fdr": 0.0036,
+          "recall": 0.6654
+        },
+        {
+          "sq": 30,
+          "kept": 20659,
+          "fdr": 0.0002,
+          "recall": 0.2299
+        }
+      ]
+    },
+    "DUP": {
+      "n": 85135,
+      "n_tp": 47099,
+      "n_labeled_oof": 85135,
+      "pr_auc_oof": 0.9797,
+      "roc_auc_oof": 0.9756,
+      "threshold_table": [
+        {
+          "sq": 3,
+          "kept": 48331,
+          "fdr": 0.0871,
+          "recall": 0.9368
+        },
+        {
+          "sq": 7,
+          "kept": 40189,
+          "fdr": 0.0349,
+          "recall": 0.8235
+        },
+        {
+          "sq": 10,
+          "kept": 33963,
+          "fdr": 0.0157,
+          "recall": 0.7098
+        },
+        {
+          "sq": 13,
+          "kept": 31030,
+          "fdr": 0.0106,
+          "recall": 0.6518
+        },
+        {
+          "sq": 17,
+          "kept": 23278,
+          "fdr": 0.0041,
+          "recall": 0.4922
+        },
+        {
+          "sq": 20,
+          "kept": 20301,
+          "fdr": 0.0028,
+          "recall": 0.4298
+        },
+        {
+          "sq": 30,
+          "kept": 9641,
+          "fdr": 0.0003,
+          "recall": 0.2046
+        }
+      ]
+    }
+  },
+  "neutral_features": {
+    "wave_score": -1.0
+  }
+}

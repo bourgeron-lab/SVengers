@@ -1,5 +1,32 @@
 # Changelog
 
+## v2.3.0 — 2026-11-26
+
+Model release: the default filter model is now `models/v15`, trained on the cohort fast
+path as well as on CRAM depth. Code, feature schema, evidence store (0.7) and PoN schema
+(0.2) unchanged; `models/v12b`, the paper's model, stays in the repository.
+
+- **`models/v15`**: `v12b`'s recipe and training set (GIAB HG002/3/4 with depth from the
+  CRAM, 16 wavy GHFC trio children, `wave_score` pinned at scoring) plus GIAB HG002/3/4
+  re-called on the fast path (1 kb bedgraph depth, panel of normals in variance mode).
+  `v12b` had only seen CRAM depth and gave fast-path deletions of a few kb, which span few
+  informative bins, a low SQ. Default in the Nextflow workflow, the containers and the
+  documentation; operating point unchanged (SQ ≥ 5). Model card: `docs/MODEL.md`.
+- **Validation** (production v2.2.0 -> v2.3.0, the 2,989 GHFC genomes' v2.2.0 calls
+  re-filtered):
+  - HG002 out of sample (fast path, GIAB v5.0q), DEL F1 1-10 kb 0.705 -> 0.820 (recall
+    0.557 -> 0.714, precision 0.960 -> 0.964), all sizes 0.461 -> 0.498, 50-300 bp 0.346
+    -> 0.379 (precision 0.878 -> 0.842), 10-100 kb 0.706 unchanged, CMRG 0.496 -> 0.530;
+    CRAM path unchanged (0.515 -> 0.513).
+  - dataset_paper (665 children): median de novo per child 7 -> 7 (6 -> 6 below wave score
+    0.128), recurrent de novo sites 495 -> 465, confirmed de novo 182 -> 184,
+    transmission 0.875 -> 0.871. PMS (94 children): median de novo 8 -> 7, confirmed de
+    novo 147 -> 147. Cohort gate and pre-gate quiet in every wave stratum.
+  - PASS per genome (carrier genotypes, dataset_paper): DEL 1-10 kb 510 -> 532, DEL < 1 kb
+    1,875 -> 1,864, DUP < 1 kb 330 -> 302; events ≥ 1 kb otherwise unchanged.
+  - Deletions and duplications curated by eye in IGV (475 genomes): DEL 518 -> 519 / 562,
+    DUP 306 / 410 and de novo DEL 48 / 48 unchanged.
+
 ## v2.2.0 — 2026-11-25
 
 Method release: the panel of normals keeps polymorphic bins callable, deletions flanked by

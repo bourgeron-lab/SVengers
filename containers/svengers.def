@@ -10,7 +10,7 @@ From: mambaorg/micromamba:1.5.8
     README.md /opt/svengers/README.md
     LICENSE /opt/svengers/LICENSE
     src /opt/svengers/src
-    models/v12b /opt/svengers/models/v12b
+    models/v15 /opt/svengers/models/v15
     configs/grch38.toml /opt/svengers/configs/grch38.toml
     containers/environment.yml /opt/environment.yml
 

@@ -9,11 +9,12 @@ lcr_bed = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/selfchain-LCR.hg38
 pop_cov_stdev_bw = "/pasteur/helix/projects/ghfc_wgs/references/GRCh38/clinsv/refdata-b38/tracks/popCovStdev.bw"
 
 [filter]
-# models/v12b in production (v1.15): v5n's labels and recipe (30 features,
+# models/v15 in production (v2.3): v12b's labels and recipe (30 features,
 # GIAB + 16 GHFC wavy trios, transmission labels, wave_score pinned to -1;
-# v5 learned a step on it and passed 10-18k calls on genomes with wave >=
-# ~0.12, docs/ROADMAP.md 1septdecies) trained on the copy number of the
-# v1.15 genotyper (edge bins with their flanks). Operating point SQ>=5.
+# docs/MODEL.md) plus GIAB HG002/3/4 re-called on this fast path (bedgraph
+# depth, PoN variance mode): v12b had only seen CRAM depth and gave deletions
+# of 1-10 kb on the fast path a low SQ (HG002 out of sample, DEL 1-10 kb F1
+# 0.705 -> 0.820 at precision 0.96). Operating point SQ>=5.
 low_sq_threshold = 5.0
 
 [segment]
