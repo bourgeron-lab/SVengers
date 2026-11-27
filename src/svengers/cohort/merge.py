@@ -13,6 +13,7 @@ Output: a sites-only VCF (no genotypes) consumed by `svengers genotype`.
 from __future__ import annotations
 
 import bisect
+import gzip
 import heapq
 import logging
 from dataclasses import dataclass, field
@@ -230,9 +231,9 @@ def read_sample_calls(
 _BY_KEY: dict[tuple[str, str], list[MemberCall]] | None = None
 
 
-def _contig_sites(work: tuple) -> list[tuple[int, int, str, list[tuple]]]:
-    """Cluster one contig's calls: (start, end, svtype, INFO items) per site,
-    in output order."""
+def _contig_sites(work: tuple) -> list[tuple[int, int, str, list[tuple], list[str]]]:
+    """Cluster one contig's calls: (start, end, svtype, INFO items, samples of
+    the passing members) per site, in output order."""
     contig, length, rescue_min_samples, rescue_total_sq = work
     by_key = _BY_KEY
     merged: list[tuple[int, SiteCluster]] = []
@@ -277,8 +278,19 @@ def _contig_sites(work: tuple) -> list[tuple[int, int, str, list[tuple]]]:
         ]
         if rescued:
             info.append(("RESCUE", "RECURRENT"))
-        sites.append((start, end, cl.svtype, info))
+        own = sorted({m.sample for m in cl.members if m.passing})
+        sites.append((start, end, cl.svtype, info, own))
     return sites
+
+
+def members_path(sites_vcf: str | Path) -> str:
+    """``<sites>.members.tsv.gz``: one ``site_id<TAB>sample`` line per sample
+    whose passing call nominated the site (`svengers genotype --members`)."""
+    s = str(sites_vcf)
+    for ext in (".vcf.gz", ".vcf"):
+        if s.endswith(ext):
+            return s[: -len(ext)] + ".members.tsv.gz"
+    return s + ".members.tsv.gz"
 
 
 def run_merge(
@@ -357,14 +369,20 @@ def run_merge(
     n_sites = 0
     out_path = str(out_vcf)
     mode = "wz" if out_path.endswith(".gz") else "w"
-    with pysam.VariantFile(out_path, mode, header=header) as out:
+    with (
+        pysam.VariantFile(out_path, mode, header=header) as out,
+        gzip.open(members_path(out_path), "wt") as mem,
+    ):
         for (contig, *_), sites in zip(work, per_contig, strict=True):
-            for start, end, svtype, info in sites:
+            for start, end, svtype, info, own in sites:
                 n_sites += 1
-                rec = sv_record(out, contig, start, end, svtype, f"svengers_site_{n_sites}")
+                site_id = f"svengers_site_{n_sites}"
+                rec = sv_record(out, contig, start, end, svtype, site_id)
                 for k, v in info:
                     rec.info[k] = v
                 out.write(rec)
+                for s in own:
+                    mem.write(f"{site_id}\t{s}\n")
     if mode == "wz":
         pysam.tabix_index(out_path, preset="vcf", force=True)
     logger.info("merge: %d input VCFs -> %d sites", len(vcf_paths), n_sites)

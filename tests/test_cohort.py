@@ -210,6 +210,13 @@ def test_merge_rescues_recurrent_subthreshold_sites(tmp_path):
     assert abs(sites[(50_654_000, 50_684_001)].info["SQMAX"] - 2.1) < 1e-6
     assert abs(sites[(50_654_000, 50_684_001)].info["SQMEAN"] - 2.1) < 1e-6
     assert sites[(20_000_000, 20_030_000)].info["JUNC_FRAC"] == 0.0   # no SOURCE: no junction
+    # members table: only passing calls make a sample's own site (genotype --members)
+    import gzip
+
+    from svengers.cohort.merge import members_path
+
+    rows = [ln.rstrip("\n").split("\t") for ln in gzip.open(members_path(out), "rt")]
+    assert rows == [[sites[(20_000_000, 20_030_000)].id, "s0"]]
 
 
 def test_merge_clamps_site_end_to_contig(tmp_path):

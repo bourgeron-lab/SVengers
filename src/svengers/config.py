@@ -279,6 +279,10 @@ class FilterConfig:
     unique_dup_rescue_max_mask: float = 0.5
     unique_dup_rescue_max_wave: float = 0.20
     unique_dup_rescue_max_per_genome: int = 20
+    # a PASS call whose genotype came out 0/0 (the het prior outweighing the
+    # few junction reads of a small event) reports its best non-reference
+    # genotype instead (INFO/NONREF_GT); the gq feature keeps the call-time value
+    pass_nonref_gt: bool = True
 
 
 @dataclass(frozen=True)

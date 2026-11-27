@@ -5,6 +5,7 @@ process SVENGERS_GENOTYPE {
     input:
     tuple val(sample), path(store)
     path sites
+    path members
 
     output:
     tuple val(sample), path("${sample}.gt.tsv"), emit: table
@@ -14,6 +15,7 @@ process SVENGERS_GENOTYPE {
     ${params.svengers_bin} genotype ${sites} \\
         --store ${store} \\
         --out ${sample}.gt.tsv \\
+        --members ${members} \\
         --config ${params.svengers_config}
     """
 }

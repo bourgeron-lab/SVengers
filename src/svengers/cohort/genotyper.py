@@ -8,6 +8,7 @@ construction: run one job per sample, then assemble with `svengers cohort-filter
 from __future__ import annotations
 
 import csv
+import gzip
 import logging
 from pathlib import Path
 
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 GENOTYPE_COLUMNS = [
     "site_id", "contig", "start", "end", "svtype",
     "sample", "gt", "gq", "cn", "cnq", "rd", "pe", "sr", "cig", "baf_n", "baf_dev",
+    "own",  # 1: this sample's own passing call nominated the site (sites.members.tsv.gz)
 ]
 
 _SR_TOL = 100  # bp tolerance around site breakpoints for SR support
@@ -134,9 +136,28 @@ class StoreGenotyper:
                 n_cig = int(sel.sum())
         return n_pe, n_sr, n_cig
 
+    def nonref(
+        self, contig: str, start: int, end: int, svtype: str, source: str,
+        pe: int, sr: int, cig: int,
+    ) -> tuple[tuple[int, int], int] | None:
+        """(GT, GQ) of the most likely non-reference genotype of a call with
+        this junction support, or None where the sample has no copy (chrY in
+        a female) or the store lacks the contig."""
+        data = self._contig_data(contig)
+        if data is None or data.ploidy == 0:
+            return None
+        call = CNVCall(contig=contig, start=start, end=end, svtype=svtype, source=source,
+                       pe_support=pe, sr_support=sr, cig_support=cig)
+        self.genotyper.genotype(call, data)
+        return call.gt_alt, call.gq_alt
+
     def genotype_site(
-        self, site_id: str, contig: str, start: int, end: int, svtype: str
+        self, site_id: str, contig: str, start: int, end: int, svtype: str,
+        own: bool = False,
     ) -> dict | None:
+        """Force-genotype one site. ``own``: the sample's own passing call
+        nominated the site, so the site is known to be present in it and the
+        genotype is the best non-reference one when the prior alone made it 0/0."""
         data = self._contig_data(contig)
         if data is None:
             return None
@@ -152,6 +173,8 @@ class StoreGenotyper:
             pe_support=pe, sr_support=sr, cig_support=cig,
         )
         self.genotyper.genotype(call, data)
+        if own and call.gt == (0, 0) and call.gt_alt != (-1, -1):
+            call.gt, call.gq = call.gt_alt, call.gq_alt
         gt = "./." if call.gt == (-1, -1) else f"{call.gt[0]}/{call.gt[1]}"
         return {
             "site_id": site_id, "contig": contig, "start": start, "end": end,
@@ -161,7 +184,16 @@ class StoreGenotyper:
             "rd": round(call.mean_ratio, 4) if not np.isnan(call.mean_ratio) else "",
             "pe": pe, "sr": sr, "cig": cig, "baf_n": call.baf_n,
             "baf_dev": round(call.baf_dev, 4) if not np.isnan(call.baf_dev) else "",
+            "own": int(own),
         }
+
+
+def read_own_sites(members: str | Path, sample: str) -> set[str]:
+    """Site IDs nominated by ``sample``'s own passing calls, from the
+    ``site_id<TAB>sample`` table `svengers merge` writes beside the sites."""
+    tail = f"\t{sample}\n"
+    with gzip.open(members, "rt") if str(members).endswith(".gz") else open(members) as fh:
+        return {line.split("\t", 1)[0] for line in fh if line.endswith(tail)}
 
 
 def run_genotype(
@@ -169,9 +201,11 @@ def run_genotype(
     store_path: str | Path,
     out_tsv: str | Path,
     config: Config,
+    members: str | Path | None = None,
 ) -> int:
     store = EvidenceStore(store_path)
     gtr = StoreGenotyper(store, config)
+    own = read_own_sites(members, store.sample) if members else set()
     n = 0
     with (
         pysam.VariantFile(str(sites_vcf)) as sites,
@@ -181,9 +215,11 @@ def run_genotype(
         writer.writeheader()
         spec = spec_coords(sites.header)
         for rec in sites:
-            row = gtr.genotype_site(rec.id, rec.contig, *span(rec, spec), rec.info["SVTYPE"])
+            row = gtr.genotype_site(rec.id, rec.contig, *span(rec, spec), rec.info["SVTYPE"],
+                                    own=rec.id in own)
             if row is not None:
                 writer.writerow(row)
                 n += 1
-    logger.info("genotype: %s -> %d site genotypes", store.sample, n)
+    logger.info("genotype: %s -> %d site genotypes (%d nominated by its own calls)",
+                store.sample, n, len(own))
     return n

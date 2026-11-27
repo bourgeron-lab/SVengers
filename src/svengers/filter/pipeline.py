@@ -42,6 +42,9 @@ _NEW_INFO = [
      "duplication of 1-100 kb seen by both depth and junction reads, CN >= 3, in a genome "
      "without strong coverage waves; UNIQUE_DUP_DEPTH: duplication >= 10 kb outside repeats "
      "whose depth shows a clean copy gain, in a genome without strong coverage waves)"),
+    ("NONREF_GT", "0", "Flag",
+     "GT and GQ are the most likely non-reference genotype of this PASS call and its confidence "
+     "among the non-reference genotypes: the genotyper's prior alone had made it 0/0"),
 ]
 
 
@@ -159,7 +162,9 @@ def run_filter(
     extractor = FeatureExtractor(store, annotator)
     model = FilterModel.load(model_dir) if model_dir else None
 
-    counts = {"total": 0, "pass": 0, "hard_filtered": 0, "low_sq": 0, "sq_override": 0}
+    counts = {"total": 0, "pass": 0, "hard_filtered": 0, "low_sq": 0, "sq_override": 0,
+              "nonref_gt": 0}
+    regenotyper = None  # built on the first PASS 0/0 call
     feat_writer = None
     feat_fh = None
     if features_out:
@@ -279,6 +284,21 @@ def run_filter(
                     new_rec.filter.add(tag)
                 if not all_tags:
                     counts["pass"] += 1
+                    fmt = new_rec.samples[sample]
+                    if cf.pass_nonref_gt and tuple(fmt.get("GT") or ()) == (0, 0):
+                        if regenotyper is None:
+                            from ..cohort.genotyper import StoreGenotyper
+
+                            regenotyper = StoreGenotyper(store, config)
+                        alt = regenotyper.nonref(
+                            rec.contig, *spans[i], svtypes[i], rec.info.get("SOURCE", "DEPTH"),
+                            int(fmt.get("PE") or 0), int(fmt.get("SR") or 0),
+                            int(fmt.get("CG") or 0),
+                        )
+                        if alt is not None and alt[0] != (-1, -1):
+                            fmt["GT"], fmt["GQ"] = alt
+                            new_rec.info["NONREF_GT"] = True
+                            counts["nonref_gt"] += 1
                 elif tags:
                     counts["hard_filtered"] += 1
                 out.write(new_rec)
@@ -297,6 +317,7 @@ def run_filter(
             p.unlink(missing_ok=True)
     logger.info(
         "filter: %(total)d calls, %(pass)d PASS, %(hard_filtered)d hard-filtered, "
-        "%(low_sq)d LowSQ, %(sq_override)d large-event SQ overrides", counts,
+        "%(low_sq)d LowSQ, %(sq_override)d large-event SQ overrides, "
+        "%(nonref_gt)d PASS 0/0 genotypes set non-reference", counts,
     )
     return counts

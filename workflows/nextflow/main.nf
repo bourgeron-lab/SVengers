@@ -137,6 +137,7 @@ workflow {
 
     def filtered = Channel.empty()
     def sites = Channel.empty()
+    def members = Channel.empty()
     def genotype_tables = Channel.empty()
 
     if ('filter' in steps) {
@@ -147,12 +148,14 @@ workflow {
     if ('merge' in steps) {
         SVENGERS_MERGE(filtered.map { sample, vcf, tbi, store -> vcf }.collect())
         sites = SVENGERS_MERGE.out.sites
+        members = SVENGERS_MERGE.out.members
     }
 
     if ('genotype' in steps) {
         SVENGERS_GENOTYPE(
             filtered.map { sample, vcf, tbi, store -> [sample, store] },
             sites,
+            members,
         )
         genotype_tables = SVENGERS_GENOTYPE.out.table
     }

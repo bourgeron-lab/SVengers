@@ -8,6 +8,7 @@ process SVENGERS_MERGE {
     output:
     path "sites.vcf.gz", emit: sites
     path "sites.vcf.gz.tbi", emit: sites_index
+    path "sites.members.tsv.gz", emit: members
 
     script:
     """

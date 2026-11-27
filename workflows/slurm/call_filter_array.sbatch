@@ -12,7 +12,7 @@
 #
 # Follow-up (after the array finishes):
 #   svengers merge out/*/**.filtered.vcf.gz --out sites.vcf.gz --fasta $FASTA
-#   sbatch --array=1-<N> genotype array (svengers genotype sites.vcf.gz --store ...)
+#   sbatch --array=1-<N> genotype array (svengers genotype sites.vcf.gz --store ... --members sites.members.tsv.gz)
 #   svengers cohort-filter sites.vcf.gz --genotypes @gt_list.txt --out cohort.vcf.gz --pedigree $PED
 #   svengers ped-annotate cohort.vcf.gz --pedigree $PED --out-report mendel.tsv
 

@@ -255,7 +255,9 @@ def merge(
         rescue_min_samples=rescue_min_samples, rescue_total_sq=rescue_total_sq,
         jobs=resolve_jobs(jobs),
     )
-    typer.echo(f"{len(paths)} VCFs -> {n} sites -> {out}")
+    from .cohort.merge import members_path
+
+    typer.echo(f"{len(paths)} VCFs -> {n} sites -> {out} (members: {members_path(out)})")
 
 
 @app.command()
@@ -264,11 +266,15 @@ def genotype(
     store: Path = typer.Option(..., help="This sample's evidence store (.zarr)"),
     out: Path = typer.Option(..., help="Output per-sample genotype table (TSV)"),
     config_file: Optional[Path] = typer.Option(None, "--config", help="TOML configuration"),
+    members: Optional[Path] = typer.Option(
+        None, help="sites.members.tsv.gz from `svengers merge`: at the sites this sample's own "
+        "passing call nominated, a 0/0 forced by the prior becomes the best non-reference genotype",
+    ),
 ) -> None:
     """Force-genotype cohort sites in ONE sample from its evidence store (no CRAM)."""
     from .cohort.genotyper import run_genotype
 
-    n = run_genotype(sites, store, out, load_config(config_file))
+    n = run_genotype(sites, store, out, load_config(config_file), members=members)
     typer.echo(f"{n} site genotypes -> {out}")
 
 

@@ -193,6 +193,16 @@ class Genotyper:
         best = int(np.argmax(post))
         call.gt = genotypes[best][0]
         call.gq = int(min(99, -10 * np.log10(max(1 - post[best], 1e-10))))
+        # conditional on the call being real: the genotype prior (het 1e-4)
+        # outweighs the few junction reads of a small event on a 1 kb-depth
+        # genome, so a call the filter passes can come out 0/0 here (~1,200
+        # per genome); its GT must then be the best non-reference genotype
+        nr = logp[1:] - logp[1:].max()
+        p_nr = np.exp(nr)
+        p_nr /= p_nr.sum()
+        k = int(np.argmax(p_nr))
+        call.gt_alt = genotypes[1 + k][0]
+        call.gq_alt = int(min(99, -10 * np.log10(max(1 - p_nr[k], 1e-10))))
 
         # integer CN from depth alone on the final coordinates. An edge bin
         # holds the flanks' copy number outside the event: a 1.7 kb CN0 inside

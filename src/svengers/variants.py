@@ -42,6 +42,11 @@ class CNVCall:
     # genotype
     gt: tuple[int, int] = (-1, -1)   # (-1,-1) = ./.
     gq: int = 0
+    # most likely non-reference genotype and its confidence among the
+    # non-reference genotypes: the GT a call kept by the filter (or by its own
+    # cohort site) reports when the prior alone made it 0/0
+    gt_alt: tuple[int, int] = (-1, -1)
+    gq_alt: int = 0
     sq: float = float("nan")         # calibrated quality from the ML filter
 
     filters: list[str] = field(default_factory=list)
