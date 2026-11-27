@@ -47,6 +47,7 @@ class CNVCall:
     # cohort site) reports when the prior alone made it 0/0
     gt_alt: tuple[int, int] = (-1, -1)
     gq_alt: int = 0
+    rq: int = -1   # reference quality from the likelihood alone (flat prior); -1 unknown
     sq: float = float("nan")         # calibrated quality from the ML filter
 
     filters: list[str] = field(default_factory=list)

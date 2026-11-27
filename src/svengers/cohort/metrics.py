@@ -132,6 +132,7 @@ def _load_table_arrays(path: str | Path, site_idx: dict[str, int], n_sites: int)
     rd = np.full(n_sites, np.nan, dtype=np.float32)
     pe = np.zeros(n_sites, dtype=np.uint16)
     sr = np.zeros(n_sites, dtype=np.uint16)
+    rq = np.full(n_sites, -1, dtype=np.int8)   # -1: table without the column
     sample = ""
     with open(path, newline="") as fh:
         for row in csv.DictReader(fh, delimiter="\t"):
@@ -147,7 +148,9 @@ def _load_table_arrays(path: str | Path, site_idx: dict[str, int], n_sites: int)
                 rd[i] = float(row["rd"])
             pe[i] = min(int(row["pe"]), 65535)
             sr[i] = min(int(row["sr"]), 65535)
-    return sample, {"nalt": nalt, "gq": gq, "cn": cn, "rd": rd, "pe": pe, "sr": sr}
+            if row.get("rq") not in (None, "", "-1"):
+                rq[i] = min(int(row["rq"]), 99)
+    return sample, {"nalt": nalt, "gq": gq, "cn": cn, "rd": rd, "pe": pe, "sr": sr, "rq": rq}
 
 
 class _KnownSites:
@@ -342,6 +345,8 @@ def _cohort_header(sites_vcf, samples, carrier_frac_max, cn_discordant_frac,
     for line in (
         ("GT", "1", "String", "Genotype"),
         ("GQ", "1", "Integer", "Genotype quality"),
+        ("RQ", "1", "Integer", "Reference quality: phred of the event being present, from the likelihood "
+         "alone (flat genotype prior); the de novo check reads a parent's 0/0 at min(GQ, RQ)"),
         ("CN", "1", "Integer", "Integer copy number"),
         ("RD", "1", "Float", "Mean copy ratio"),
         ("PE", "1", "Integer", "Discordant pairs"),
@@ -437,6 +442,8 @@ def _write_chunk(task: tuple[int, int, str]) -> dict[str, int]:
                     fmt["RD"] = float(t["rd"][i])
                 fmt["PE"] = int(t["pe"][i])
                 fmt["SR"] = int(t["sr"][i])
+                if t["rq"][i] >= 0:
+                    fmt["RQ"] = int(t["rq"][i])
 
             ns = int(called.sum())
             an = 2 * ns

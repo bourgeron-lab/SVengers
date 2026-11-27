@@ -187,6 +187,16 @@ class Genotyper:
                 )
             logp[i] += self._baf_loglik_safe(hets, dosage, call.svtype, data.ploidy)
 
+        # how firmly the data alone (flat prior) rule out the event: a parent
+        # with no junction read at a small deletion is 0/0 GQ ~45 by the
+        # het prior only, which made inherited polymorphisms missed in both
+        # parents look like confirmed de novo
+        lik = logp - self._priors(data.ploidy)
+        lik -= lik.max()
+        p_flat = np.exp(lik)
+        p_flat /= p_flat.sum()
+        call.rq = int(min(99, -10 * np.log10(max(1 - p_flat[0], 1e-10))))
+
         logp -= logp.max()
         post = np.exp(logp)
         post /= post.sum()

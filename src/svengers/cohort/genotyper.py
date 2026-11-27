@@ -28,6 +28,7 @@ GENOTYPE_COLUMNS = [
     "site_id", "contig", "start", "end", "svtype",
     "sample", "gt", "gq", "cn", "cnq", "rd", "pe", "sr", "cig", "baf_n", "baf_dev",
     "own",  # 1: this sample's own passing call nominated the site (sites.members.tsv.gz)
+    "rq",   # reference quality from the likelihood alone (flat prior), for de novo checks
 ]
 
 _SR_TOL = 100  # bp tolerance around site breakpoints for SR support
@@ -184,7 +185,7 @@ class StoreGenotyper:
             "rd": round(call.mean_ratio, 4) if not np.isnan(call.mean_ratio) else "",
             "pe": pe, "sr": sr, "cig": cig, "baf_n": call.baf_n,
             "baf_dev": round(call.baf_dev, 4) if not np.isnan(call.baf_dev) else "",
-            "own": int(own),
+            "own": int(own), "rq": call.rq,
         }
 
 

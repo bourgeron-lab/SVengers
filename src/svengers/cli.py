@@ -555,6 +555,10 @@ def ped_annotate(
     max_other_carrier_frac: float = typer.Option(
         0.005, help="With --calls-dir: same limit as a fraction of the pedigree's samples"
     ),
+    max_other_frac_min_size: int = typer.Option(
+        10_000, help="With --calls-dir: the fraction applies from this size; smaller sites keep "
+        "--max-other-carriers"
+    ),
     clingen_genes: Optional[Path] = typer.Option(
         None, help="With --calls-dir: ClinGen_gene_curation_list_GRCh38.tsv; no limit on carriers "
         "outside the family on a gene of HI 3 (DEL) / TS 3 (DUP): a recurrent pathogenic de novo"
@@ -575,6 +579,7 @@ def ped_annotate(
         cohort_vcf, parse_ped(pedigree), out_report, out_summary,
         jobs=resolve_jobs(jobs), calls_dir=calls_dir, max_other_carriers=max_other_carriers,
         max_other_carrier_frac=max_other_carrier_frac,
+        max_other_frac_min_size=max_other_frac_min_size,
         clingen=(ClinGen.load(clingen_genes, clingen_regions)
                  if clingen_genes or clingen_regions else None),
     )

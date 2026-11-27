@@ -115,3 +115,17 @@ def test_filter_sets_pass_zero_zero_nonref(tmp_path):
     out2 = tmp_path / "S1.off.vcf.gz"
     assert run_filter(vcf, store, out2, off)["nonref_gt"] == 0
     assert tuple(next(iter(pysam.VariantFile(str(out2)))).samples[0]["GT"]) == (0, 0)
+
+
+def test_reference_quality_ignores_the_prior():
+    """RQ: how firmly the data alone rule the event out. No read at a 200 bp
+    deletion is weak evidence (~2 split reads expected for a het); a flat
+    copy ratio over 20 kb is strong."""
+    g = Genotyper(Config().genotype)
+    small = _call(sr=0)
+    g.genotype(small, _flat())
+    assert small.gt == (0, 0) and small.gq >= 30   # the prior's confidence
+    assert small.rq < 20
+    large = _call(sr=0, size=20_000)
+    g.genotype(large, _flat())
+    assert large.gt == (0, 0) and large.rq >= 50

@@ -13,6 +13,12 @@ the ploidy its own genotypes show on chrX (reference CN 1 or 2), the
 pedigree sex as a fallback. Read as autosomes, every son 1/1 on chrX with a
 0/1 mother and a 0/0 father was a violation.
 
+A parent's 0/0 is read at min(GQ, RQ). RQ (FORMAT, cohort genotyper) is the
+reference quality from the likelihood alone, with a flat genotype prior: a
+parent with no junction read at a 200 bp deletion gets GQ ~45 from the het
+prior (1e-4) but RQ ~10, since ~2 split reads were expected; the de novo is
+then ``denovo_lowconf``. Large events keep their RQ from depth.
+
 De novo and the child's own call. The cohort genotyper force-genotypes every
 site in every sample, so a child can come out a carrier at a site other
 samples nominated while the caller found nothing in that child. A true de
@@ -41,6 +47,10 @@ review found in the true ones hold:
 * few samples outside the child's family carry the site in the cohort
   genotypes: at most ``max_other_carriers`` or ``max_other_carrier_frac`` of
   the pedigree's samples, whichever is larger (10 on dataset_paper's 2 000).
+  The fraction holds from ``max_other_frac_min_size`` (10 kb) only: once PASS
+  calls kept their non-reference genotype (v2.5), 262 of 275 new confirmed
+  de novo deletions under 1 kb of dataset_paper had 6 to 10 carriers in other
+  families, inherited polymorphisms both parents' calls missed.
   A new mutation is private to its family, but a recurrent NAHR event is
   not: two unrelated children of dataset_paper carry the same de novo 15q11-13
   BP1-BP3 duplication, and the forced genotypes of a large event add a few
@@ -128,7 +138,14 @@ def _gt_of(rec, sample: str) -> tuple[tuple[int, ...] | None, int]:
         return None, 0
     if fmt.get("FT") not in ("PASS", ".", "", None):
         return None, 0    # FORMAT/FT (WeakSupport): no support of its own, read as missing
-    return tuple(gt), int(fmt.get("GQ") or 0)
+    gq = int(fmt.get("GQ") or 0)
+    if not any(gt):
+        # a 0/0 is only as sure as the data make it: the het prior alone gives
+        # GQ ~45 to a parent with no junction read at a small deletion
+        rq = fmt.get("RQ") if "RQ" in rec.format else None
+        if rq is not None:
+            gq = min(gq, int(rq))
+    return tuple(gt), gq
 
 
 # GRCh38 pseudo-autosomal regions, 0-based half-open
@@ -335,7 +352,7 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
 
     (cohort_vcf, region, usable, part, min_denovo_child_gq, min_denovo_parent_gq,
      male, own_paths, own_overlap, family_of, max_other_carriers, clingen, max_other_parents,
-     parents) = task
+     parents, frac_min_size) = task
     own = OwnCalls(own_paths, own_overlap) if own_paths else None
     counters = {child.sample_id: [0, 0, 0, 0, 0, 0, 0, 0] for child, _f, _m in usable}
     with pysam.VariantFile(str(cohort_vcf)) as vcf, open(part, "w", newline="") as fh:
@@ -386,13 +403,18 @@ def _ped_region(task) -> tuple[dict[str, list[int]], str]:
                         others = [c for f, c in carriers_by_family.items() if f != child.family_id]
                         n_other = sum(c[0] for c in others)
                         other = str(n_other)
-                        if (n_other > max_other_carriers and clingen is not None
+                        # the cohort-fraction allowance is for recurrent large
+                        # events (NAHR); a small site with carriers in other
+                        # families is a polymorphism the parents' calls missed
+                        limit = (max_other_carriers if end - start >= frac_min_size
+                                 else max_other_parents)
+                        if (n_other > limit and clingen is not None
                                 and sum(c[1] for c in others) <= max_other_parents):
                             locus = clingen.dosage_locus(rec.contig, start, end, svtype == "DUP")
                         strict = (
                             child_call.split(";")[0] == "PASS"
                             and all(c in ("none", "NA") for c in pc)
-                            and (n_other <= max_other_carriers or bool(locus))
+                            and (n_other <= limit or bool(locus))
                         )
                     else:
                         strict = True
@@ -441,6 +463,7 @@ def run_ped_annotate(
     max_other_carriers: int = 2,
     max_other_carrier_frac: float = 0.005,
     clingen: ClinGen | None = None,
+    max_other_frac_min_size: int = 10_000,
 ) -> list[TrioStats]:
     """``jobs`` > 1 (indexed VCF) annotates position-ordered regions in
     parallel and joins their rows in file order: same report as serial.
@@ -477,7 +500,8 @@ def run_ped_annotate(
     parents = frozenset(p for ind in pedigree.individuals.values()
                         for p in (ind.father_id, ind.mother_id) if p)
     if calls_dir is not None:
-        logger.info("ped: a confirmed de novo site has <= %d carriers outside the family%s", max_other,
+        logger.info("ped: a confirmed de novo site has <= %d carriers outside the family "
+                    "(<= %d under %d bp)%s", max_other, max_other_carriers, max_other_frac_min_size,
                     ", or hits a ClinGen dosage-sensitive locus" if clingen is not None else "")
     regions = split_regions(cohort_vcf, jobs)
     tmp = tempfile.mkdtemp(prefix=".ped_parts_", dir=Path(out_report).parent)
@@ -485,7 +509,7 @@ def run_ped_annotate(
         tasks = [
             (str(cohort_vcf), region, usable, f"{tmp}/part{k:05d}.tsv",
              min_denovo_child_gq, min_denovo_parent_gq, male, own_paths, own_overlap,
-             family_of, max_other, clingen, max_other_carriers, parents)
+             family_of, max_other, clingen, max_other_carriers, parents, max_other_frac_min_size)
             for k, region in enumerate(regions)
         ]
         parts = [f"{tmp}/header.tsv"]

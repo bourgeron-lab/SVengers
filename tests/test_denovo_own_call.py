@@ -143,10 +143,13 @@ def test_other_carriers_make_it_weak(tmp_path):
                          calls_dir=tmp_path / "samples", max_other_carriers=k)
         r = _rows(tmp_path / "m.tsv")["own_pass"]
         assert (r["inheritance"], r["other_carriers"]) == (want, "1")
-    # the fraction of the pedigree's samples (4 here) wins when larger
-    run_ped_annotate(tmp_path / "cohort.vcf.gz", ped, tmp_path / "m.tsv", None,
-                     calls_dir=tmp_path / "samples", max_other_carriers=0, max_other_carrier_frac=0.25)
-    assert _rows(tmp_path / "m.tsv")["own_pass"]["inheritance"] == "denovo"
+    # the fraction of the pedigree's samples (4 here) wins when larger, from
+    # max_other_frac_min_size (the 5 kb site is below the 10 kb default)
+    for min_size, want in ((10_000, "denovo_weak"), (5_000, "denovo")):
+        run_ped_annotate(tmp_path / "cohort.vcf.gz", ped, tmp_path / "m.tsv", None,
+                         calls_dir=tmp_path / "samples", max_other_carriers=0,
+                         max_other_carrier_frac=0.25, max_other_frac_min_size=min_size)
+        assert _rows(tmp_path / "m.tsv")["own_pass"]["inheritance"] == want
 
 
 def test_clingen_locus_lifts_the_carrier_limit(tmp_path):
