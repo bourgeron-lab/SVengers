@@ -1,5 +1,50 @@
 # Changelog
 
+## v2.5.0 — 2026-11-28
+
+Genotype release: PASS calls keep a non-reference genotype, and the de novo check stops
+trusting a parent's 0/0 that only the prior supports. Model (`models/v15`), feature schema,
+evidence store (0.7) and PoN schema (0.2) unchanged.
+
+- **PASS calls genotyped 0/0** (`filter.pass_nonref_gt`, on by default): the heterozygous
+  prior (1e-4) outweighs the two or three junction reads of a small event at 30x, so about
+  1,200 PASS calls per genome came out 0/0 (deletions and duplications under 1 kb with split
+  reads, CN 2), most of them true (HG002: 76 % of those under 300 bp, 94 % of 300 bp-1 kb).
+  They dropped out of the cohort (`merge` loads carriers only) and of the family files.
+  `filter` now gives such a call its most likely non-reference genotype, conditional on the
+  event being real, with its GQ (`INFO/NONREF_GT`). The `gq` feature is computed before, so
+  the model is unchanged.
+- **Cohort sites keep them**: `merge` writes `sites.members.tsv.gz` (the samples whose
+  passing call nominated each site), and `svengers genotype --members` keeps a
+  non-reference genotype at a sample's own sites when the prior alone makes it 0/0 (genotype
+  table column `own`). The Nextflow pipeline passes it.
+- **Reference quality (`RQ`)**: the genotyper also reports how firmly the data alone, with a
+  flat prior, rule the event out (genotype table column `rq`, cohort `FORMAT/RQ`).
+  `ped-annotate` reads a parent's 0/0 at min(GQ, RQ): a parent without a junction read at a
+  200 bp deletion is GQ ~45 by the prior but RQ ~10, as ~2 split reads were expected.
+- **Carriers outside the family**: the allowance of 0.5 % of the pedigree's samples for a
+  confirmed de novo now holds from 10 kb only (`--max-other-frac-min-size`); smaller sites
+  keep `--max-other-carriers` (2). With the non-reference genotypes alone, 262 of 275 new
+  confirmed deletions under 1 kb of dataset_paper had 6 to 10 carriers in other families:
+  inherited polymorphisms both parents' calls missed.
+- **Validation** (production v2.4.0 -> v2.5.0, dataset_paper and PMS re-run from the filter
+  step):
+  - HG002 out of sample: SV metrics unchanged (GIAB v5.0q, tandem repeats, CMRG; genotype
+    agnostic). Exact genotype of the PASS deletions matched to v5.0q: fast path 0.43 ->
+    0.65 (under 300 bp 0.29 -> 0.66), CRAM path 0.59 -> 0.66; every matched PASS deletion
+    is now called non-reference (0.66 -> 1.00 on the fast path).
+  - Events curated by eye in IGV (475 genomes), de novo included: unchanged.
+  - PASS carriers per genome (dataset_paper, wave score < 0.128): DEL under 1 kb 1,884 ->
+    3,550, DUP under 1 kb 313 -> 556; larger classes unchanged.
+  - dataset_paper (491 children of wave score < 0.128): median de novo per child 6 -> 3,
+    genotype-only de novo 4,335 -> 1,994, confirmed de novo 108 -> 90. Of the 25 confirmed
+    de novo lost over the 665 children, 7 deletions of chrX are now paternal (the father's
+    own call, genotyped 0/0 before, is hemizygous), 3 have a parent whose data support the
+    event (RQ 0-4) and 15 are deletions of 1-10 kb with 3 to 12 carriers in other families.
+    PMS (72 children of wave score < 0.128): median 7 -> 4, confirmed de novo 91 -> 95.
+  - Cost: about four times more cohort sites (dataset_paper PASS sites 66,000 -> 281,000),
+    cohort VCF 2.3 -> 8.1 GB.
+
 ## v2.4.0 — 2026-11-26
 
 Filter release: one more SQ override, for clean duplications of ≥ 10 kb. Model (`models/v15`),

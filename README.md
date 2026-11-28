@@ -27,7 +27,7 @@ page per family.
 - **Scales from one genome to thousands**, through a Nextflow wrapper on SLURM; the
   cohort stages use every allocated core.
 
-Status: **v2.4.0**, in production
+Status: **v2.5.0**, in production
 at the GHFC lab (Institut Pasteur) on cohorts of 300 to 2,700 genomes. Not on PyPI or
 Bioconda; install from source (below).
 
@@ -423,6 +423,14 @@ each side) in proportion to the part of the bin the event covers: read on whole 
 1.7 kb homozygous deletion inside a heterozygous one came out CN 1, and a heterozygous
 deletion that size CN 2.
 
+The genotype prior (heterozygous 1e-4, `genotype.het_prior`) outweighs the two or three
+junction reads of a small event on a genome sequenced at 30x: about 1,200 PASS calls per
+genome came out 0/0, most of them true (on HG002, 76 % of those under 300 bp and 94 % of
+those of 300 bp-1 kb). Since v2.5, `filter` gives a PASS call genotyped 0/0 its most likely
+non-reference genotype instead, conditional on the event being real (`INFO/NONREF_GT`;
+`filter.pass_nonref_gt`). On HG002 (fast path), the exact genotype of the PASS deletions
+matched to GIAB v5.0q goes from 43 % to 65 % right (29 % to 66 % under 300 bp).
+
 **Evidence store.** Everything later stages need is written to `<S>.evidence.zarr`
 (schema 0.5; 0.1-0.4 are still read):
 
@@ -539,7 +547,9 @@ as a sub-threshold member; a cluster with no passing member is still emitted, as
 `RESCUE=RECURRENT`, when ≥ 2 distinct samples carry it (`--rescue-min-samples`) with summed
 best SQ ≥ 8 (`--rescue-total-sq`). A familial CNV in a hard region that scores SQ ~2 in
 every carrier would otherwise disappear. The output is a sites-only VCF with `NMEMBERS`,
-`NSAMPLES`, `SPREAD`, `PRECISE_FRAC`, `SQMAX`, `SQMEAN`.
+`NSAMPLES`, `SPREAD`, `PRECISE_FRAC`, `SQMAX`, `SQMEAN`, and beside it
+`sites.members.tsv.gz` (`site_id`, `sample`: the samples whose passing call nominated
+each site).
 
 ### 4. Re-genotyping (`svengers genotype`)
 
@@ -548,11 +558,15 @@ likelihood as at calling: copy ratio over the site, discordant pairs and split r
 supporting that adjacency (split reads within 100 bp of the breakpoints, pairs within
 μ + 3σ), CIGAR deletions and BAF. Carriers missed at the single-sample stage are recovered
 without reading any CRAM; chrY is skipped in women. One job per sample, I/O-light
-(~100 MB per store), so it parallelizes widely.
+(~100 MB per store), so it parallelizes widely. With `--members sites.members.tsv.gz`, a
+site the sample's own passing call nominated keeps a non-reference genotype when the prior
+alone makes it 0/0, as at the filter stage (table column `own`). Each genotype also
+carries `rq`, the reference quality from the likelihood alone (flat prior), for the de
+novo check.
 
 ### 5. Cohort metrics (`svengers cohort-filter`)
 
-The per-sample tables are assembled into a multi-sample VCF (`GT:GQ:CN:RD:PE:SR`, and `FT`,
+The per-sample tables are assembled into a multi-sample VCF (`GT:GQ:CN:RD:PE:SR:RQ`, and `FT`,
 below) with `AC`, `AN`, `AF`, `NS`, `NCARRIER`, `CARRIER_FRAC`, `HWE_P`, `GTR_DISC`, `CN_DISC`, and
 five site filters, plus two from the trios with a `--pedigree`:
 
@@ -622,7 +636,9 @@ For every complete trio of the pedigree present in the cohort VCF, each site is 
 from the three genotypes: `none`, `paternal`, `maternal`, `biparental`, `denovo` or
 `denovo_lowconf`, with a Mendelian-violation flag. A de novo candidate needs child
 GQ ≥ 30 and both parents GQ ≥ 20; its `DNQ` is the lowest of the three GQs; below that it is
-`denovo_lowconf`. Per trio, the summary gives genotyped sites, carrier sites, de novo
+`denovo_lowconf`. A parent's 0/0 is read at min(`GQ`, `RQ`): the heterozygous prior alone
+gives GQ ~45 to a parent without a junction read at a 200 bp deletion, where ~2 split
+reads were expected and `RQ` is ~10 (v2.5). Per trio, the summary gives genotyped sites, carrier sites, de novo
 candidates, the **Mendelian-violation rate** and the **transmission rate** (expected ~50 %
 from a heterozygous parent). Both are specificity metrics that need no truth set.
 
@@ -649,7 +665,10 @@ properties of the true ones hold: the child's own call is PASS; neither parent h
 of the same type at the site (any FILTER: a LowSQ parental call is the evidence the forced
 0/0 missed; report column `parent_call`); and at most max(`--max-other-carriers` 2,
 `--max-other-carrier-frac` 0.005 × pedigree samples) samples outside the family carry the
-site (`other_carriers`). The other GQ-confident de novo with a call of the child are
+site (`other_carriers`), the fraction holding only from 10 kb (`--max-other-frac-min-size`;
+a smaller site with carriers in other families is a polymorphism both parents' calls
+missed: 262 of 275 deletions under 1 kb confirmed on dataset_paper before this limit had 6
+to 10). The other GQ-confident de novo with a call of the child are
 `denovo_weak` (`n_denovo_weak`). On dataset_paper this leaves 180 confirmed de novo
 (DEL 151, DUP 29) in 665 children (202 before the `WeakSupport` genotype flag, which removed
 26 split-read-only deletions of wavy children and GC-rich regions).
@@ -1165,6 +1184,7 @@ samples/<S>/<S>.bnd.tsv, .bnd.vcf.gz junctions (`svengers bnd`)
 samples/<S>/<S>.terminal.tsv         terminal losses and their mechanism (`svengers bnd`)
 genotypes/<S>.gt.tsv                 re-genotyped cohort sites
 cohort/sites.vcf.gz                  cohort sites (sites-only)
+cohort/sites.members.tsv.gz          samples whose passing call nominated each site
 cohort/cohort.vcf.gz                 re-genotyped cohort VCF with metrics
 cohort/mendel_report.tsv             per-trio, per-site inheritance and de novo
 cohort/mendel_summary.tsv            per-trio violation and transmission rates
@@ -1181,10 +1201,10 @@ reports/timeline.html, report.html, trace.txt   Nextflow execution reports
 `MASKFRAC`, `IMPRECISE`, `HOMLEN`; `FORMAT` `GT`, `GQ`, `CN`, `CNQ`, `RD` (mean copy
 ratio), `PE`, `SR`, `CG` (CIGAR reads), `IZ` / `IP` (insert shift), `BAFN`, `BAFDEV`.
 `filter` adds `FORMAT/SQ`, `INFO` `SEGDUP_OVL`, `LCR_OVL`, `EXCLUDE_OVL`, `POPCOV_SD`,
-`MODEL_VER`, `SQ_OVERRIDE`, and the filters above.
+`MODEL_VER`, `SQ_OVERRIDE`, `NONREF_GT`, and the filters above.
 
 **Genotype table** (`genotype`): `site_id contig start end svtype sample gt gq cn cnq rd pe
-sr cig baf_n baf_dev`.
+sr cig baf_n baf_dev own rq`.
 
 **Cohort VCF**: see [Cohort metrics](#5-cohort-metrics-svengers-cohort-filter); sites INFO
 from `merge` (`NSAMPLES`, `SQMAX`, `RESCUE`, …) is carried over.
